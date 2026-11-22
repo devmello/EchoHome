@@ -16,6 +16,10 @@ if [ -z "$SERIAL" ]; then
     [ -n "$CONN" ] && break
     sleep 1
   done
+  # After a reboot this ROM may offer plain adb on 5555 (service.adb.tcp.port) instead of wireless debugging.
+  if [ -z "$CONN" ] && [ -n "$IP" ] && "$ADB" connect "$IP:5555" 2>/dev/null | grep -q '^connected'; then
+    sleep 1; "$ADB" -s "$IP:5555" get-state 2>/dev/null | grep -q device && CONN="$IP:5555"
+  fi
   if [ -z "$CONN" ]; then
     printf "Couldn't find the Echo automatically. Type the IP address & port shown at the top of its Wireless debugging screen: "
     read -r CONN
