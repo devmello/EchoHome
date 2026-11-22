@@ -30,6 +30,29 @@ interface Speaker {
     fun prepare()
     /** Synthesizes and plays [text] at [speed] (1 = normal); returns false when it couldn't. */
     fun speak(text: String, speed: Float = 1f): Boolean
+    /**
+     * Speaks pieces as they come: [next] blocks until the next piece and returns null at the end.
+     * The real speaker synthesizes piece N+1 while piece N plays, so there's no gap when it's
+     * faster than real time.
+     */
+    fun speakAll(next: () -> String?, speed: Float = 1f): Boolean {
+        var ok = true
+        while (true) { val s = next() ?: break; ok = speak(s, speed) && ok }
+        return ok
+    }
+    /**
+     * Starts a streamed answer: pieces are [Utterance.add]ed as Claude writes them (any thread, never
+     * blocks) and start playing right away. Call after [prepare].
+     */
+    fun open(speed: Float = 1f): Utterance = object : Utterance {
+        private val pieces = ArrayList<String>()
+        override fun add(text: String) { synchronized(pieces) { pieces += text } }
+        override fun finish(): Boolean {
+            var i = 0
+            return speakAll({ synchronized(pieces) { pieces.getOrNull(i++) } }, speed)
+        }
+        override fun cancel() = stop()
+    }
     /** Synthesizes [text] without playing it (silent measurement); null when it couldn't. */
     fun synthesize(text: String, speed: Float = 1f, saveTo: java.io.File? = null): SynthStats? = null
     /** 0..1 level of what's playing right now (any thread). */
@@ -38,6 +61,14 @@ interface Speaker {
     fun stop()
     /** Frees the model. */
     fun release()
+}
+
+/** One streamed answer being spoken (see [Speaker.open]). */
+interface Utterance {
+    fun add(text: String)
+    /** No more pieces: blocks until everything was spoken (or stopped). */
+    fun finish(): Boolean
+    fun cancel()
 }
 
 /** Which models are installed and loadable. */

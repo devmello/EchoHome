@@ -87,6 +87,8 @@ class AssistantEngine(
     private val voiceThread: CoroutineDispatcher,
     /** TTS gets its own thread: loading the voice is slow on the Echo and must never hold up listening. */
     private val ttsThread: CoroutineDispatcher = voiceThread,
+    /** Speak answers unless the setting says otherwise (true with a real-time voice). */
+    private val speakDefault: Boolean = SPEAK_DEFAULT,
     val demoData: Boolean,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
@@ -120,6 +122,8 @@ class AssistantEngine(
     /** Bumped for every turn; events from an older turn are dropped. */
     @Volatile private var token = 0
     private var history: List<JSONObject> = emptyList()
+    /** The answer being spoken while it streams. */
+    @Volatile private var speech: Speech? = null
     /** The model that wrote [history]; another model starts a fresh conversation. */
     private var historyModel: String? = null
     private var lastAnswerAt = 0L
@@ -184,7 +188,7 @@ class AssistantEngine(
      * Whether answers are spoken: `assistant.speak`, and in night mode only with
      * `assistant.speakAtNight` (the screen still shows the answer word by word).
      */
-    fun shouldSpeak(): Boolean = voice.ttsAvailable && settings.getBoolean(KEY_SPEAK, SPEAK_DEFAULT) &&
+    fun shouldSpeak(): Boolean = voice.ttsAvailable && settings.getBoolean(KEY_SPEAK, speakDefault) &&
         (!system.state.value.nightActive || settings.getBoolean(KEY_SPEAK_AT_NIGHT, false))
 
     private fun speechRate() = settings.getFloat(KEY_SPEECH_RATE, 1f).coerceIn(0.5f, 2f)
@@ -231,6 +235,7 @@ class AssistantEngine(
         token++
         demoJob?.cancel(); demoJob = null
         turnJob?.cancel(); turnJob = null
+        speech?.cancel(); speech = null
         voice.speaker().stop()
         audio = null
         if (!micTest && wakeJob == null) stopMic()
@@ -267,6 +272,7 @@ class AssistantEngine(
         demoJob?.cancel(); demoJob = null
         turnJob?.cancel()
         dismissJob?.cancel()
+        speech?.cancel(); speech = null
         voice.speaker().stop()
         stopWake(keepMic = text == null)
         val t = ++token
@@ -330,17 +336,30 @@ class AssistantEngine(
         // Load the voice while Claude works.
         val tts = if (shouldSpeak())
             scope.async(ttsThread) { runCatching { voice.speaker().prepare() }.isSuccess } else null
+        val sp = tts?.let { Speech(t, it) }
+        speech = sp
         val follow = now() - lastAnswerAt < CONVERSATION_KEEP_MS && historyModel == ClaudeModels.of(a.model())
         val answer = try {
-            withTimeout(TURN_TIMEOUT_MS) { a.turn(query, if (follow) history else emptyList()) { ev -> emit(t, ev) } }
+            withTimeout(TURN_TIMEOUT_MS) {
+                a.turn(query, if (follow) history else emptyList()) { ev ->
+                    if (t == token) when (ev) {
+                        is TurnEvent.AnswerDelta -> sp?.add(ev.text)
+                        is TurnEvent.ToolStart -> sp?.toolStarted()
+                        else -> {}
+                    }
+                    emit(t, ev)
+                }
+            }
         } catch (e: ClaudeException) {
             Log.w(TAG, "Claude: ${e.code} ${e.message}")
             emit(t, TurnEvent.Failed(e.code))
             if (e.code == "auth" || e.code == "refusal") history = emptyList()
+            sp?.cancel()
             finishTurn(t, AssistReducer.friendly(e.code), ttsReady(tts))
             return false
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
             emit(t, TurnEvent.Failed("timeout"))
+            sp?.cancel()
             finishTurn(t, AssistReducer.friendly("timeout"), ttsReady(tts))
             return false
         }
@@ -350,8 +369,64 @@ class AssistantEngine(
         historyModel = answer.model
         lastAnswerAt = now()
         emit(t, TurnEvent.Answer(answer.answer.ifBlank { "Done." }, answer.cards))
-        finishTurn(t, answer.answer, ttsReady(tts))
+        finishTurn(t, answer.answer, ttsReady(tts), sp)
         return t == token && answer.answer.trim().endsWith("?") && settings.getBoolean(KEY_FOLLOW_UP, true)
+    }
+
+    /**
+     * One answer spoken while Claude still streams it: each finished sentence (the first one may be
+     * a clause) goes to the voice as soon as the voice is loaded, so speech starts on the first
+     * sentence and the next ones are synthesized while it plays.
+     */
+    private inner class Speech(private val t: Int, private val tts: kotlinx.coroutines.Deferred<Boolean>) {
+        private val chunker = com.echobedside.feature.assistant.pipeline.SentenceChunker()
+        private val pending = ArrayList<String>()
+        private var utterance: com.echobedside.feature.assistant.voice.Utterance? = null
+        @Volatile var cancelled = false; private set
+        var sentAny = false; private set
+
+        init { tts.invokeOnCompletion { synchronized(this) { if (!cancelled) flushPending() } } }
+
+        @Synchronized fun add(delta: String) { for (p in chunker.add(delta)) send(p) }
+        /** Claude called a tool: its unfinished words before the call aren't spoken. */
+        @Synchronized fun toolStarted() = chunker.reset()
+
+        private fun send(piece: String) {
+            if (cancelled) return
+            sentAny = true
+            pending += SpeechText.forSpeech(piece)
+            if (tts.isCompleted) flushPending()
+        }
+
+        private fun flushPending() {
+            if (pending.isEmpty() || t != token) return
+            val ready = runCatching { tts.getCompleted() }.getOrDefault(false)
+            if (!ready) { pending.clear(); return }
+            val u = utterance ?: voice.speaker().open(speechRate()).also {
+                utterance = it
+                ducker.duck()
+                _speaking.value = true
+            }
+            for (p in pending) u.add(p)
+            pending.clear()
+        }
+
+        /** The answer is complete: speaks the rest ([fallback] if nothing streamed) and waits. */
+        suspend fun finish(fallback: String) {
+            synchronized(this) {
+                chunker.flush()?.let(::send)
+                if (!sentAny) send(fallback)
+                flushPending()
+            }
+            val u = synchronized(this) { utterance } ?: return
+            withContext(ttsThread) { u.finish() }
+        }
+
+        @Synchronized fun cancel() {
+            cancelled = true
+            pending.clear()
+            utterance?.cancel()
+        }
     }
 
     /** Streams the buffered mic audio through STT until the speaker stops. Runs on the voice thread. */
@@ -380,15 +455,20 @@ class AssistantEngine(
     private suspend fun ttsReady(tts: kotlinx.coroutines.Deferred<Boolean>?): Boolean =
         tts != null && (withTimeoutOrNull(TTS_WAIT_MS) { tts.await() } ?: false.also { Log.i(TAG, "voice not ready: answer shown only") })
 
-    private suspend fun finishTurn(t: Int, speakText: String?, ttsReady: Boolean = false) {
+    private suspend fun finishTurn(t: Int, speakText: String?, ttsReady: Boolean = false, stream: Speech? = null) {
+        if (stream != null && (!ttsReady || speakText == null || t != token)) stream.cancel()
         if (speakText != null && ttsReady && t == token) {
             ducker.duck()
             _speaking.value = true
             try {
-                val rate = speechRate()
-                withContext(ttsThread) { voice.speaker().speak(SpeechText.forSpeech(speakText), rate) }
+                if (stream != null) stream.finish(speakText)
+                else {
+                    val rate = speechRate()
+                    withContext(ttsThread) { voice.speaker().speak(SpeechText.forSpeech(speakText), rate) }
+                }
             } finally {
                 _speaking.value = false
+                if (speech === stream) speech = null
             }
         } else if (speakText != null && t == token) {
             // No voice installed: the screen still reveals the answer word by word.
@@ -585,8 +665,13 @@ class AssistantEngine(
             try {
                 _state.value = AssistState(phase = Phase.ANSWER, answer = text)
                 ducker.duck()
-                withContext(ttsThread) { voice.speaker().prepare() }
-                finishTurn(t, text, ttsReady = true)
+                val tts = scope.async(ttsThread) { runCatching { voice.speaker().prepare() }.isSuccess }
+                tts.await()
+                // Fed word by word, like Claude's stream (about 30 words a second), so the voice
+                // starts on the first piece while the rest still "arrives".
+                val sp = Speech(t, tts).also { speech = it }
+                text.split(' ').forEachIndexed { i, w -> sp.add(if (i == 0) w else " $w"); delay(SAY_WORD_MS) }
+                finishTurn(t, text, ttsReady = true, stream = sp)
             } finally {
                 if (t == token) { turnActive.value = false; ducker.release(); syncWake() }
             }
@@ -687,6 +772,7 @@ class AssistantEngine(
         /** Off: on the Echo Show 5 the Piper voice loads in ~35 s and synthesizes at 3.4× real time (status file). */
         const val SPEAK_DEFAULT = false
         const val TTS_WAIT_MS = 1500L
+        const val SAY_WORD_MS = 33L
         const val DISMISS_S = 12
         const val CONVERSATION_KEEP_MS = 60_000L
         const val TURN_TIMEOUT_MS = 45_000L

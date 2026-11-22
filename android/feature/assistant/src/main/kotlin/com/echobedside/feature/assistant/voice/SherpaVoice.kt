@@ -195,6 +195,7 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
      * wake word ("kws") as fast as it decodes, and returns timings (never the words). Silent.
      */
     override fun bench(kind: String, wav: File): String {
+        if (kind.startsWith("tts")) return benchTts(kind, wav)
         val pcm = wav.readBytes().let { it.copyOfRange(minOf(44, it.size), it.size) }
         val audioMs = pcm.size / 32L
         val chunk = 1280
@@ -223,6 +224,85 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
         val ms = SystemClock.elapsedRealtime() - tl
         return "stt: load ${tl - t0} ms, ${ms} ms for $audioMs ms of audio (RTF ${"%.2f".format(java.util.Locale.US, ms.toFloat() / audioMs)}), $words words"
     }
+
+    /**
+     * Debug, silent: "tts,<threads>,<voice dir under voice/>,<model file>,<lexicon path under voice/>"
+     * loads that voice, synthesizes the text in [textFile] sentence by sentence (nothing is played)
+     * and returns load time, time to the first sentence, RTF and PSS. Never logs the text.
+     */
+    private fun benchTts(kind: String, textFile: File): String {
+        val p = kind.split(",")
+        val n = p.getOrNull(1)?.toIntOrNull() ?: threads
+        fun at(x: String) = if (x.startsWith("/")) File(x) else File(root, x)
+        val dir = p.getOrNull(2)?.takeIf { it.isNotEmpty() }?.let(::at) ?: ttsDir
+        val model = p.getOrNull(3)?.takeIf { it.isNotEmpty() }
+            ?: dir.listFiles { f -> f.name.endsWith(".onnx") }?.minOfOrNull { it.name } ?: TTS_MODEL
+        val lex = p.getOrNull(4)?.takeIf { it.isNotEmpty() }?.let(::at)
+            ?: File(dir, LEXICON).takeIf { it.isFile } ?: File(ttsRoot, LEXICON)
+        val text = textFile.readText()
+        if (model == "supertonic") return benchSupertonic(dir, n, p.getOrNull(4)?.toIntOrNull() ?: 5, text)
+        val t0 = SystemClock.elapsedRealtime()
+        val tts = OfflineTts(null, ttsConfig(f(dir, model), f(dir, "tokens.txt"), lex.absolutePath, n))
+        val load = SystemClock.elapsedRealtime() - t0
+        val pssLoaded = android.os.Debug.getPss() / 1024
+        var samples = 0L
+        var first = -1L
+        val t1 = SystemClock.elapsedRealtime()
+        tts.generateWithCallback(text, 0, 1f, SampleCallback { s ->
+            if (first < 0) first = SystemClock.elapsedRealtime() - t1
+            samples += s.size; 1
+        })
+        val ms = SystemClock.elapsedRealtime() - t1
+        val pss = android.os.Debug.getPss() / 1024
+        val rate = tts.sampleRate()
+        tts.free()
+        val audioMs = samples * 1000 / rate
+        return "tts: ${dir.name}/$model threads $n: load $load ms, first sentence after $first ms, " +
+            "$ms ms for $audioMs ms of audio (RTF ${"%.2f".format(java.util.Locale.US, ms.toFloat() / maxOf(1, audioMs))}), " +
+            "$rate Hz, PSS loaded $pssLoaded MB, after synth $pss MB"
+    }
+
+    /** Debug, silent: Supertonic (character input, no lexicon) with [steps] flow steps. */
+    private fun benchSupertonic(dir: File, n: Int, steps: Int, text: String): String {
+        fun pick(prefix: String) = dir.listFiles { f -> f.name.startsWith(prefix) && f.name.endsWith(".onnx") }?.minOfOrNull { it.name }?.let { f(dir, it) } ?: ""
+        val t0 = SystemClock.elapsedRealtime()
+        val tts = OfflineTts(null, OfflineTtsConfig(
+            model = OfflineTtsModelConfig(
+                supertonic = com.k2fsa.sherpa.onnx.OfflineTtsSupertonicModelConfig(
+                    durationPredictor = pick("duration_predictor"), textEncoder = pick("text_encoder"),
+                    vectorEstimator = pick("vector_estimator"), vocoder = pick("vocoder"),
+                    ttsJson = f(dir, "tts.json"), unicodeIndexer = f(dir, "unicode_indexer.bin"), voiceStyle = f(dir, "voice.bin"),
+                ),
+                numThreads = n,
+            ),
+            maxNumSentences = 1,
+        ))
+        val load = SystemClock.elapsedRealtime() - t0
+        val pssLoaded = android.os.Debug.getPss() / 1024
+        var samples = 0L
+        var first = -1L
+        val t1 = SystemClock.elapsedRealtime()
+        tts.generateWithConfigAndCallback(text, com.k2fsa.sherpa.onnx.GenerationConfig(numSteps = steps, extra = mapOf("lang" to "en")), SampleCallback { s ->
+            if (first < 0) first = SystemClock.elapsedRealtime() - t1
+            samples += s.size; 1
+        })
+        val ms = SystemClock.elapsedRealtime() - t1
+        val pss = android.os.Debug.getPss() / 1024
+        val rate = tts.sampleRate()
+        tts.free()
+        val audioMs = samples * 1000 / rate
+        return "tts: supertonic ${dir.name} steps $steps threads $n: load $load ms, first sentence after $first ms, " +
+            "$ms ms for $audioMs ms of audio (RTF ${"%.2f".format(java.util.Locale.US, ms.toFloat() / maxOf(1, audioMs))}), " +
+            "$rate Hz, PSS loaded $pssLoaded MB, after synth $pss MB"
+    }
+
+    private fun ttsConfig(model: String, tokens: String, lexicon: String, n: Int) = OfflineTtsConfig(
+        model = OfflineTtsModelConfig(
+            vits = OfflineTtsVitsModelConfig(model = model, tokens = tokens, lexicon = lexicon),
+            numThreads = n,
+        ),
+        maxNumSentences = 1,
+    )
 
     // ---------------- TTS ----------------
 
@@ -283,7 +363,35 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
         }
 
         override fun speak(text: String, speed: Float): Boolean {
+            var given = false
+            return speakAll({ if (given) null else { given = true; text } }, speed)
+        }
+
+        /**
+         * Synthesis runs on the calling thread and only queues the samples; a player thread writes
+         * them to the AudioTrack. So piece N+1 is synthesized while piece N plays.
+         */
+        override fun speakAll(next: () -> String?, speed: Float): Boolean {
             stopped = false
+            return play(next, speed)
+        }
+
+        /** Pieces go to a synthesis thread at once; [Utterance.finish] waits for the end. */
+        override fun open(speed: Float): Utterance {
+            stopped = false
+            val pieces = java.util.concurrent.LinkedBlockingQueue<String>()
+            val end = "\u0000"
+            var ok = false
+            val th = Thread({ ok = play({ pieces.take().takeIf { it != end } }, speed) }, "assistant-tts-synth")
+            th.start()
+            return object : Utterance {
+                override fun add(text: String) { pieces.put(text) }
+                override fun finish(): Boolean { pieces.put(end); th.join(); return ok }
+                override fun cancel() { stop(); pieces.put(end) }
+            }
+        }
+
+        private fun play(next: () -> String?, speed: Float): Boolean {
             try { prepare() } catch (e: Throwable) { Log.w(TAG, "TTS load failed: ${e.javaClass.simpleName}"); return false }
             val engine = tts ?: return false
             val rate = engine.sampleRate()
@@ -294,33 +402,64 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
                 .setAudioAttributes(AudioFocusDucker.SPEECH_ATTRIBUTES)
                 .setAudioFormat(AudioFormat.Builder().setSampleRate(rate)
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_FLOAT).build())
-                .setBufferSizeInBytes(maxOf(min, rate * 4 / 2)) // ~0.5 s
+                .setBufferSizeInBytes(maxOf(min, rate * 4 / 4)) // ~0.25 s; the queue holds the rest
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
             track = t
+            val queue = java.util.concurrent.LinkedBlockingQueue<FloatArray>()
+            val end = FloatArray(0)
             var written = 0L
-            try {
-                t.play()
-                engine.generateWithCallback(text, 0, speed, SampleCallback { samples ->
-                    if (stopped) return@SampleCallback 0
-                    addRms(samples)
-                    var off = 0
-                    while (off < samples.size && !stopped) {
-                        val n = t.write(samples, off, samples.size - off, AudioTrack.WRITE_BLOCKING)
-                        if (n <= 0) break
-                        off += n
+            val player = Thread({
+                try {
+                    t.play()
+                    while (!stopped) {
+                        val s = queue.take()
+                        if (s === end) break
+                        var off = 0
+                        while (off < s.size && !stopped) {
+                            val n = t.write(s, off, s.size - off, AudioTrack.WRITE_BLOCKING)
+                            if (n <= 0) break
+                            off += n
+                        }
                     }
-                    written += samples.size
-                    if (stopped) 0 else 1
-                })
+                } catch (_: InterruptedException) {
+                } catch (e: Throwable) { Log.w(TAG, "TTS playback failed: ${e.javaClass.simpleName}") }
+            }, "assistant-tts-play")
+            player.start()
+            val t0 = SystemClock.elapsedRealtime()
+            var firstMs = -1L
+            var pieces = 0
+            try {
+                while (!stopped) {
+                    val text = next() ?: break
+                    if (stopped) break
+                    pieces++
+                    val p0 = SystemClock.elapsedRealtime()
+                    engine.generateWithCallback(text, 0, speed, SampleCallback { samples ->
+                        if (stopped) return@SampleCallback 0
+                        if (firstMs < 0) firstMs = SystemClock.elapsedRealtime() - p0
+                        val c = samples.copyOf()
+                        addRms(c)
+                        written += c.size
+                        queue.put(c)
+                        if (stopped) 0 else 1
+                    })
+                }
+                queue.put(end)
+                player.join()
                 // Let the buffer drain.
-                val deadline = SystemClock.elapsedRealtime() + 2000 + written * 1000 / rate
+                val deadline = SystemClock.elapsedRealtime() + 2000
                 while (!stopped && t.playbackHeadPosition < written && SystemClock.elapsedRealtime() < deadline) Thread.sleep(20)
+                Log.i(TAG, "spoke $pieces pieces, ${written * 1000 / rate} ms of audio in ${SystemClock.elapsedRealtime() - t0} ms, first sound after $firstMs ms of synthesis")
                 return true
             } catch (e: Throwable) {
                 Log.w(TAG, "TTS failed: ${e.javaClass.simpleName}")
                 return false
             } finally {
+                stopped = true
+                queue.clear(); queue.offer(end)
+                player.interrupt()
+                try { player.join(500) } catch (_: InterruptedException) {}
                 track = null
                 try { t.stop() } catch (_: Exception) {}
                 t.release()

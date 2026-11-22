@@ -35,7 +35,7 @@ object AssistantSettings {
     fun threshold(settings: SettingsStore): Float =
         SENSITIVITY[settings.getString(KEY_WAKE_SENSITIVITY, SENSITIVITY_DEFAULT)] ?: SENSITIVITY.getValue(SENSITIVITY_DEFAULT)
 
-    fun section(voices: List<Pair<String, String>>, defaultVoice: String) = SettingsSection(
+    fun section(voices: List<Pair<String, String>>, defaultVoice: String, speakDefault: Boolean = AssistantEngine.SPEAK_DEFAULT) = SettingsSection(
         id = "assistant",
         title = "Assistant",
         order = ORDER,
@@ -57,8 +57,8 @@ object AssistantSettings {
                 options = ClaudeModels.OPTIONS),
             SettingSpec(KEY_FOLLOW_UP, "Follow-up listening", SettingType.BOOLEAN, "true",
                 help = "When Claude answers with a question, listen for your reply without the wake word or a tap."),
-            SettingSpec(KEY_SPEAK, "Speak answers", SettingType.BOOLEAN, AssistantEngine.SPEAK_DEFAULT.toString(),
-                help = "Speak answers with the on-device voice. Off by default: on this display the voice takes about 35 s to load and speaks slower than real time, so answers are shown instead."),
+            SettingSpec(KEY_SPEAK, "Speak answers", SettingType.BOOLEAN, speakDefault.toString(),
+                help = "Speak answers aloud, starting on the first sentence. On by default only with a system voice (an installed TTS engine such as eSpeak NG): the built-in Piper voices take about 20 s to load and speak slower than real time on this display, so their answers are shown instead."),
             SettingSpec(KEY_SPEAK_AT_NIGHT, "Speak at night", SettingType.BOOLEAN, "false",
                 help = "While the display is in night mode, answers are shown but not spoken unless this is on."),
             SettingSpec(KEY_VOICE, "Voice", SettingType.CHOICE, defaultVoice,
