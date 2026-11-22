@@ -493,14 +493,17 @@ internal class VolumeCapsule(context: Context) : GlassLayout(context) {
 internal class RouteButton(context: Context) : GlassLayout(context) {
     var open = false
         set(v) { field = v; tint = if (v) withAlpha(Color.WHITE, 0.88f) else withAlpha(Color.WHITE, 0.1f); invalidate() }
-    private val icon = Icon(context, R_airplay)
+    /** The route glyph: AirPlay, or Bluetooth for a phone streaming over Bluetooth. */
+    var icon = R_airplay
+        set(v) { if (v != field) { field = v; glyph = Icon(context, v); invalidate() } }
+    private var glyph = Icon(context, R_airplay)
 
     init { open = false }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val c = when { night -> Night.COLOR; open -> 0xFF0A84FF.toInt(); else -> Color.WHITE }
-        icon.draw(canvas, (width - 24f) / 2f, (height - 24f) / 2f, 24f, c)
+        glyph.draw(canvas, (width - 24f) / 2f, (height - 24f) / 2f, 24f, c)
     }
 }
 
@@ -636,5 +639,6 @@ internal class EmptyView(context: Context) : View(context) {
 internal val R_airplay = R.drawable.media_ic_airplay
 internal val R_note = R.drawable.media_ic_note
 internal val R_phone = R.drawable.media_ic_phone
+internal val R_bluetooth = R.drawable.media_ic_bluetooth
 internal val R_vol_low = R.drawable.media_ic_vol_low
 internal val R_vol_high = R.drawable.media_ic_vol_high

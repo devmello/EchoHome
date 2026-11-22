@@ -34,8 +34,8 @@ class MediaListenerService : NotificationListenerService() {
 
 /**
  * Other apps' media (NOTES §5.4 sources): every active [MediaController] is published into
- * `services.media` with working [MediaControls] and 324 px artwork. Our own package is skipped
- * (the AirPlay receiver publishes to the hub directly).
+ * `services.media` with working [MediaControls] and 324 px artwork. Our own package and the Bluetooth stack are skipped
+ * ([SessionMapping.isMirrored]).
  */
 class AppSessions(private val context: Context, private val services: EchoServices) {
     private val main = Handler(Looper.getMainLooper())
@@ -62,7 +62,7 @@ class AppSessions(private val context: Context, private val services: EchoServic
     }
 
     private fun sync(list: List<MediaController>) {
-        val wanted = list.filter { it.packageName != context.packageName }.associateBy { it.sessionToken }
+        val wanted = list.filter { SessionMapping.isMirrored(it.packageName, context.packageName) }.associateBy { it.sessionToken }
         tracked.keys.filter { it !in wanted }.forEach { k -> tracked.remove(k)?.release() }
         for ((token, c) in wanted) if (token !in tracked) Tracked(c).also { tracked[token] = it }.publish()
     }

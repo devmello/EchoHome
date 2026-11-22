@@ -180,6 +180,13 @@ class SessionMappingTest {
         assertEquals(0.25f, SessionMapping.toMediaState(base.copy(remoteVolume = 0.25f), 0)!!.volume)
     }
 
+    @Test fun bluetoothAndOwnSessionsAreNotMirrored() {
+        // :feature:phone publishes the phone's Bluetooth audio itself (MediaSourceKind.BLUETOOTH).
+        assertFalse(SessionMapping.isMirrored("com.android.bluetooth", "com.echobedside"))
+        assertFalse(SessionMapping.isMirrored("com.echobedside", "com.echobedside"))
+        assertTrue(SessionMapping.isMirrored("org.lineageos.eleven", "com.echobedside"))
+    }
+
     @Test fun sourceIds() {
         assertEquals("app:com.spotify.music:main", SessionMapping.sourceId("com.spotify.music", "main"))
     }

@@ -21,7 +21,9 @@ import com.echobedside.core.design.Motion
 import com.echobedside.core.design.PreBlur
 import com.echobedside.core.model.EchoScreen
 import com.echobedside.core.model.EchoServices
+import com.echobedside.core.model.MediaControls
 import com.echobedside.core.model.MediaSession
+import com.echobedside.core.model.MediaState
 import com.echobedside.core.model.MediaSourceKind
 import com.echobedside.core.model.observeWhileAttached
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +40,7 @@ import java.util.WeakHashMap
  * presses, the art spring and the 1.2 s palette crossfade. Paused, the drift settles after
  * [PAUSED_DRIFT_MS]. Empty or hidden: no frames at all.
  *
- * Debug args (`--es np <cmd>`): empty, demo, paused, playing, next, popover, night, day.
+ * Debug args (`--es np <cmd>`): empty, demo, paused, playing, next, popover, night, day, bt, bt-off, perf:<flags>.
  */
 @SuppressLint("ViewConstructor")
 class NowPlayingScreen(context: Context, private val services: EchoServices) : FrameLayout(context), EchoScreen {
@@ -47,6 +49,18 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
         const val ID = "nowplaying"
         private const val PAUSED_DRIFT_MS = 30_000L
         private val palettes = WeakHashMap<Bitmap, AmbientPalette>()
+        private const val DEBUG_BT = "debug-bluetooth"
+    }
+
+    /** The `np=bt` preview source: AVRCP-like, no seeking. */
+    private object DebugBtControls : MediaControls {
+        override fun play() {}
+        override fun pause() {}
+        override fun next() {}
+        override fun previous() {}
+        override fun seekTo(positionMs: Long) {}
+        override fun setVolume(volume: Float) {}
+        override val canSeek = false
     }
 
     private val ambient = AmbientView(context)
@@ -170,14 +184,19 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
         val key = "${s.sourceId}|${st.title}|${st.artist}|${st.album}|${System.identityHashCode(st.artwork)}"
         if (key != trackKey) {
             trackKey = key
-            art.art = st.artwork
+            // No artwork (Bluetooth AVRCP often has none, apps load it late): a procedural cover
+            // from the album/title, which also gives the ambient its colours.
+            val cover = st.artwork ?: st.title.takeIf { it.isNotBlank() }?.let { DemoArt.forAlbum(st.album, it) }
+            art.art = cover
             info.title = st.title
             info.subtitle = Format.subtitle(st.artist, st.album)
-            loadPalette(st.artwork, key)
+            loadPalette(cover, key)
         }
-        info.sourceIcon = if (st.source == MediaSourceKind.OTHER_APP) R_note else R_airplay
+        info.sourceIcon = sourceIcon(st.source)
+        route.icon = if (st.source == MediaSourceKind.BLUETOOTH) R_bluetooth else R_airplay
         info.sourceText = when (st.source) {
             MediaSourceKind.AIRPLAY -> "AirPlay from " + st.sourceLabel.ifBlank { "iPhone" }
+            MediaSourceKind.BLUETOOTH -> "Bluetooth from " + st.sourceLabel.ifBlank { "iPhone" }
             MediaSourceKind.SPOTIFY -> "Spotify Connect" + (st.sourceLabel.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "")
             MediaSourceKind.OTHER_APP -> "Playing from " + st.sourceLabel.ifBlank { "an app" }
         }
@@ -196,6 +215,12 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
         if (popoverOpen) fillPopover()
         runPending()
         updateMotion()
+    }
+
+    private fun sourceIcon(k: MediaSourceKind) = when (k) {
+        MediaSourceKind.AIRPLAY -> R_airplay
+        MediaSourceKind.BLUETOOTH -> R_bluetooth
+        MediaSourceKind.SPOTIFY, MediaSourceKind.OTHER_APP -> R_note
     }
 
     private fun loadPalette(artwork: Bitmap?, key: String) {
@@ -300,7 +325,16 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
                 popover.buttonLabel = "Stop"
                 popover.deviceIcon = R_note
             }
-            else -> {
+            MediaSourceKind.BLUETOOTH -> {
+                popover.header = "BLUETOOTH"
+                popover.name = st.sourceLabel.ifBlank { "iPhone" }
+                popover.subtitle = "Connected to Echo Bedside"
+                // Codec/profile details would come with MediaState.route (contract request).
+                popover.chips = listOf("Bluetooth")
+                popover.buttonLabel = "Disconnect"
+                popover.deviceIcon = R_phone
+            }
+            MediaSourceKind.AIRPLAY, MediaSourceKind.SPOTIFY -> {
                 popover.header = if (st.source == MediaSourceKind.SPOTIFY) "SPOTIFY CONNECT" else "AIRPLAY RECEIVER"
                 popover.name = st.sourceLabel.ifBlank { "iPhone" }
                 popover.subtitle = "Streaming to Echo Bedside"
@@ -398,6 +432,10 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
             "popover" -> if (isLaidOut) openPopover() else post { openPopover() }
             // Debug only: preview Night mode (the clock feature owns nightActive; its sensor logic may flip it back).
             "night", "day" -> services.system.update { it.copy(nightActive = cmd == "night") }
+            // Debug only: a sample Bluetooth source as :feature:phone will publish it (no art, no seek).
+            "bt" -> services.media.publish(DEBUG_BT, MediaState("Slow Bloom", "Ines Calder", "Greenhouse", null, 214_000, 61_000,
+                SystemClock.elapsedRealtime(), true, MediaSourceKind.BLUETOOTH, "Maya's iPhone"), DebugBtControls)
+            "bt-off" -> services.media.clear(DEBUG_BT)
             // Debug only: hide view groups to profile GPU cost, e.g. "perf:ar" (a ambient, r art, g glass, t text).
             else -> if (cmd.startsWith("perf:")) {
                 val f = cmd.removePrefix("perf:")

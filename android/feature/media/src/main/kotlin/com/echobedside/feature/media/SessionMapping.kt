@@ -49,6 +49,14 @@ object SessionMapping {
     /** Source id in the [com.echobedside.core.model.MediaHub] for one app session. */
     fun sourceId(packageName: String, sessionTag: String) = "app:$packageName:$sessionTag"
 
+    /**
+     * Sessions we don't mirror: our own (the AirPlay receiver publishes to the hub directly) and
+     * the Bluetooth stack's AVRCP session (`:feature:phone` publishes it as BLUETOOTH, "bluetooth").
+     */
+    fun isMirrored(packageName: String, ownPackage: String) = packageName != ownPackage && packageName != BLUETOOTH_PACKAGE
+
+    const val BLUETOOTH_PACKAGE = "com.android.bluetooth"
+
     /** Whether the session is advancing (the UI extrapolates its position). */
     fun isPlaying(state: Int) = state == STATE_PLAYING || state == STATE_FAST_FORWARDING || state == STATE_REWINDING
 

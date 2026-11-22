@@ -50,16 +50,18 @@ object Artwork {
  * gradient from a hue hashed from the title.
  */
 object DemoArt {
-    private val cache = HashMap<String, Bitmap>()
+    private val samples = HashMap<String, Bitmap>()
+    /** Fallback covers for real sources without art (Bluetooth): only the last few (420 KB each). */
+    private val generic = object : LinkedHashMap<String, Bitmap>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?) = size > 3
+    }
 
     @Synchronized
-    fun forAlbum(album: String, title: String): Bitmap = cache.getOrPut(album.ifBlank { title }) {
-        when (album) {
-            "Coastline Hours" -> coastline()
-            "Small Orbits" -> orbits()
-            "Night Swim" -> nightSwim()
-            else -> generic(album.ifBlank { title })
-        }
+    fun forAlbum(album: String, title: String): Bitmap = when (album) {
+        "Coastline Hours" -> samples.getOrPut(album) { coastline() }
+        "Small Orbits" -> samples.getOrPut(album) { orbits() }
+        "Night Swim" -> samples.getOrPut(album) { nightSwim() }
+        else -> album.ifBlank { title }.let { k -> generic.getOrPut(k) { generic(k) } }
     }
 
     private val S = ART_PX.toFloat()
