@@ -1,5 +1,6 @@
 package com.echobedside.feature.home.glance
 
+import com.echobedside.core.model.HomeLocation
 import com.echobedside.core.model.SettingsStore
 import java.io.IOException
 import java.util.Locale
@@ -8,6 +9,16 @@ import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -15,14 +26,15 @@ import org.json.JSONException
 import org.json.JSONObject
 
 /**
- * Where "here" is, for weather and the commute's home. Precedence:
- *  1. manual `weather.lat` / `weather.lon` / `weather.place` (a settings screen or `home.set`);
- *  2. auto-detected from the public IP, stored under `weather.auto.*` (never touches the manual keys);
- *  3. built-in fallback: Livermore, CA.
- * Demo mode with no manual location returns null from [resolve] so screens keep the design's sample data.
+ * Where "here" is ([HomeLocation], bound to `EchoServices.location`), for weather, the commute's
+ * home and other features. Precedence:
+ *  1. MANUAL: `weather.lat` / `weather.lon` / `weather.place` (a settings screen or `home.set`);
+ *  2. DEMO: Santa Cruz, the designs' sample, only while demo data is on and nothing is manual;
+ *  3. AUTO: detected from the public IP, stored under `weather.auto.*` (never touches the manual keys);
+ *  4. FALLBACK: Livermore, CA.
  */
 object Locations {
-    val LIVERMORE = Place(37.6819, -121.7680, "Livermore")
+    val LIVERMORE = HomeLocation.LIVERMORE.toPlace()
 
     const val AUTO_LAT = "weather.auto.lat"
     const val AUTO_LON = "weather.auto.lon"
@@ -39,9 +51,13 @@ object Locations {
         return Place(lat, lon, WeatherSettings.text(s, AUTO_PLACE).orEmpty())
     }
 
-    /** manual > auto > Livermore; in demo mode with nothing manual, null (keep the sample data). */
-    fun resolve(s: SettingsStore, demo: Boolean): Place? =
-        WeatherSettings.place(s) ?: if (demo) null else auto(s) ?: LIVERMORE
+    /** manual > (demo: Santa Cruz) > auto > Livermore. */
+    fun resolve(s: SettingsStore, demo: Boolean): HomeLocation {
+        WeatherSettings.place(s)?.let { return HomeLocation(it.name, it.lat, it.lon, HomeLocation.Source.MANUAL) }
+        if (demo) return HomeLocation.SANTA_CRUZ
+        auto(s)?.let { return HomeLocation(it.name, it.lat, it.lon, HomeLocation.Source.AUTO) }
+        return HomeLocation.LIVERMORE
+    }
 
     /** Great-circle distance in km. */
     fun km(a: Place, b: Place): Double {
@@ -49,6 +65,52 @@ object Locations {
         val dLat = Math.toRadians(b.lat - a.lat); val dLon = Math.toRadians(b.lon - a.lon)
         val h = sin(dLat / 2).pow(2) + cos(Math.toRadians(a.lat)) * cos(Math.toRadians(b.lat)) * sin(dLon / 2).pow(2)
         return 2 * r * asin(sqrt(h))
+    }
+}
+
+fun HomeLocation.toPlace() = Place(lat, lon, name)
+
+/**
+ * Publishes [Locations.resolve] as a flow (bound to `EchoServices.location`). Recomputes when the
+ * `weather.*` location keys change (debounced), keeps the auto location fresh with [AutoLocation]
+ * (a local check each hour; a network lookup at most daily) and looks again after a network change.
+ * No lookups while a manual location is set or in demo mode.
+ */
+class LocationResolver(
+    private val settings: SettingsStore,
+    private val scope: CoroutineScope,
+    private val demo: Boolean,
+    private val auto: AutoLocation?,
+    private val networkChanges: Flow<Unit> = emptyFlow(),
+    private val checkEveryMs: Long = 3_600_000L,
+) {
+    private val _location = MutableStateFlow(Locations.resolve(settings, demo))
+    val location: StateFlow<HomeLocation> = _location.asStateFlow()
+    private var started = false
+
+    private fun needsAuto() = auto != null && !demo && WeatherSettings.place(settings) == null
+
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    fun start() {
+        if (started) return
+        started = true
+        scope.launch {
+            settings.changes.filter { it in KEYS }.debounce(400).collect { _location.value = Locations.resolve(settings, demo) }
+        }
+        scope.launch {
+            while (true) {
+                if (needsAuto()) { auto!!.refresh(); _location.value = Locations.resolve(settings, demo) }
+                delay(checkEveryMs)
+            }
+        }
+        if (auto != null) scope.launch {
+            networkChanges.collect { if (needsAuto()) { auto.refresh(force = true); _location.value = Locations.resolve(settings, demo) } }
+        }
+    }
+
+    companion object {
+        private val KEYS = setOf(WeatherSettings.LAT, WeatherSettings.LON, WeatherSettings.PLACE,
+            Locations.AUTO_LAT, Locations.AUTO_LON, Locations.AUTO_PLACE)
     }
 }
 

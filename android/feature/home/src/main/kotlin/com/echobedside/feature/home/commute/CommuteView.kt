@@ -35,7 +35,7 @@ import kotlinx.coroutines.SupervisorJob
 @SuppressLint("ViewConstructor")
 class CommuteView(context: Context, private val services: EchoServices) : View(context), EchoScreen {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val controller = CommuteController(services.settings, services.calendar, services.weather, scope, services.config.demoData)
+    private val controller = CommuteController(services.settings, services.calendar, services.weather, scope, services.config.demoData, services.location)
     private var state: CommuteState? = null
     private var night = false
 

@@ -9,6 +9,7 @@ import com.echobedside.feature.home.doorbell.DemoSnapshot
 import com.echobedside.feature.home.doorbell.DoorbellWatcher
 import com.echobedside.feature.home.glance.AutoLocation
 import com.echobedside.feature.home.glance.IcsCalendarProvider
+import com.echobedside.feature.home.glance.LocationResolver
 import com.echobedside.feature.home.glance.NetworkChanges
 import com.echobedside.feature.home.glance.OpenMeteoWeatherProvider
 import com.echobedside.feature.home.ha.DemoHomeAssistant
@@ -32,10 +33,13 @@ object HomeFeature : EchoFeature {
 
     override fun install(host: FeatureHost) {
         val s = host.services
-        // Manual location > IP-detected (daily, and after a network change) > Livermore. Demo mode
-        // with no manual location keeps the sample weather.
-        val weather = OpenMeteoWeatherProvider(s.settings, s.scope, fallback = s.weather, demo = s.config.demoData,
-            auto = AutoLocation(s.settings), networkChanges = NetworkChanges.flow(host.context))
+        // services.location: manual > (demo: Santa Cruz) > IP-detected (daily, and after a network
+        // change) > Livermore. Weather and commute read it; in demo with nothing manual, weather
+        // keeps the sample data.
+        val location = LocationResolver(s.settings, s.scope, s.config.demoData, AutoLocation(s.settings), NetworkChanges.flow(host.context))
+        s.location = location.location
+        location.start()
+        val weather = OpenMeteoWeatherProvider(s.settings, s.scope, fallback = s.weather, location = location.location)
         s.weather = weather
         weather.start()
 

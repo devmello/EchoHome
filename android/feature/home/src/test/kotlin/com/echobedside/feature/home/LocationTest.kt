@@ -3,9 +3,15 @@ package com.echobedside.feature.home
 import com.echobedside.core.model.Weather
 import com.echobedside.core.model.WeatherCondition
 import com.echobedside.core.model.WeatherProvider
+import com.echobedside.core.model.HomeLocation
+import com.echobedside.core.model.HomeLocation.Source
 import com.echobedside.feature.home.glance.AutoLocation
 import com.echobedside.feature.home.glance.IpLocator
+import com.echobedside.feature.home.glance.LocationResolver
 import com.echobedside.feature.home.glance.Locations
+import com.echobedside.feature.home.glance.toPlace
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 import com.echobedside.feature.home.glance.Net
 import com.echobedside.feature.home.glance.OpenMeteoWeatherProvider
 import com.echobedside.feature.home.glance.Place
@@ -43,17 +49,31 @@ class LocationTest {
 
     @Test fun precedenceManualThenAutoThenLivermore() {
         val s = MemSettings()
-        assertEquals(Locations.LIVERMORE, Locations.resolve(s, demo = false)) // works with no settings
+        assertEquals(HomeLocation.LIVERMORE, Locations.resolve(s, demo = false)) // works with no settings
         assertEquals(Place(37.6819, -121.7680, "Livermore"), Locations.LIVERMORE)
-        assertNull(Locations.resolve(s, demo = true)) // demo keeps the sample weather
+        assertEquals(HomeLocation.SANTA_CRUZ, Locations.resolve(s, demo = true)) // the designs' sample
         s.auto(sf, 0)
-        assertEquals(sf, Locations.resolve(s, demo = false))
-        assertNull(Locations.resolve(s, demo = true))
-        s.putString("weather.lat", "36.97"); s.putString("weather.lon", "-122.03"); s.putString("weather.place", "Santa Cruz")
-        assertEquals(Place(36.97, -122.03, "Santa Cruz"), Locations.resolve(s, demo = false))
-        assertEquals(Place(36.97, -122.03, "Santa Cruz"), Locations.resolve(s, demo = true))
+        assertEquals(HomeLocation("San Francisco", sf.lat, sf.lon, Source.AUTO), Locations.resolve(s, demo = false))
+        assertEquals(Source.DEMO, Locations.resolve(s, demo = true).source)
+        s.putString("weather.lat", "37.70"); s.putString("weather.lon", "-121.90"); s.putString("weather.place", "Pleasanton")
+        val manual = HomeLocation("Pleasanton", 37.70, -121.90, Source.MANUAL)
+        assertEquals(manual, Locations.resolve(s, demo = false))
+        assertEquals(manual, Locations.resolve(s, demo = true)) // manual beats demo too
         assertEquals(sf, Locations.auto(s)) // auto values live under their own keys
         assertEquals(15.0, Locations.km(sf, oakland), 3.0)
+    }
+
+    @Test fun resolverPublishesChangesToServicesLocation() = runBlocking {
+        val s = MemSettings()
+        var answer: Place? = oakland
+        val r = LocationResolver(s, scope, demo = false, AutoLocation(s, { answer }, clock = { 0L }))
+        assertEquals(HomeLocation.LIVERMORE, r.location.value) // before any lookup
+        r.start()
+        assertEquals("Oakland", withTimeout(3000) { r.location.first { it.source == Source.AUTO } }.name)
+        s.putString("weather.lat", "37.70"); s.putString("weather.lon", "-121.90"); s.putString("weather.place", "Pleasanton")
+        assertEquals("Pleasanton", withTimeout(3000) { r.location.first { it.source == Source.MANUAL } }.name)
+        s.remove("weather.lat")
+        assertEquals("Oakland", withTimeout(3000) { r.location.first { it.source == Source.AUTO } }.name)
     }
 
     @Test fun cachesForADayAndKeepsTheCacheOnFailure() = runBlocking {
@@ -71,7 +91,7 @@ class LocationTest {
         answer = null // offline / both services down
         assertEquals(sf, auto.refresh())
         assertEquals(2, calls)
-        assertEquals(sf, Locations.resolve(s, demo = false))
+        assertEquals(sf, Locations.resolve(s, demo = false).toPlace())
         t += 5 * 60_000L
         answer = oakland
         assertEquals(sf, auto.refresh(force = true)) // a forced lookup is still rate-limited (10 min)
@@ -85,7 +105,7 @@ class LocationTest {
         val s = MemSettings()
         val auto = AutoLocation(s, { null }, clock = { 0L })
         assertNull(auto.refresh())
-        assertEquals(Locations.LIVERMORE, Locations.resolve(s, demo = false))
+        assertEquals(HomeLocation.LIVERMORE, Locations.resolve(s, demo = false))
         assertNull(s.map[Locations.AUTO_AT]) // nothing answered: the next refresh tries again
     }
 
@@ -148,8 +168,9 @@ class LocationTest {
         var t = 0L
         val auto = AutoLocation(s, { answer }, clock = { t })
         val net = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-        val p = OpenMeteoWeatherProvider(s, scope, Fake(null), demo = false, auto = auto, networkChanges = net,
-            client = Net.http, base = server.url("/v1/forecast"), retryMs = 60_000)
+        val loc = LocationResolver(s, scope, demo = false, auto = auto, networkChanges = net)
+        loc.start()
+        val p = OpenMeteoWeatherProvider(s, scope, Fake(null), loc.location, client = Net.http, base = server.url("/v1/forecast"), retryMs = 60_000)
         p.start()
         assertEquals("37.682", lats.poll(5, TimeUnit.SECONDS)) // lookup failed, no cache: Livermore
         kotlinx.coroutines.delay(200)

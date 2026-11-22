@@ -1,5 +1,6 @@
 package com.echobedside.feature.home.glance
 
+import com.echobedside.core.model.HomeLocation
 import com.echobedside.core.model.HourForecast
 import com.echobedside.core.model.SettingsStore
 import com.echobedside.core.model.Weather
@@ -13,12 +14,9 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
@@ -125,7 +123,7 @@ object OpenMeteo {
             condition = condition(cur.optInt("weather_code")),
             isNight = cur.optInt("is_day", 1) == 0,
             unit = if (fahrenheit) "°F" else "°C",
-            hourly = hours.filter { it.timeMillis > now - 3_600_000L }.take(24),
+            hourly = hours.filter { it.timeMillis > now - 3_600_000L }.take(48), // ≥ 36 h (the contract): 3 forecast days leave ≥ 49 h at any hour
             sunriseMillis = nextOf(d.optJSONArray("sunrise"), now),
             sunsetMillis = nextOf(d.optJSONArray("sunset"), now),
             tomorrowSummary = tomorrowSummary(hours, d, now, zone),
@@ -161,65 +159,49 @@ object OpenMeteo {
 }
 
 /**
- * [WeatherProvider] on Open-Meteo, for [Locations.resolve]: the manual location, else the
- * auto-detected one ([AutoLocation], refreshed at most daily and after a network change), else
- * Livermore. So it works out of the box with no settings. In demo mode with no manual location it
- * mirrors [fallback] (the design's sample weather). Refreshes every 30 min; after a failure it
- * retries in 5 min and keeps the last good forecast.
+ * [WeatherProvider] on Open-Meteo for `EchoServices.location` ([LocationResolver]: manual > auto >
+ * Livermore), so it works out of the box with no settings. While the location is the DEMO one
+ * (demo data, nothing manual) it mirrors [fallback], the design's sample weather. Refreshes every
+ * 30 min and when the location or `weather.unit` changes; after a failure it retries in 5 min and
+ * keeps the last good forecast.
  */
 class OpenMeteoWeatherProvider(
     private val settings: SettingsStore,
     private val scope: CoroutineScope,
     private val fallback: WeatherProvider,
-    private val demo: Boolean,
-    private val auto: AutoLocation?,
-    private val networkChanges: Flow<Unit> = emptyFlow(),
+    private val location: StateFlow<HomeLocation>,
     private val client: OkHttpClient = Net.http,
     private val base: HttpUrl = OpenMeteo.BASE,
     private val periodMs: Long = 30 * 60_000L,
     private val retryMs: Long = 5 * 60_000L,
 ) : WeatherProvider {
-    private val _weather = MutableStateFlow(if (Locations.resolve(settings, demo) == null) fallback.weather.value else null)
+    private val _weather = MutableStateFlow(if (location.value.source == HomeLocation.Source.DEMO) fallback.weather.value else null)
     override val weather: StateFlow<Weather?> = _weather.asStateFlow()
     private var loop: Job? = null
     private var mirror: Job? = null
-    /** What the running loop is for: (place, °F); null while mirroring the fallback. */
-    private var active: Pair<Place, Boolean>? = null
+    /** What's running: (location, °F). */
+    private var active: Pair<HomeLocation, Boolean>? = null
 
-    @OptIn(kotlinx.coroutines.FlowPreview::class)
     fun start() {
-        restart(force = true)
-        // Debounced: `home.set` or a settings screen changes lat, lon and place together.
-        // Bookkeeping keys (weather.auto.at / .pending) change nothing on their own.
-        scope.launch {
-            settings.changes.filter { it.startsWith("weather.") && it != Locations.AUTO_AT && it != Locations.AUTO_PENDING }
-                .debounce(400).collect { restart(force = false) }
-        }
-        // A new network may mean a new place (moved, travelling): look again (still rate-limited).
-        if (auto != null) scope.launch {
-            networkChanges.collect { if (!demo && WeatherSettings.place(settings) == null) auto.refresh(force = true) }
-        }
+        scope.launch { location.collect { restart(force = false) } }
+        scope.launch { settings.changes.filter { it == WeatherSettings.UNIT }.collect { restart(force = false) } }
     }
 
     override fun refresh() = restart(force = true)
 
     private fun restart(force: Boolean) {
-        val place = Locations.resolve(settings, demo)
-        val key = place?.let { it to WeatherSettings.fahrenheit(settings) }
-        if (!force && key == active && (loop != null || mirror != null)) return
+        val loc = location.value
+        val key = loc to WeatherSettings.fahrenheit(settings)
+        if (!force && key == active) return
         loop?.cancel(); mirror?.cancel(); loop = null; mirror = null
         active = key
-        if (place == null) {
+        if (loc.source == HomeLocation.Source.DEMO) {
             mirror = scope.launch { fallback.weather.collect { _weather.value = it } }
             return
         }
         loop = scope.launch {
             while (true) {
-                // At most one IP lookup a day (a no-op while fresh). A new place restarts us via settings.
-                if (auto != null && WeatherSettings.place(settings) == null) auto.refresh()
-                val p = Locations.resolve(settings, demo) ?: place
-                active = p to WeatherSettings.fahrenheit(settings) // so the settings echo of a new auto place doesn't fetch twice
-                val ok = fetch(p)
+                val ok = fetch(loc.toPlace())
                 delay(if (ok) periodMs else retryMs)
             }
         }

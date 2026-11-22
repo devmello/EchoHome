@@ -4,6 +4,7 @@ import com.echobedside.core.model.Weather
 import com.echobedside.core.model.WeatherCondition
 import com.echobedside.core.model.WeatherProvider
 import com.echobedside.feature.home.glance.IcsCalendarProvider
+import com.echobedside.feature.home.glance.LocationResolver
 import com.echobedside.feature.home.glance.Net
 import com.echobedside.feature.home.glance.OpenMeteo
 import com.echobedside.feature.home.glance.OpenMeteoWeatherProvider
@@ -74,7 +75,7 @@ class GlanceTest {
         assertFalse(w.isNight)
         assertEquals("°F", w.unit)
         assertEquals("Santa Cruz", w.location)
-        assertEquals(24, w.hourly.size) // from the current hour, 24 steps
+        assertEquals(40, w.hourly.size) // from the current hour to the end of the 48 h sample (up to 48 kept: ≥ 36 h)
         assertEquals(sec(today, 8) * 1000, w.hourly.first().timeMillis) // starts at the current hour
         assertEquals(sec(today, 17) * 1000, w.sunsetMillis)
         assertEquals(sec(today.plusDays(1), 7) * 1000, w.sunriseMillis) // today's sunrise is past: the next one
@@ -109,7 +110,8 @@ class GlanceTest {
         }
         val settings = MemSettings("weather.unit" to "F")
         val sample = Weather(70, 72, 50, WeatherCondition.CLEAR, false, location = "Sample")
-        val p = OpenMeteoWeatherProvider(settings, scope, Fake(sample), demo = true, auto = null, client = Net.http, base = server.url("/v1/forecast"))
+        val loc = LocationResolver(settings, scope, demo = true, auto = null).also { it.start() }
+        val p = OpenMeteoWeatherProvider(settings, scope, Fake(sample), loc.location, client = Net.http, base = server.url("/v1/forecast"))
         p.start()
         withTimeout(2000) { p.weather.first { it?.location == "Sample" } }
         assertEquals(0, server.requestCount)

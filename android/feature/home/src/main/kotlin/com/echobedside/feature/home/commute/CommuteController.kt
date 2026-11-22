@@ -3,7 +3,7 @@ package com.echobedside.feature.home.commute
 import com.echobedside.core.model.CalendarProvider
 import com.echobedside.core.model.SettingsStore
 import com.echobedside.core.model.WeatherProvider
-import com.echobedside.feature.home.glance.Locations
+import com.echobedside.core.model.HomeLocation
 import com.echobedside.feature.home.glance.WeatherSettings
 import java.io.IOException
 import java.time.ZoneId
@@ -13,6 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import org.json.JSONException
 
@@ -49,6 +50,7 @@ class CommuteController(
     private val weather: WeatherProvider,
     private val scope: CoroutineScope,
     private val demo: Boolean,
+    private val location: StateFlow<HomeLocation>,
     private val geocoder: Geocoder = Geocoder(settings),
     private val router: Router = Router(),
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
@@ -71,18 +73,22 @@ class CommuteController(
             }
         }
         if (!demo) jobs += scope.launch { calendar.events.collect { recompute() } }
+        jobs += scope.launch { location.drop(1).collect { recompute() } }
     }
 
     fun stop() { jobs.forEach { it.cancel() }; jobs.clear(); fetching?.cancel(); fetching = null }
 
     private fun int(key: String, def: Int) = WeatherSettings.number(settings, key)?.toInt() ?: def
 
-    /** `commute.lat`/`lon`, else the weather location (manual > IP-detected > Livermore); null in demo with nothing manual. */
+    /**
+     * `commute.lat`/`lon`, else `services.location` (manual > IP-detected > Livermore). Null while that
+     * is the DEMO location (demo data, nothing manual): the screen shows the design's sample.
+     */
     internal fun home(): LatLon? {
         val lat = WeatherSettings.number(settings, CommuteSettings.LAT)
         val lon = WeatherSettings.number(settings, CommuteSettings.LON)
         if (lat != null && lon != null) return LatLon(lat, lon)
-        return Locations.resolve(settings, demo)?.let { LatLon(it.lat, it.lon) }
+        return location.value.takeIf { it.source != HomeLocation.Source.DEMO }?.let { LatLon(it.lat, it.lon) }
     }
 
     fun recompute() {
@@ -95,7 +101,7 @@ class CommuteController(
                 _state.value = CommuteState.Empty("No trips coming up", "Calendar events with a place show here a few hours ahead")
                 return
             }
-        val key = trip.destination.lowercase()
+        val key = "${home.lat},${home.lon}>" + trip.destination.lowercase() // a new home means new routes
         val cached = cache[key]
         if (cached == null || now - cached.first > routeTtlMs) fetch(key, trip.destination, home)
         val routes = cached?.second
