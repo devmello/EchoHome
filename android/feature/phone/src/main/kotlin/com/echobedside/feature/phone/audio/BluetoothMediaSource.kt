@@ -31,6 +31,9 @@ import kotlin.math.roundToInt
  * Limits of this stack: cover art is off ("Cover Artwork Enabled: False" in dumpsys, a ROM
  * overlay), AVRCP 1.6 has no seek-to-position, and volume is the Echo's own music stream (the
  * iPhone mirrors it with AVRCP absolute volume).
+ *
+ * While the assistant listens or speaks, [onAssistant] pauses the phone and resumes it after
+ * ([AssistantPause] explains why it's a pause and not a duck).
  */
 class BluetoothMediaSource(
     private val context: Context,
@@ -50,6 +53,22 @@ class BluetoothMediaSource(
         set(v) { field = v; if (!v) clear() else refresh() }
 
     val connected: Boolean get() = controller != null
+
+    private val assistantPause = AssistantPause(
+        pause = { controller?.transportControls?.pause() },
+        play = { controller?.transportControls?.play() },
+        later = { ms, block -> val r = Runnable(block); handler.postDelayed(r, ms); { handler.removeCallbacks(r) } },
+        now = SystemClock::elapsedRealtime,
+    )
+
+    /** The assistant started (true) or ended (false) a turn: pause the phone's music meanwhile. */
+    fun onAssistant(on: Boolean) {
+        val playing = published?.playing == true
+        val was = assistantPause.holding
+        assistantPause.onAssistant(on, playing)
+        if (on || was) Log.i(TAG, "assistant ${if (on) "on" else "off"}: phone playing=$playing" +
+            if (!was && assistantPause.holding) ", paused it" else if (was && !on) ", resume pending" else "")
+    }
 
     fun start() {
         if (browser != null) return
@@ -75,6 +94,7 @@ class BluetoothMediaSource(
     }
 
     private fun clear() {
+        assistantPause.reset()
         if (published != null) { published = null; hub().clear(AvrcpMapping.SOURCE_ID); onPlayingChanged(false) }
     }
 
@@ -96,7 +116,7 @@ class BluetoothMediaSource(
         val wasPlaying = published?.playing == true
         published = state
         hub().publish(AvrcpMapping.SOURCE_ID, state, controls)
-        if (wasPlaying != state.playing) onPlayingChanged(state.playing)
+        if (wasPlaying != state.playing) { assistantPause.onPlayingChanged(state.playing); onPlayingChanged(state.playing) }
     }
 
     private fun volume(): Float? {
@@ -107,10 +127,11 @@ class BluetoothMediaSource(
 
     private val controls = object : MediaControls {
         private val t get() = controller?.transportControls
-        override fun play() { t?.play() }
-        override fun pause() { t?.pause() }
-        override fun next() { t?.skipToNext() }
-        override fun previous() { t?.skipToPrevious() }
+        // A command from Now Playing (or the assistant's media tools) cancels a pending resume.
+        override fun play() { assistantPause.onUserCommand(); t?.play() }
+        override fun pause() { assistantPause.onUserCommand(); t?.pause() }
+        override fun next() { assistantPause.onUserCommand(); t?.skipToNext() }
+        override fun previous() { assistantPause.onUserCommand(); t?.skipToPrevious() }
         override fun seekTo(positionMs: Long) { /* AVRCP 1.6 has no absolute seek */ }
         override fun setVolume(volume: Float) {
             val a = audio ?: return
@@ -123,6 +144,7 @@ class BluetoothMediaSource(
         override val canSkip: Boolean get() = true
         override val canPause: Boolean get() = true
         override fun disconnect() {
+            assistantPause.onUserCommand()
             if (!disconnectAudio()) t?.pause()
         }
     }

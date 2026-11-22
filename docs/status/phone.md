@@ -88,11 +88,42 @@ Other options I looked at for when solicitation is missing:
   - When the phone comes back in range the same advertising applies, plus an Echo-side ANCS attempt when its ACL or A2DP connects.
   - Audio is **not** auto-connected. Connecting A2DP would pull all the iPhone's audio to the Echo every time you walk in. You pick the Echo in the iPhone's audio picker instead.
 - **Debug demo** (debug builds only; sample data; "Maya's iPhone" is made up): `--es screen phone-pairing --es phone_demo banner|mail|missed|call|media|connected|pairing|pairing-privileged|paired`. It runs the real `AncsSession` and `AncsPresenter` against a `FakeIPhone` exchanging real ANCS bytes, fragmented at MTU 23.
-- **Tests:** 48 JVM tests, all passing (`./gradlew :feature:phone:testDebugUnitTest`):
+- **Tests:** 58 JVM tests, all passing (`./gradlew :feature:phone:testDebugUnitTest`):
   - `AncsCodecTest` (11): NS parsing, command bytes, reassembly at MTU 23/27/64/185 and byte by byte, split UTF-8, mismatched uid.
   - `AncsSessionTest` (12): app-name caching, an ack after the response, PreExisting, a pre-existing call, Modified, Removed while queued, errors, timeouts, actions, truncation, reset.
   - `AncsPresenterTest` (19): banner fields, catalog fallback, dates, silent, hidden apps, Echo dismiss → Clear and never Delete, timeouts and other ids ignored, calls with Decline only, missed calls, clearAll.
   - `AvrcpMappingTest` (6).
+  - `AssistantPauseTest` (10): pause/resume, not playing, phase gaps, repeated starts, a command during and after the hold, a restart on the phone, a stale playing state, a long hold, disconnect.
+
+## Assistant audio focus (G's request, Nov 22)
+
+The question: while the phone streams to the Echo, does Android 11 duck the A2DP sink when the assistant holds `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK`? **No.** Checked against this ROM's `Bluetooth.apk` (pulled from `/system/app/Bluetooth`, dexdump + aapt2) and the android11-release framework source:
+
+- **The Bluetooth app** (`A2dpSinkStreamHandler`):
+  - It holds `AUDIOFOCUS_GAIN` (USAGE_MEDIA) while the phone streams. `a2dp_sink_automatically_request_audio_focus` is `true` on this ROM, with no overlays.
+  - It handles its own focus changes:
+    - `LOSS_TRANSIENT_CAN_DUCK`: gain to `a2dp_sink_duck_percent` = 25 %.
+    - `LOSS_TRANSIENT`: gain 0, then an AVRCP pause after 400 ms (`DELAYED_PAUSE`).
+    - `GAIN`: gain back to 1.0, and AVRCP play if it paused.
+    - `LOSS`: abandons focus and pauses.
+  - **Non-duckable transient losses are therefore already covered.**
+- **The framework** (`FocusRequester.frameworkHandleFocusLoss`):
+  - On a MAY_DUCK request, a loser that targets SDK > 25 and doesn't set `PAUSES_ON_DUCKABLE_LOSS` is ducked by `PlaybackActivityMonitor.duckPlayers`, and is **not told**. That's the Bluetooth app: targetSdk 30, no flag.
+  - `duckPlayers` only ducks players registered with AudioService. The sink plays through a native `android::AudioTrack` (`btif_avrcp_audio_track.cc`), and in Android 11 `libaudioclient` native tracks don't register (no PlayerBase). So nothing is ducked, and the Bluetooth app's own 25 % duck never runs.
+- **What's missing, and what I added** (`audio/AssistantPause.kt`, wired in `BluetoothMediaSource.onAssistant`):
+  - The assistant's turn pauses the phone over AVRCP, and it resumes 1.2 s after the turn ends.
+  - The trigger is the assistant's island activity (`ActivityKind.ASSISTANT`), observed by `PhoneController`. It spans listening, working and speaking, the same span as G's focus request.
+  - It resumes only what it paused. It doesn't resume:
+    - after a Now Playing or assistant media command during the hold;
+    - if the user restarted playback on the phone;
+    - after a hold longer than 10 min.
+  - **Why a pause and not a duck:**
+    - The sink's gain lives in the Bluetooth process, and no API reaches it.
+    - Lowering STREAM_MUSIC would also lower the assistant's voice (USAGE_ASSISTANT plays on STREAM_MUSIC) and move the iPhone's slider (AVRCP absolute volume).
+    - Design demo B says "I paused music here" anyway.
+  - On the Echo (no phone paired): the island hook fires for an assistant demo turn (`EchoPhone: assistant on: phone playing=false`, then `off`). Pausing a real stream still needs an iPhone (test script).
+  - Not covered: other apps' duckable focus requests (e.g. a notification sound) still don't duck A2DP. That's the same framework gap.
+  - If G would rather signal turns explicitly than through the island, a small core flow (e.g. `assistantActive: StateFlow<Boolean>`) would replace the island observation. Nothing else would change.
 
 ## Left
 

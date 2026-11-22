@@ -27,6 +27,8 @@ import com.echobedside.feature.phone.ble.LePeripheral
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -136,6 +138,12 @@ class PhoneController(private val context: Context, private val services: EchoSe
         media.enabled = audioEnabled
         services.scope.launch { settings.changes.collect { applySetting(it) } }
         services.scope.launch { services.notifications.userDismissals.collect { presenter?.onUserDismissed(it) } }
+        // The assistant's island activity spans its turn (listening, working, speaking), the same
+        // span as its AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK. The framework doesn't duck A2DP sink audio.
+        services.scope.launch {
+            services.island.activities.map { l -> l.any { it.kind == ActivityKind.ASSISTANT } }
+                .distinctUntilChanged().collect { media.onAssistant(it) }
+        }
         val g = peripheral.probeGate()
         Log.i(TAG, "LE gate: $g")
         _state.update { it.copy(advertiseOk = g.started) }
