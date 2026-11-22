@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>StandBy clock edit mode</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Nunito:wght@700;800;900&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 960px; height: 480px; position: relative; overflow: hidden; background: #000; color: #fff; font-family: -apple-system, 'SF Pro Display', 'Inter', BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased;">
+
+  <!-- The face, zoomed out as in Apple's long-press edit mode (content layer, no glass) -->
+  <div style="position: absolute; left: 96px; top: 40px; width: 768px; height: 384px; border-radius: 34px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,0.14), 0 20px 60px rgba(0,0,0,0.6);">
+    <div style="width: 960px; height: 480px; transform: scale(0.8); transform-origin: 0 0;">
+      <sc-if value="{{is.digital}}" hint-placeholder-val="{{ true }}">
+        <dc-import name="Digital" color="{{colors.digital}}" night="{{night}}" live="{{ true }}" complications="{{ true }}" hint-size="960px,480px"></dc-import>
+      </sc-if>
+      <sc-if value="{{is.analog}}" hint-placeholder-val="{{ false }}">
+        <dc-import name="Analog" color="{{colors.analog}}" night="{{night}}" live="{{ true }}" complications="{{ true }}" hint-size="960px,480px"></dc-import>
+      </sc-if>
+      <sc-if value="{{is.world}}" hint-placeholder-val="{{ false }}">
+        <dc-import name="World" night="{{night}}" live="{{ true }}" hint-size="960px,480px"></dc-import>
+      </sc-if>
+      <sc-if value="{{is.solar}}" hint-placeholder-val="{{ false }}">
+        <dc-import name="Solar" color="{{colors.solar}}" night="{{night}}" live="{{ true }}" hint-size="960px,480px"></dc-import>
+      </sc-if>
+      <sc-if value="{{is.float}}" hint-placeholder-val="{{ false }}">
+        <dc-import name="Float" color="{{colors.float}}" night="{{night}}" live="{{ true }}" hint-size="960px,480px"></dc-import>
+      </sc-if>
+      <sc-if value="{{is.glass}}" hint-placeholder-val="{{ false }}">
+        <dc-import name="Glass" color="{{colors.glass}}" night="{{night}}" live="{{ true }}" glass="{{ 0.45 }}" wallpaper="Blue" hint-size="960px,480px"></dc-import>
+      </sc-if>
+    </div>
+  </div>
+
+  <!-- Face name -->
+  <div style="position: absolute; left: 96px; width: 768px; top: 436px; text-align: center; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: rgba(255,255,255,0.72);">{{faceLabel}}</div>
+
+  <!-- Night toggle: Liquid Glass pill (control layer) -->
+  <button type="button" aria-pressed="{{nightPressed}}" onClick="{{toggleNight}}" style="position: absolute; left: 22px; top: 20px; height: 44px; padding: 0 16px 0 13px; border-radius: 22px; display: flex; align-items: center; gap: 7px; cursor: pointer; font-family: inherit; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: {{nightFg}}; background: {{nightBg}}; border: 0.5px solid rgba(255,255,255,0.22); backdrop-filter: blur(14px) saturate(1.8) brightness(1.15); -webkit-backdrop-filter: blur(14px) saturate(1.8) brightness(1.15); box-shadow: inset 0 1px 1px rgba(255,255,255,0.42), inset 0 -1px 1px rgba(255,255,255,0.08), 0 8px 24px rgba(0,0,0,0.5); overflow: hidden;">
+    <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 22px; background: linear-gradient(155deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.04) 38%, rgba(255,255,255,0) 62%, rgba(255,255,255,0.08) 100%); pointer-events: none;"></span>
+    <svg style="position: relative;" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+    <span style="position: relative;">Night</span>
+  </button>
+
+  <!-- Done: the one tinted glass element (primary action) -->
+  <a href="{{faceFile}}" style="position: absolute; right: 22px; top: 20px; height: 44px; padding: 0 20px; border-radius: 22px; display: flex; align-items: center; text-decoration: none; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: #fff; background: rgba(10,132,255,0.62); border: 0.5px solid rgba(255,255,255,0.28); backdrop-filter: blur(14px) saturate(1.8); -webkit-backdrop-filter: blur(14px) saturate(1.8); box-shadow: inset 0 1px 1px rgba(255,255,255,0.5), inset 0 -1px 1px rgba(0,0,0,0.12), 0 8px 24px rgba(0,0,0,0.5); overflow: hidden; position: absolute;">
+    <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 22px; background: linear-gradient(155deg, rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.05) 40%, rgba(255,255,255,0) 65%); pointer-events: none;"></span>
+    <span style="position: relative;">Done</span>
+  </a>
+
+  <!-- Face switcher: vertical glass page indicator (swipe up/down on device) -->
+  <div style="position: absolute; right: 26px; top: 160px; width: 44px; padding: 8px 0; border-radius: 22px; display: flex; flex-direction: column; align-items: center; background: rgba(255,255,255,0.08); border: 0.5px solid rgba(255,255,255,0.2); backdrop-filter: blur(14px) saturate(1.8) brightness(1.15); -webkit-backdrop-filter: blur(14px) saturate(1.8) brightness(1.15); box-shadow: inset 0 1px 1px rgba(255,255,255,0.4), inset 0 -1px 1px rgba(255,255,255,0.08), 0 8px 24px rgba(0,0,0,0.5); overflow: hidden;">
+    <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 22px; background: linear-gradient(160deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.03) 40%, rgba(255,255,255,0) 70%); pointer-events: none;"></span>
+    <sc-for list="{{faces}}" as="f" hint-placeholder-count="6">
+      <button type="button" aria-label="{{f.label}} face" aria-pressed="{{f.pressed}}" onClick="{{f.pick}}" style="position: relative; width: 44px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+        <span style="display: block; width: 8px; height: {{f.dotH}}px; border-radius: 4px; background: {{f.dotColor}};"></span>
+      </button>
+    </sc-for>
+  </div>
+
+  <!-- Colour: glass button that pops open into a swatch capsule (one glass surface, no glass on glass) -->
+  <sc-if value="{{colorable}}" hint-placeholder-val="{{ true }}">
+    <div style="position: absolute; right: 22px; bottom: 22px; height: 52px; border-radius: 26px; display: flex; align-items: center; gap: 2px; padding: 0 4px 0 {{palPad}}px; background: rgba(255,255,255,0.09); border: 0.5px solid rgba(255,255,255,0.22); backdrop-filter: blur(16px) saturate(1.8) brightness(1.15); -webkit-backdrop-filter: blur(16px) saturate(1.8) brightness(1.15); box-shadow: inset 0 1px 1px rgba(255,255,255,0.42), inset 0 -1px 1px rgba(255,255,255,0.08), 0 10px 30px rgba(0,0,0,0.55); overflow: hidden;">
+      <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 26px; background: linear-gradient(160deg, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0.04) 36%, rgba(255,255,255,0) 64%, rgba(255,255,255,0.07) 100%); pointer-events: none;"></span>
+      <sc-if value="{{open}}" hint-placeholder-val="{{ false }}">
+        <sc-for list="{{swatches}}" as="sw" hint-placeholder-count="8">
+          <button type="button" aria-label="Color {{sw.hex}}" aria-pressed="{{sw.pressed}}" onClick="{{sw.pick}}" style="position: relative; width: 40px; height: 44px; padding: 0; border: 0; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+            <span style="display: block; width: 26px; height: 26px; border-radius: 50%; background: {{sw.hex}}; box-shadow: {{sw.ring}};"></span>
+          </button>
+        </sc-for>
+      </sc-if>
+      <button type="button" aria-label="Choose color" aria-expanded="{{openStr}}" onClick="{{togglePalette}}" style="position: relative; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 22px; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center;">
+        <span style="display: block; width: 28px; height: 28px; border-radius: 50%; background: {{currentHex}}; box-shadow: 0 0 0 2px rgba(0,0,0,0.6), 0 0 0 3.5px rgba(255,255,255,0.85);"></span>
+      </button>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":960,"height":480}}'>
+class Component extends DCLogic {
+  faceDefs() {
+    return [
+      { id: 'digital', label: 'Digital', file: 'Digital.dc.html', colors: ['#FFFFFF', '#FF453A', '#FF9F0A', '#FFD60A', '#30D158', '#64D2FF', '#0A84FF', '#BF5AF2'] },
+      { id: 'analog', label: 'Analog', file: 'Analog.dc.html', colors: ['#FF9F0A', '#FF453A', '#FFD60A', '#30D158', '#64D2FF', '#0A84FF', '#BF5AF2', '#FFFFFF'] },
+      { id: 'world', label: 'World', file: 'World.dc.html', colors: [] },
+      { id: 'solar', label: 'Solar', file: 'Solar.dc.html', colors: ['#FF9F0A', '#FF453A', '#FF375F', '#BF5AF2', '#0A84FF', '#64D2FF', '#30D158'] },
+      { id: 'float', label: 'Float', file: 'Float.dc.html', colors: ['#FF375F', '#FF9F0A', '#FFD60A', '#30D158', '#64D2FF', '#0A84FF', '#BF5AF2', '#FFFFFF'] },
+      { id: 'glass', label: 'Liquid Glass', file: 'Glass.dc.html', colors: ['#FFFFFF', '#FF9F0A', '#FF375F', '#BF5AF2', '#64D2FF', '#30D158'] }
+    ];
+  }
+  renderVals() {
+    const st = this.state || {};
+    const defs = this.faceDefs();
+    const idx = st.face ?? 0;
+    const face = defs[idx];
+    const night = !!st.night;
+    const open = !!st.open;
+    const colors = {};
+    defs.forEach(f => { colors[f.id] = (st.colors && st.colors[f.id]) || f.colors[0] || '#FFFFFF'; });
+    const is = {};
+    defs.forEach((f, i) => { is[f.id] = i === idx; });
+    const current = colors[face.id];
+    return {
+      is, colors, night,
+      nightPressed: night ? 'true' : 'false',
+      nightBg: night ? 'rgba(190,24,14,0.42)' : 'rgba(255,255,255,0.09)',
+      nightFg: night ? '#FFD9D4' : '#FFFFFF',
+      toggleNight: () => this.setState({ night: !night }),
+      faceLabel: face.label,
+      faceFile: face.file,
+      faces: defs.map((f, i) => ({
+        label: f.label,
+        pressed: i === idx ? 'true' : 'false',
+        dotH: i === idx ? 22 : 8,
+        dotColor: i === idx ? '#FFFFFF' : 'rgba(255,255,255,0.42)',
+        pick: () => this.setState({ face: i, open: false })
+      })),
+      colorable: face.colors.length > 0,
+      open,
+      openStr: open ? 'true' : 'false',
+      palPad: open ? 8 : 4,
+      togglePalette: () => this.setState({ open: !open }),
+      currentHex: current,
+      swatches: face.colors.map(hex => ({
+        hex,
+        pressed: hex === current ? 'true' : 'false',
+        ring: hex === current ? '0 0 0 2px rgba(0,0,0,0.7), 0 0 0 4px #FFFFFF' : 'inset 0 0 0 0.5px rgba(255,255,255,0.3)',
+        pick: () => this.setState({ colors: Object.assign({}, st.colors || {}, { [face.id]: hex }) })
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Alarm ringing</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 960px; height: 480px; position: relative; overflow: hidden; background: #000; color: #fff; font-family: -apple-system, 'SF Pro Display', 'Inter', BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased;">
+
+  <!-- Content layer: sunrise light that blooms from the bottom while the alarm rings -->
+  <div aria-hidden="true" style="position: absolute; left: -240px; right: -240px; bottom: -520px; height: 900px; border-radius: 50%; background: radial-gradient(ellipse at 50% 50%, rgba(255,196,120,0.95) 0%, rgba(255,130,40,0.78) 22%, rgba(210,62,20,0.45) 42%, rgba(90,20,30,0.18) 60%, rgba(0,0,0,0) 72%); opacity: {{sunOpacity}}; transform: scale({{sunScale}}); transition: transform 1s ease-in-out, opacity 1.2s ease;"></div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: radial-gradient(ellipse 70% 55% at 50% 0%, rgba(40,60,120,0.35), rgba(0,0,0,0) 70%); opacity: {{skyOpacity}}; transition: opacity 1.2s ease;"></div>
+
+  <!-- ============ RINGING ============ -->
+  <sc-if value="{{ringing}}" hint-placeholder-val="{{ true }}">
+    <div style="position: absolute; left: 0; right: 0; top: 34px; display: flex; flex-direction: column; align-items: center; gap: 4px;">
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; color: rgba(255,255,255,0.86);">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/>
+        </svg>
+        <span>Wake Up</span>
+      </div>
+      <div style="font-size: 200px; font-weight: 600; line-height: 0.86; letter-spacing: -0.045em; font-variant-numeric: tabular-nums; text-shadow: 0 6px 40px rgba(120,40,0,0.35); margin-top: 6px;">{{clock}}</div>
+      <div style="font-size: 20px; font-weight: 600; letter-spacing: -0.01em; color: rgba(255,255,255,0.78); margin-top: 6px;">{{dateLine}}</div>
+    </div>
+
+    <div style="position: absolute; left: 28px; right: 28px; bottom: 26px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
+      <!-- Snooze: the primary action, so it is the one tinted glass button (left, as in iOS 26) -->
+      <button type="button" onClick="{{snooze}}" style="position: relative; height: 112px; border-radius: 56px; border: 0.5px solid rgba(255,255,255,0.35); cursor: pointer; font-family: inherit; color: #fff; display: flex; align-items: center; justify-content: center; gap: 14px; background: rgba(255,149,0,0.58); backdrop-filter: blur(18px) saturate(1.9) brightness(1.1); -webkit-backdrop-filter: blur(18px) saturate(1.9) brightness(1.1); box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.6), inset 0 -1px 1px rgba(120,40,0,0.25), inset 0 0 24px rgba(255,220,160,0.18), 0 14px 40px rgba(120,40,0,0.45); overflow: hidden;">
+        <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 56px; background: linear-gradient(170deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.06) 36%, rgba(255,255,255,0) 60%, rgba(255,255,255,0.1) 100%); pointer-events: none;"></span>
+        <svg style="position: relative;" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 5h6l-6 7h6"/><path d="M13 10h4l-4 5h4"/><path d="M18.5 3h3l-3 3.5h3"/>
+        </svg>
+        <span style="position: relative; font-size: 34px; font-weight: 700; letter-spacing: -0.02em;">Snooze</span>
+      </button>
+      <!-- Stop: regular glass -->
+      <button type="button" onClick="{{stop}}" style="position: relative; height: 112px; border-radius: 56px; border: 0.5px solid rgba(255,255,255,0.24); cursor: pointer; font-family: inherit; color: #fff; display: flex; align-items: center; justify-content: center; gap: 12px; background: rgba(255,255,255,0.1); backdrop-filter: blur(18px) saturate(1.8) brightness(1.15); -webkit-backdrop-filter: blur(18px) saturate(1.8) brightness(1.15); box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.45), inset 0 -1px 1px rgba(255,255,255,0.08), 0 14px 40px rgba(0,0,0,0.45); overflow: hidden;">
+        <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 56px; background: linear-gradient(170deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.04) 36%, rgba(255,255,255,0) 60%, rgba(255,255,255,0.08) 100%); pointer-events: none;"></span>
+        <svg style="position: relative;" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        <span style="position: relative; font-size: 34px; font-weight: 700; letter-spacing: -0.02em;">Stop</span>
+      </button>
+    </div>
+  </sc-if>
+
+  <!-- ============ SNOOZED ============ -->
+  <sc-if value="{{snoozed}}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; left: 0; right: 0; top: 48px; display: flex; flex-direction: column; align-items: center;">
+      <div style="font-size: 19px; font-weight: 600; letter-spacing: -0.01em; color: rgba(255,255,255,0.72);">Snoozed · rings again at {{snoozeUntil}}</div>
+      <div style="font-size: 196px; font-weight: 600; line-height: 0.86; letter-spacing: -0.045em; font-variant-numeric: tabular-nums; color: #FF9F0A; margin-top: 18px;">{{countdown}}</div>
+      <!-- progress ring flattened to a track -->
+      <div style="width: 360px; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.14); margin-top: 26px; overflow: hidden;">
+        <div style="height: 6px; border-radius: 3px; background: #FF9F0A; width: {{snoozePct}}%; transition: width 1s linear;"></div>
+      </div>
+    </div>
+    <div style="position: absolute; left: 0; right: 0; bottom: 30px; display: flex; justify-content: center;">
+      <button type="button" onClick="{{stop}}" style="position: relative; width: 420px; height: 88px; border-radius: 44px; border: 0.5px solid rgba(255,255,255,0.24); cursor: pointer; font-family: inherit; color: #fff; display: flex; align-items: center; justify-content: center; gap: 12px; background: rgba(255,255,255,0.1); backdrop-filter: blur(18px) saturate(1.8) brightness(1.15); -webkit-backdrop-filter: blur(18px) saturate(1.8) brightness(1.15); box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.45), inset 0 -1px 1px rgba(255,255,255,0.08), 0 14px 40px rgba(0,0,0,0.45); overflow: hidden;">
+        <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 44px; background: linear-gradient(170deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0.04) 36%, rgba(255,255,255,0) 60%); pointer-events: none;"></span>
+        <span style="position: relative; font-size: 28px; font-weight: 700; letter-spacing: -0.02em;">Stop Alarm</span>
+      </button>
+    </div>
+  </sc-if>
+
+  <!-- ============ GOOD MORNING ============ -->
+  <sc-if value="{{morning}}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; left: 48px; top: 44px; display: flex; flex-direction: column; gap: 4px;">
+      <div style="font-size: 20px; font-weight: 600; letter-spacing: -0.01em; color: rgba(255,255,255,0.7);">{{dateLine}}</div>
+      <div style="font-size: 76px; font-weight: 700; line-height: 1; letter-spacing: -0.035em;">Good morning</div>
+    </div>
+    <div style="position: absolute; right: 48px; top: 50px; font-size: 64px; font-weight: 600; line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.92);">{{clock}}</div>
+
+    <!-- Content cards (content layer: plain fills, no glass) -->
+    <div style="position: absolute; left: 48px; right: 48px; top: 186px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px;">
+      <div style="height: 150px; border-radius: 28px; padding: 20px 22px; box-sizing: border-box; background: rgba(255,255,255,0.08); display: flex; flex-direction: column; justify-content: space-between;">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <span style="font-size: 15px; font-weight: 600; color: rgba(255,255,255,0.7);">Santa Cruz</span>
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#FFD60A" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>
+        </div>
+        <div>
+          <div style="font-size: 48px; font-weight: 600; line-height: 1; letter-spacing: -0.03em;">52°</div>
+          <div style="font-size: 15px; font-weight: 500; color: rgba(255,255,255,0.7); margin-top: 6px;">Sunny · H:63° L:46°</div>
+        </div>
+      </div>
+      <div style="height: 150px; border-radius: 28px; padding: 20px 22px; box-sizing: border-box; background: rgba(255,255,255,0.08); display: flex; flex-direction: column; justify-content: space-between;">
+        <span style="font-size: 15px; font-weight: 600; color: #FF9F0A;">Up next</span>
+        <div>
+          <div style="font-size: 24px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15;">Morning run</div>
+          <div style="font-size: 15px; font-weight: 500; color: rgba(255,255,255,0.7); margin-top: 6px;">8:15 AM · West Cliff Drive</div>
+        </div>
+      </div>
+      <div style="height: 150px; border-radius: 28px; padding: 20px 22px; box-sizing: border-box; background: rgba(255,255,255,0.08); display: flex; flex-direction: column; justify-content: space-between;">
+        <span style="font-size: 15px; font-weight: 600; color: rgba(255,255,255,0.7);">Morning scene</span>
+        <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 10px;">
+          <div>
+            <div style="font-size: 22px; font-weight: 700; letter-spacing: -0.02em;">Bedside lamp</div>
+            <div style="font-size: 15px; font-weight: 500; color: rgba(255,255,255,0.7); margin-top: 4px;">{{lampLine}}</div>
+          </div>
+          <!-- a control on a content card: a filled button, not glass (no glass on content) -->
+          <button type="button" aria-pressed="{{lampPressed}}" aria-label="Bedside lamp" onClick="{{toggleLamp}}" style="width: 56px; height: 56px; flex-shrink: 0; border-radius: 50%; border: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; background: {{lampBg}}; color: {{lampFg}}; transition: background 0.3s ease;">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-4 12.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26A7 7 0 0 0 12 2z"/><path d="M10 20h4v1a2 2 0 0 1-4 0z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div style="position: absolute; left: 48px; right: 48px; bottom: 30px; display: flex; justify-content: space-between; align-items: center;">
+      <button type="button" onClick="{{replay}}" style="position: relative; height: 48px; padding: 0 20px; border-radius: 24px; border: 0.5px solid rgba(255,255,255,0.22); cursor: pointer; font-family: inherit; font-size: 16px; font-weight: 600; color: #fff; background: rgba(255,255,255,0.09); backdrop-filter: blur(14px) saturate(1.8); -webkit-backdrop-filter: blur(14px) saturate(1.8); box-shadow: inset 0 1px 1px rgba(255,255,255,0.42), 0 8px 24px rgba(0,0,0,0.45); overflow: hidden;">
+        <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 24px; background: linear-gradient(165deg, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0) 50%); pointer-events: none;"></span>
+        <span style="position: relative;">Ring again</span>
+      </button>
+      <a href="Digital.dc.html" style="position: relative; height: 48px; padding: 0 24px; border-radius: 24px; display: flex; align-items: center; text-decoration: none; font-size: 16px; font-weight: 700; color: #fff; border: 0.5px solid rgba(255,255,255,0.28); background: rgba(10,132,255,0.62); backdrop-filter: blur(14px) saturate(1.8); -webkit-backdrop-filter: blur(14px) saturate(1.8); box-shadow: inset 0 1px 1px rgba(255,255,255,0.5), 0 8px 24px rgba(0,0,0,0.45); overflow: hidden;">
+        <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 24px; background: linear-gradient(165deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 50%); pointer-events: none;"></span>
+        <span style="position: relative;">Done</span>
+      </a>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"alarmTime":{"editor":"text","default":"7:00"},"snoozeMinutes":{"editor":"int","default":9,"min":1,"max":30},"$preview":{"width":960,"height":480}}'>
+class Component extends DCLogic {
+  componentDidMount() {
+    this.t0 = Date.now();
+    this.timer = setInterval(() => this.setState({ t: Date.now() }), 1000);
+  }
+  componentWillUnmount() { clearInterval(this.timer); }
+  fmt(totalMin) {
+    const m = ((Math.floor(totalMin) % 1440) + 1440) % 1440;
+    return ((Math.floor(m / 60) % 12) || 12) + ':' + String(m % 60).padStart(2, '0');
+  }
+  renderVals() {
+    const st = this.state || {};
+    const now = Date.now();
+    const t0 = this.t0 || now;
+    const parts = String(this.props.alarmTime ?? '7:00').split(':');
+    const alarmMin = (parseInt(parts[0], 10) || 7) * 60 + (parseInt(parts[1], 10) || 0);
+    const elapsedS = Math.max(0, (now - t0) / 1000);
+    const clockMin = alarmMin + elapsedS / 60;
+    const snoozeLen = (this.props.snoozeMinutes ?? 9) * 60;
+    let mode = st.mode || 'ring';
+    let remaining = 0;
+    if (mode === 'snooze') {
+      remaining = Math.max(0, Math.round(snoozeLen - (now - (st.snoozedAt || now)) / 1000));
+      if (remaining <= 0) mode = 'ring';
+    }
+    const pulse = Math.floor(elapsedS) % 2 === 0;
+    const d = new Date();
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const lampOn = st.lamp ?? true;
+    return {
+      ringing: mode === 'ring',
+      snoozed: mode === 'snooze',
+      morning: mode === 'morning',
+      clock: this.fmt(clockMin),
+      dateLine: days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate(),
+      sunOpacity: mode === 'ring' ? (pulse ? 1 : 0.82) : mode === 'snooze' ? 0.32 : 0.55,
+      sunScale: mode === 'ring' ? (pulse ? 1.06 : 0.97) : 0.9,
+      skyOpacity: mode === 'morning' ? 1 : 0.4,
+      countdown: Math.floor(remaining / 60) + ':' + String(remaining % 60).padStart(2, '0'),
+      snoozePct: snoozeLen ? (100 * (1 - remaining / snoozeLen)).toFixed(1) : 0,
+      snoozeUntil: this.fmt(clockMin + remaining / 60),
+      snooze: () => this.setState({ mode: 'snooze', snoozedAt: Date.now() }),
+      stop: () => this.setState({ mode: 'morning' }),
+      replay: () => { this.t0 = Date.now(); this.setState({ mode: 'ring' }); },
+      lampLine: lampOn ? 'Wake scene · 60%' : 'Off',
+      lampPressed: lampOn ? 'true' : 'false',
+      lampBg: lampOn ? '#FFB340' : 'rgba(255,255,255,0.14)',
+      lampFg: lampOn ? '#3A1A00' : '#FFFFFF',
+      toggleLamp: () => this.setState({ lamp: !lampOn })
+    };
+  }
+}
+</script>
+</body>
+</html>

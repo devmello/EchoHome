@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>StandBy Weather face</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 960px; height: 480px; position: relative; overflow: hidden; color: {{fg}}; background: {{sky}}; font-family: -apple-system, 'SF Pro Display', 'Inter', BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased;">
+
+  <!-- Sky detail: stars at night, drifting cloud banks -->
+  <sc-for list="{{stars}}" as="s" hint-placeholder-count="20">
+    <div aria-hidden="true" style="position: absolute; left: {{s.x}}px; top: {{s.y}}px; width: {{s.r}}px; height: {{s.r}}px; border-radius: 50%; background: #fff; opacity: {{s.o}};"></div>
+  </sc-for>
+  <div aria-hidden="true" style="position: absolute; left: 120px; top: 300px; width: 760px; height: 220px; border-radius: 50%; background: {{cloud}}; filter: blur(40px); transform: translateX({{drift}}px); transition: transform 1s linear;"></div>
+  <div aria-hidden="true" style="position: absolute; left: -200px; top: 360px; width: 700px; height: 220px; border-radius: 50%; background: {{cloud}}; filter: blur(46px); transform: translateX({{drift2}}px); transition: transform 1s linear;"></div>
+
+  <!-- Current conditions -->
+  <div style="position: absolute; left: 52px; top: 40px;">
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 22px; font-weight: 600; letter-spacing: -0.01em;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21 3 3 10.5l7.5 3L13.5 21z"/></svg>
+      <span>Santa Cruz</span>
+    </div>
+    <div style="font-size: 176px; font-weight: 200; line-height: 0.95; letter-spacing: -0.05em; font-variant-numeric: tabular-nums; margin-top: 6px; margin-left: -6px;">52°</div>
+    <div style="font-size: 24px; font-weight: 600; letter-spacing: -0.01em; margin-top: 2px;">{{condition}}</div>
+    <div style="font-size: 20px; font-weight: 500; color: {{fg2}}; margin-top: 4px;">H:63°  L:46°</div>
+  </div>
+
+  <!-- Hourly module: frosted material, as in Apple Weather -->
+  <div style="position: absolute; left: 420px; right: 36px; top: 40px; height: 206px; border-radius: 28px; padding: 16px 18px; box-sizing: border-box; background: {{module}}; backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5); border: 0.5px solid rgba(255,255,255,0.18);">
+    <div style="display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; letter-spacing: 0.05em; color: {{fg2}};">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      <span>RAIN EXPECTED AROUND 8 AM TOMORROW</span>
+    </div>
+    <div style="height: 0.5px; background: rgba(255,255,255,0.24); margin: 12px 0 10px;"></div>
+    <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0;">
+      <sc-for list="{{hours}}" as="h" hint-placeholder-count="7">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+          <div style="font-size: 15px; font-weight: 600;">{{h.label}}</div>
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="{{h.color}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{h.icon}}"/></svg>
+          <div style="font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums;">{{h.temp}}°</div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- Two small modules -->
+  <div style="position: absolute; left: 420px; right: 36px; top: 262px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
+    <div style="height: 176px; border-radius: 28px; padding: 16px 18px; box-sizing: border-box; background: {{module}}; backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5); border: 0.5px solid rgba(255,255,255,0.18); display: flex; flex-direction: column; justify-content: space-between;">
+      <div style="font-size: 13px; font-weight: 700; letter-spacing: 0.05em; color: {{fg2}};">SUNRISE</div>
+      <div style="font-size: 38px; font-weight: 500; letter-spacing: -0.03em;">6:58 AM</div>
+      <!-- sun path -->
+      <div style="position: relative; height: 34px;">
+        <div style="position: absolute; left: 0; right: 0; top: 24px; height: 1px; background: rgba(255,255,255,0.35);"></div>
+        <div style="position: absolute; left: 8%; right: 8%; top: 4px; height: 56px; border-radius: 50% 50% 0 0; border: 2px solid rgba(255,255,255,0.4); border-bottom: 0; box-sizing: border-box; clip-path: inset(0 0 40% 0);"></div>
+        <div style="position: absolute; left: {{sunPos}}%; top: {{sunTop}}px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: #FFD60A; box-shadow: 0 0 12px rgba(255,214,10,0.9);"></div>
+      </div>
+    </div>
+    <div style="height: 176px; border-radius: 28px; padding: 16px 18px; box-sizing: border-box; background: {{module}}; backdrop-filter: blur(24px) saturate(1.5); -webkit-backdrop-filter: blur(24px) saturate(1.5); border: 0.5px solid rgba(255,255,255,0.18); display: flex; flex-direction: column; justify-content: space-between;">
+      <div style="font-size: 13px; font-weight: 700; letter-spacing: 0.05em; color: {{fg2}};">TOMORROW</div>
+      <div style="display: flex; align-items: flex-end; gap: 6px; height: 64px;">
+        <sc-for list="{{rain}}" as="rn" hint-placeholder-count="10">
+          <div style="flex: 1; height: {{rn.h}}%; border-radius: 4px; background: {{rn.c}};"></div>
+        </sc-for>
+      </div>
+      <div style="font-size: 17px; font-weight: 600;">70% rain, peaks 8–10 AM</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"night":{"editor":"boolean","default":false},"$preview":{"width":960,"height":480}}'>
+class Component extends DCLogic {
+  componentDidMount() { this.timer = setInterval(() => this.setState({ t: Date.now() }), 1000); }
+  componentWillUnmount() { clearInterval(this.timer); }
+  renderVals() {
+    const night = this.props.night ?? false;
+    const d = new Date();
+    const hr = d.getHours() + d.getMinutes() / 60;
+    const isDay = hr >= 7 && hr < 17;
+    const isDusk = (hr >= 17 && hr < 19) || (hr >= 6 && hr < 7);
+    const sky = night ? '#000'
+      : isDay ? 'linear-gradient(180deg, #2C7BD6 0%, #6FB1EE 60%, #A8D2F5 100%)'
+      : isDusk ? 'linear-gradient(180deg, #2B2F6B 0%, #8E4F8A 50%, #F08A5D 100%)'
+      : 'linear-gradient(180deg, #050B22 0%, #0E1D45 55%, #23366B 100%)';
+    if (!this._stars) {
+      let seed = 7; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+      this._stars = Array.from({ length: 46 }, () => ({ x: (rnd() * 960).toFixed(0), y: (rnd() * 300).toFixed(0), r: (1 + rnd() * 1.8).toFixed(1), base: 0.25 + rnd() * 0.6 }));
+    }
+    const t = Date.now() / 1000;
+    const showStars = !night && !isDay;
+    const I = {
+      moon: 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z',
+      sun: 'M12 7.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9zM12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
+      cloud: 'M7 18h10a4 4 0 0 0 .4-8 6 6 0 0 0-11.5 1.6A3.3 3.3 0 0 0 7 18z',
+      rain: 'M7 15h10a4 4 0 0 0 .4-8 6 6 0 0 0-11.5 1.6A3.3 3.3 0 0 0 7 15zM8 18.5 7 21M12 18.5l-1 2.5M16 18.5l-1 2.5'
+    };
+    const temps = [52, 51, 50, 49, 48, 48, 49];
+    const hours = temps.map((tp, i) => {
+      const h = (d.getHours() + i) % 24;
+      const day = h >= 7 && h < 17;
+      const icon = i >= 5 ? I.cloud : day ? I.sun : I.moon;
+      return {
+        label: i === 0 ? 'Now' : ((h % 12) || 12) + (h < 12 ? 'AM' : 'PM'),
+        temp: tp, icon,
+        color: night ? '#BE180E' : (icon === I.sun ? '#FFD60A' : '#FFFFFF')
+      };
+    });
+    const rainH = [10, 18, 34, 62, 88, 96, 80, 54, 30, 16];
+    const sunFrac = Math.max(0, Math.min(1, (hr - 6.97) / (17.0 - 6.97)));
+    return {
+      sky,
+      fg: night ? '#BE180E' : '#FFFFFF',
+      fg2: night ? '#BE180E' : 'rgba(255,255,255,0.78)',
+      module: night ? 'rgba(190,24,14,0.08)' : 'rgba(255,255,255,0.14)',
+      cloud: night ? 'rgba(0,0,0,0)' : isDay ? 'rgba(255,255,255,0.5)' : 'rgba(150,170,220,0.18)',
+      drift: (30 * Math.sin(t / 20)).toFixed(1),
+      drift2: (40 * Math.cos(t / 26)).toFixed(1),
+      condition: isDay ? 'Sunny' : 'Clear',
+      stars: showStars ? this._stars.map(s => ({ x: s.x, y: s.y, r: s.r, o: (s.base * (0.7 + 0.3 * Math.sin(t * 1.3 + s.x * 0.05))).toFixed(2) })) : [],
+      hours,
+      rain: rainH.map(h => ({ h, c: night ? 'rgba(190,24,14,0.8)' : 'rgba(100,210,255,' + (0.35 + h / 160).toFixed(2) + ')' })),
+      sunPos: (8 + 84 * sunFrac).toFixed(1),
+      sunTop: (24 - 6 - 20 * Math.sin(Math.PI * sunFrac)).toFixed(1)
+    };
+  }
+}
+</script>
+</body>
+</html>

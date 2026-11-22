@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Photo frame from Immich</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 960px; height: 480px; position: relative; overflow: hidden; background: #000; color: #fff; font-family: -apple-system, 'SF Pro Display', 'Inter', BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased;">
+
+  <!-- Photo 1 (stand-in illustration): coast at golden hour -->
+  <div aria-hidden="true" style="position: absolute; inset: 0; opacity: {{op.a}}; transform: scale({{sc.a}}); transform-origin: 60% 55%; transition: opacity 1.4s ease, transform 9s linear;">
+    <div style="position: absolute; inset: 0; background: linear-gradient(180deg, #F6C28B 0%, #F09060 38%, #C9604E 54%, #3E5C78 55%, #1D3550 100%);"></div>
+    <div style="position: absolute; left: 600px; top: 180px; width: 110px; height: 110px; border-radius: 50%; background: radial-gradient(circle, #FFF3D6 0%, #FFC36B 55%, rgba(255,160,80,0) 72%);"></div>
+    <div style="position: absolute; left: 0; right: 0; top: 264px; height: 216px; background: repeating-linear-gradient(180deg, rgba(255,200,140,0.18) 0px, rgba(255,200,140,0.18) 2px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) 13px);"></div>
+    <div style="position: absolute; inset: 0; background: #2A1A1E; clip-path: polygon(0 34%, 9% 30%, 18% 38%, 27% 44%, 33% 52%, 38% 60%, 44% 66%, 47% 100%, 0 100%);"></div>
+    <div style="position: absolute; inset: 0; background: #3A2426; clip-path: polygon(0 50%, 12% 46%, 22% 54%, 30% 64%, 35% 74%, 40% 100%, 0 100%);"></div>
+    <div style="position: absolute; inset: 0; background: #1A1012; clip-path: polygon(78% 100%, 84% 70%, 90% 62%, 100% 58%, 100% 100%);"></div>
+  </div>
+
+  <!-- Photo 2 (stand-in): granite valley in snow -->
+  <div aria-hidden="true" style="position: absolute; inset: 0; opacity: {{op.b}}; transform: scale({{sc.b}}); transform-origin: 40% 45%; transition: opacity 1.4s ease, transform 9s linear;">
+    <div style="position: absolute; inset: 0; background: linear-gradient(180deg, #7FA6C9 0%, #B9CFE0 55%, #E4ECF2 100%);"></div>
+    <div style="position: absolute; inset: 0; background: linear-gradient(180deg, #8E98A6, #5D6774); clip-path: polygon(0 100%, 0 40%, 6% 22%, 14% 16%, 20% 20%, 24% 34%, 27% 60%, 30% 100%);"></div>
+    <div style="position: absolute; inset: 0; background: linear-gradient(180deg, #A3ADBA, #6E7886); clip-path: polygon(52% 100%, 58% 52%, 64% 30%, 68% 24%, 72% 26%, 76% 38%, 84% 46%, 92% 42%, 100% 48%, 100% 100%);"></div>
+    <div style="position: absolute; inset: 0; background: #F3F6F9; clip-path: polygon(0 78%, 20% 74%, 45% 79%, 70% 75%, 100% 78%, 100% 100%, 0 100%);"></div>
+    <div style="position: absolute; inset: 0; background: #2D4235; clip-path: polygon(30% 100%, 33% 70%, 36% 100%, 38% 100%, 41% 64%, 44% 100%, 47% 100%, 50% 72%, 53% 100%);"></div>
+  </div>
+
+  <!-- Photo 3 (stand-in): lanterns at a night market -->
+  <div aria-hidden="true" style="position: absolute; inset: 0; opacity: {{op.c}}; transform: scale({{sc.c}}); transform-origin: 50% 40%; transition: opacity 1.4s ease, transform 9s linear;">
+    <div style="position: absolute; inset: 0; background: radial-gradient(ellipse 80% 70% at 50% 30%, #3A1830 0%, #12070F 70%);"></div>
+    <sc-for list="{{lanterns}}" as="l" hint-placeholder-count="14">
+      <div style="position: absolute; left: {{l.x}}px; top: {{l.y}}px; width: {{l.s}}px; height: {{l.s}}px; border-radius: 50%; background: radial-gradient(circle, {{l.c}} 0%, rgba(0,0,0,0) 70%); opacity: {{l.o}};"></div>
+    </sc-for>
+  </div>
+
+  <!-- Legibility scrims -->
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0) 30%, rgba(0,0,0,0) 62%, rgba(0,0,0,0.5) 100%);"></div>
+
+  <!-- Time over the photo, as on Apple's Photos face -->
+  <div style="position: absolute; left: 40px; top: 28px; text-shadow: 0 2px 18px rgba(0,0,0,0.35);">
+    <div style="font-size: 104px; font-weight: 600; line-height: 0.95; letter-spacing: -0.045em; font-variant-numeric: tabular-nums;">{{clock}}</div>
+    <div style="font-size: 20px; font-weight: 600; color: rgba(255,255,255,0.9); margin-top: 6px;">{{dateLine}}</div>
+  </div>
+
+  <!-- Memory caption -->
+  <div style="position: absolute; left: 40px; bottom: 30px; text-shadow: 0 2px 12px rgba(0,0,0,0.4);">
+    <div style="font-size: 24px; font-weight: 700; letter-spacing: -0.015em;">{{photo.place}}</div>
+    <div style="font-size: 15px; font-weight: 600; color: rgba(255,255,255,0.82); margin-top: 2px;">{{photo.when}} · Immich · Family album</div>
+  </div>
+
+  <!-- Tap: controls lift into glass, then settle away after a few seconds -->
+  <button type="button" aria-label="Show photo controls" onClick="{{wake}}" style="position: absolute; inset: 0; width: 100%; height: 100%; border: 0; padding: 0; background: transparent; cursor: pointer;"></button>
+  <div style="position: absolute; right: 28px; bottom: 26px; height: 56px; border-radius: 28px; padding: 0 6px; display: flex; align-items: center; gap: 2px; background: rgba(255,255,255,0.12); border: 0.5px solid rgba(255,255,255,0.3); backdrop-filter: blur(18px) saturate(1.8) brightness(1.1); -webkit-backdrop-filter: blur(18px) saturate(1.8) brightness(1.1); box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.5), 0 12px 32px rgba(0,0,0,0.4); overflow: hidden; opacity: {{ctlOpacity}}; transform: translateY({{ctlY}}px) scale({{ctlScale}}); pointer-events: {{ctlEvents}}; transition: opacity 0.3s ease, transform 0.45s cubic-bezier(0.3, 1.4, 0.5, 1);">
+    <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 28px; background: linear-gradient(170deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 55%); pointer-events: none;"></span>
+    <button type="button" style="position: relative; height: 44px; padding: 0 14px; border-radius: 22px; border: 0; cursor: pointer; font-family: inherit; font-size: 15px; font-weight: 700; color: #fff; background: rgba(255,255,255,0.14); display: flex; align-items: center; gap: 6px;">Family<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+    <button type="button" aria-label="{{pauseLabel}}" onClick="{{togglePause}}" style="position: relative; width: 44px; height: 44px; border-radius: 22px; border: 0; cursor: pointer; color: #fff; background: none; display: flex; align-items: center; justify-content: center;">
+      <svg width="22" height="22" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="{{pauseIcon}}"/></svg>
+    </button>
+    <button type="button" aria-label="Next photo" onClick="{{nextPhoto}}" style="position: relative; width: 44px; height: 44px; border-radius: 22px; border: 0; cursor: pointer; color: #fff; background: none; display: flex; align-items: center; justify-content: center;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+    </button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"seconds":{"editor":"int","default":8,"min":3,"max":60},"$preview":{"width":960,"height":480}}'>
+class Component extends DCLogic {
+  componentDidMount() {
+    this.timer = setInterval(() => {
+      const st = this.state || {};
+      const secs = this.props.seconds ?? 8;
+      const shownAt = st.shownAt || Date.now();
+      if (!st.paused && Date.now() - shownAt > secs * 1000) this.setState({ i: ((st.i || 0) + 1) % 3, shownAt: Date.now() });
+      else this.setState({ t: Date.now() });
+    }, 500);
+    this.setState({ shownAt: Date.now() });
+  }
+  componentWillUnmount() { clearInterval(this.timer); }
+  renderVals() {
+    const st = this.state || {};
+    const i = st.i || 0;
+    const d = new Date();
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const photos = [
+      { id: 'a', place: 'Big Sur', when: 'October 2025' },
+      { id: 'b', place: 'Yosemite Valley', when: 'January 2026' },
+      { id: 'c', place: 'Night market, Taipei', when: 'July 2025' }
+    ];
+    if (!this._lanterns) {
+      let seed = 3; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+      const cols = ['#FFB340', '#FF6B4A', '#FFD27A', '#FF3B6B'];
+      this._lanterns = Array.from({ length: 16 }, () => ({ x: (rnd() * 960 - 60).toFixed(0), y: (rnd() * 360 - 40).toFixed(0), s: (60 + rnd() * 140).toFixed(0), c: cols[Math.floor(rnd() * 4)], o: (0.45 + rnd() * 0.5).toFixed(2) }));
+    }
+    const awake = st.wokeAt && Date.now() - st.wokeAt < 4000;
+    const active = { a: i === 0, b: i === 1, c: i === 2 };
+    return {
+      op: { a: active.a ? 1 : 0, b: active.b ? 1 : 0, c: active.c ? 1 : 0 },
+      sc: { a: active.a ? 1.08 : 1, b: active.b ? 1.08 : 1, c: active.c ? 1.08 : 1 },
+      lanterns: this._lanterns,
+      photo: photos[i],
+      clock: (d.getHours() % 12 || 12) + ':' + String(d.getMinutes()).padStart(2, '0'),
+      dateLine: days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate(),
+      wake: () => this.setState({ wokeAt: Date.now() }),
+      ctlOpacity: awake ? 1 : 0,
+      ctlY: awake ? 0 : 16,
+      ctlScale: awake ? 1 : 0.9,
+      ctlEvents: awake ? 'auto' : 'none',
+      pauseLabel: st.paused ? 'Resume slideshow' : 'Pause slideshow',
+      pauseIcon: st.paused ? 'M8 6.3a1.6 1.6 0 0 1 2.4-1.4l16 9.7a1.6 1.6 0 0 1 0 2.8l-16 9.7A1.6 1.6 0 0 1 8 25.7z' : 'M7 5h6.4v22H7zM18.6 5H25v22h-6.4z',
+      togglePause: () => this.setState({ paused: !st.paused, wokeAt: Date.now() }),
+      nextPhoto: () => this.setState({ i: (i + 1) % 3, shownAt: Date.now(), wokeAt: Date.now() })
+    };
+  }
+}
+</script>
+</body>
+</html>

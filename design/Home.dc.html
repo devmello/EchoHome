@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Home controls</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 960px; height: 480px; position: relative; overflow: hidden; color: #fff; font-family: -apple-system, 'SF Pro Display', 'Inter', BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased; background: linear-gradient(118deg, rgba(0,0,0,0) 24%, rgba(255,120,90,0.42) 36%, rgba(0,0,0,0) 48%), linear-gradient(118deg, rgba(0,0,0,0) 54%, rgba(150,90,255,0.4) 64%, rgba(0,0,0,0) 74%), radial-gradient(ellipse 55% 70% at 12% 20%, rgba(255,110,90,0.75) 0%, rgba(0,0,0,0) 70%), radial-gradient(ellipse 50% 65% at 88% 16%, rgba(120,80,255,0.75) 0%, rgba(0,0,0,0) 70%), radial-gradient(ellipse 65% 70% at 70% 100%, rgba(40,90,220,0.8) 0%, rgba(0,0,0,0) 72%), linear-gradient(180deg, #2A1442, #0C0818);">
+
+  <!-- Header -->
+  <div style="position: absolute; left: 28px; top: 18px;">
+    <div style="font-size: 28px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.1;">{{roomName}}</div>
+    <div style="font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.78); margin-top: 2px;">{{roomLine}}</div>
+  </div>
+
+  <!-- Room switcher: one glass capsule, selected segment is a fill -->
+  <div style="position: absolute; right: 24px; top: 18px; height: 44px; padding: 4px; box-sizing: border-box; border-radius: 22px; display: flex; gap: 2px; background: rgba(255,255,255,0.1); border: 0.5px solid rgba(255,255,255,0.24); backdrop-filter: blur(18px) saturate(1.8) brightness(1.1); -webkit-backdrop-filter: blur(18px) saturate(1.8) brightness(1.1); box-shadow: inset 0 1px 1px rgba(255,255,255,0.42), 0 8px 24px rgba(0,0,0,0.3); overflow: hidden;">
+    <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 22px; background: linear-gradient(165deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0) 55%); pointer-events: none;"></span>
+    <sc-for list="{{rooms}}" as="rm" hint-placeholder-count="3">
+      <button type="button" aria-pressed="{{rm.pressed}}" onClick="{{rm.pick}}" style="position: relative; height: 36px; padding: 0 16px; border-radius: 18px; border: 0; cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 700; color: {{rm.fg}}; background: {{rm.bg}}; transition: background 0.25s ease, color 0.25s ease;">{{rm.label}}</button>
+    </sc-for>
+  </div>
+
+  <!-- Thermostat (glass tile) -->
+  <div style="position: absolute; left: 24px; top: 76px; width: 300px; height: 380px; border-radius: 34px; padding: 20px; box-sizing: border-box; background: rgba(255,255,255,0.09); border: 0.5px solid rgba(255,255,255,0.24); backdrop-filter: blur(20px) saturate(1.8) brightness(1.1); -webkit-backdrop-filter: blur(20px) saturate(1.8) brightness(1.1); box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.45), inset 0 -1px 1px rgba(255,255,255,0.08), 0 16px 40px rgba(0,0,0,0.35); overflow: hidden; display: flex; flex-direction: column; align-items: center;">
+    <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 34px; background: linear-gradient(160deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.03) 35%, rgba(255,255,255,0) 60%, rgba(255,255,255,0.06) 100%); pointer-events: none;"></span>
+    <div style="position: relative; align-self: stretch; display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <div style="font-size: 16px; font-weight: 700;">Thermostat</div>
+        <div style="font-size: 13px; font-weight: 600; color: {{heatColor}};">{{heatLine}}</div>
+      </div>
+      <div style="height: 30px; padding: 0 12px; border-radius: 15px; display: flex; align-items: center; font-size: 13px; font-weight: 700; background: rgba(255,255,255,0.16);">Heat</div>
+    </div>
+    <div style="position: relative; width: 210px; height: 210px; margin-top: 14px;">
+      <svg width="210" height="210" viewBox="0 0 210 210" aria-hidden="true">
+        <circle cx="105" cy="105" r="88" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="14" stroke-linecap="round" stroke-dasharray="415 553" transform="rotate(135 105 105)"/>
+        <circle cx="105" cy="105" r="88" fill="none" stroke="url(#heat)" stroke-width="14" stroke-linecap="round" stroke-dasharray="{{arc}} 553" transform="rotate(135 105 105)" style="transition: stroke-dasharray 0.4s ease;"/>
+        <defs><linearGradient id="heat" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#FF9F0A"/><stop offset="1" stop-color="#FF453A"/></linearGradient></defs>
+      </svg>
+      <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+        <div style="font-size: 66px; font-weight: 700; line-height: 1; letter-spacing: -0.04em; font-variant-numeric: tabular-nums;">{{target}}°</div>
+        <div style="font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.75); margin-top: 4px;">Now 66°</div>
+      </div>
+    </div>
+    <div style="position: relative; display: flex; gap: 28px; margin-top: 4px;">
+      <button type="button" aria-label="Lower temperature" onClick="{{cooler}}" style="width: 56px; height: 56px; border-radius: 50%; border: 0; cursor: pointer; color: #fff; background: rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>
+      </button>
+      <button type="button" aria-label="Raise temperature" onClick="{{warmer}}" style="width: 56px; height: 56px; border-radius: 50%; border: 0; cursor: pointer; color: #fff; background: rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Lamp: the whole tile is a brightness slider -->
+  <button type="button" aria-label="Bedside lamp brightness {{lampPct}} percent" onClick="{{setLamp}}" style="position: absolute; left: 340px; top: 76px; width: 268px; height: 182px; border-radius: 30px; padding: 0; cursor: pointer; font-family: inherit; color: #fff; text-align: left; background: rgba(255,255,255,0.09); border: 0.5px solid rgba(255,255,255,0.24); backdrop-filter: blur(20px) saturate(1.8) brightness(1.1); -webkit-backdrop-filter: blur(20px) saturate(1.8) brightness(1.1); box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.45), inset 0 -1px 1px rgba(255,255,255,0.08), 0 16px 40px rgba(0,0,0,0.35); overflow: hidden;">
+    <span aria-hidden="true" style="position: absolute; left: 0; top: 0; bottom: 0; width: {{lampPct}}%; background: linear-gradient(90deg, rgba(255,170,80,0.92), rgba(255,206,140,0.95)); transition: width 0.3s ease;"></span>
+    <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 30px; background: linear-gradient(160deg, rgba(255,255,255,0.24) 0%, rgba(255,255,255,0.03) 38%, rgba(255,255,255,0) 62%); pointer-events: none;"></span>
+    <span style="position: absolute; left: 20px; top: 18px; width: 40px; height: 40px; border-radius: 13px; background: rgba(255,255,255,0.22); display: flex; align-items: center; justify-content: center;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M12 2a7 7 0 0 0-4 12.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26A7 7 0 0 0 12 2z"/><path d="M10 20h4v1a2 2 0 0 1-4 0z"/></svg>
+    </span>
+    <span style="position: absolute; left: 20px; bottom: 18px; color: {{lampInk}};">
+      <span style="display: block; font-size: 17px; font-weight: 700;">Bedside lamp</span>
+      <span style="display: block; font-size: 30px; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; margin-top: 2px;">{{lampPct}}%</span>
+    </span>
+  </button>
+
+  <!-- Small toggle tiles -->
+  <sc-for list="{{toggles}}" as="tg" hint-placeholder-count="2">
+    <button type="button" aria-pressed="{{tg.pressed}}" onClick="{{tg.flip}}" style="position: absolute; left: {{tg.x}}px; top: 274px; width: 126px; height: 182px; border-radius: 30px; padding: 18px; box-sizing: border-box; cursor: pointer; font-family: inherit; text-align: left; color: {{tg.ink}}; background: {{tg.bg}}; border: 0.5px solid rgba(255,255,255,0.24); backdrop-filter: blur(20px) saturate(1.8) brightness(1.1); -webkit-backdrop-filter: blur(20px) saturate(1.8) brightness(1.1); box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.45), inset 0 -1px 1px rgba(255,255,255,0.08), 0 16px 40px rgba(0,0,0,0.35); overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; transition: background 0.25s ease, color 0.25s ease;">
+      <span style="width: 40px; height: 40px; border-radius: 13px; background: {{tg.iconBg}}; color: {{tg.iconInk}}; display: flex; align-items: center; justify-content: center;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{tg.icon}}"/></svg>
+      </span>
+      <span>
+        <span style="display: block; font-size: 16px; font-weight: 700;">{{tg.name}}</span>
+        <span style="display: block; font-size: 13px; font-weight: 600; opacity: 0.75; margin-top: 2px;">{{tg.state}}</span>
+      </span>
+    </button>
+  </sc-for>
+
+  <!-- Scenes -->
+  <div style="position: absolute; left: 624px; top: 76px; width: 312px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
+    <sc-for list="{{scenes}}" as="sc" hint-placeholder-count="4">
+      <button type="button" aria-pressed="{{sc.pressed}}" onClick="{{sc.pick}}" style="position: relative; height: 83px; border-radius: 24px; padding: 0 14px; cursor: pointer; font-family: inherit; text-align: left; display: flex; align-items: center; gap: 10px; color: {{sc.ink}}; background: {{sc.bg}}; border: 0.5px solid rgba(255,255,255,0.24); backdrop-filter: blur(20px) saturate(1.8) brightness(1.1); -webkit-backdrop-filter: blur(20px) saturate(1.8) brightness(1.1); box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.45), 0 12px 30px rgba(0,0,0,0.3); overflow: hidden; transition: background 0.25s ease, color 0.25s ease;">
+        <span style="width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; background: {{sc.dot}}; color: #fff; display: flex; align-items: center; justify-content: center;">
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{sc.icon}}"/></svg>
+        </span>
+        <span style="font-size: 15px; font-weight: 700; line-height: 1.15;">{{sc.name}}</span>
+      </button>
+    </sc-for>
+  </div>
+
+  <!-- Lock + garage -->
+  <sc-for list="{{secure}}" as="sx" hint-placeholder-count="2">
+    <button type="button" aria-pressed="{{sx.pressed}}" onClick="{{sx.flip}}" style="position: absolute; left: {{sx.x}}px; top: 274px; width: 148px; height: 182px; border-radius: 30px; padding: 18px; box-sizing: border-box; cursor: pointer; font-family: inherit; text-align: left; color: {{sx.ink}}; background: {{sx.bg}}; border: 0.5px solid rgba(255,255,255,0.24); backdrop-filter: blur(20px) saturate(1.8) brightness(1.1); -webkit-backdrop-filter: blur(20px) saturate(1.8) brightness(1.1); box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.45), inset 0 -1px 1px rgba(255,255,255,0.08), 0 16px 40px rgba(0,0,0,0.35); overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; transition: background 0.25s ease, color 0.25s ease;">
+      <span style="width: 40px; height: 40px; border-radius: 13px; background: {{sx.iconBg}}; color: {{sx.iconInk}}; display: flex; align-items: center; justify-content: center;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="{{sx.icon}}"/></svg>
+      </span>
+      <span>
+        <span style="display: block; font-size: 16px; font-weight: 700;">{{sx.name}}</span>
+        <span style="display: block; font-size: 13px; font-weight: 600; opacity: 0.75; margin-top: 2px;">{{sx.state}}</span>
+      </span>
+    </button>
+  </sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":960,"height":480}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const target = st.target ?? 68;
+    const lamp = st.lamp ?? 0.6;
+    const room = st.room ?? 'Bedroom';
+    const on = (k, d) => (st[k] ?? d);
+    const glassOff = 'rgba(255,255,255,0.09)';
+    const glassOn = 'rgba(255,255,255,0.88)';
+    const I = {
+      bulb: 'M9 21h6v-1H9zm3-19a7 7 0 0 0-4 12.74V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.26A7 7 0 0 0 12 2z',
+      fan: 'M12 11a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm.5-8c3 0 4 2.6 2.4 5.2l-1.7 2.6a3 3 0 0 0-1.9-.5l.6-3C12.4 5.6 11 4.5 12.5 3zm8.4 13.1c-1.5 2.6-4.3 2.2-5.7-.5l-1.4-2.8a3 3 0 0 0 1.4-1.4l2.9 1c1.9.6 4.3 1.2 2.8 3.7zM3.6 16.6c-1.5-2.6.3-4.8 3.3-4.7l3.1.2a3 3 0 0 0 .5 1.9l-2.3 2c-1.4 1.3-3.2 3-4.6.6z',
+      sun: 'M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM11 1h2v3h-2zM11 20h2v3h-2zM1 11h3v2H1zM20 11h3v2h-3z',
+      tv: 'M3 5.5A1.5 1.5 0 0 1 4.5 4h15A1.5 1.5 0 0 1 21 5.5v10a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 15.5zM8 19.5a.75.75 0 0 1 .75-.75h6.5a.75.75 0 0 1 0 1.5h-6.5A.75.75 0 0 1 8 19.5z',
+      moon: 'M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z',
+      away: 'M12 3 2 11h3v9h5v-6h4v6h5v-9h3z',
+      lock: 'M7 10V7a5 5 0 0 1 10 0v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2zm2 0h6V7a3 3 0 0 0-6 0z',
+      unlock: 'M7 10V7a5 5 0 0 1 9.6-2l-1.8.9A3 3 0 0 0 9 7v3h9a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z',
+      garage: 'M12 3 2 8v13h3v-9h14v9h3V8zM7 14h10v2H7zm0 4h10v2H7z'
+    };
+    const tile = (o, isOn, onIcon) => ({
+      bg: isOn ? glassOn : glassOff,
+      ink: isOn ? '#111114' : '#FFFFFF',
+      iconBg: isOn ? onIcon : 'rgba(255,255,255,0.2)',
+      iconInk: '#FFFFFF',
+      pressed: isOn ? 'true' : 'false',
+      ...o
+    });
+    const ceiling = on('ceiling', false), fan = on('fan', true), locked = on('locked', true), garage = on('garage', false);
+    const scene = st.scene ?? 'Sleep';
+    const sceneDefs = [
+      { name: 'Good Morning', icon: I.sun, dot: '#FF9F0A' },
+      { name: 'Movie', icon: I.tv, dot: '#0A84FF' },
+      { name: 'Sleep', icon: I.moon, dot: '#5E5CE6' },
+      { name: 'Away', icon: I.away, dot: '#30D158' }
+    ];
+    const rooms = ['Bedroom', 'Living', 'Kitchen'];
+    const ratioX = (e) => { const r = e.currentTarget.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); };
+    return {
+      roomName: room === 'Living' ? 'Living Room' : room,
+      roomLine: '66° inside · ' + (locked ? 'Doors locked' : 'Front door unlocked'),
+      rooms: rooms.map(r => ({ label: r, pressed: r === room ? 'true' : 'false', bg: r === room ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0)', fg: r === room ? '#111114' : '#FFFFFF', pick: () => this.setState({ room: r }) })),
+      target,
+      arc: (415 * (target - 50) / 40).toFixed(1),
+      heatLine: target > 66 ? 'Heating to ' + target + '°' : 'Holding ' + target + '°',
+      heatColor: target > 66 ? '#FFB340' : 'rgba(255,255,255,0.75)',
+      cooler: () => this.setState({ target: Math.max(50, target - 1) }),
+      warmer: () => this.setState({ target: Math.min(90, target + 1) }),
+      lampPct: Math.round(lamp * 100),
+      lampInk: lamp > 0.55 ? '#3A1A00' : '#FFFFFF',
+      setLamp: (e) => this.setState({ lamp: Math.round(ratioX(e) * 20) / 20 }),
+      toggles: [
+        tile({ x: 340, name: 'Ceiling', state: ceiling ? 'On' : 'Off', icon: I.bulb, flip: () => this.setState({ ceiling: !ceiling }) }, ceiling, '#FF9F0A'),
+        tile({ x: 482, name: 'Air purifier', state: fan ? 'Auto · quiet' : 'Off', icon: I.fan, flip: () => this.setState({ fan: !fan }) }, fan, '#64D2FF')
+      ],
+      scenes: sceneDefs.map(s => ({
+        ...s,
+        pressed: s.name === scene ? 'true' : 'false',
+        bg: s.name === scene ? glassOn : glassOff,
+        ink: s.name === scene ? '#111114' : '#FFFFFF',
+        pick: () => this.setState({ scene: s.name })
+      })),
+      secure: [
+        tile({ x: 624, name: 'Front door', state: locked ? 'Locked' : 'Unlocked', icon: locked ? I.lock : I.unlock, flip: () => this.setState({ locked: !locked }) }, !locked, '#FF9F0A'),
+        tile({ x: 788, name: 'Garage', state: garage ? 'Open' : 'Closed', icon: I.garage, flip: () => this.setState({ garage: !garage }) }, garage, '#FF9F0A')
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

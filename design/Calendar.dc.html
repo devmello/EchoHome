@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>StandBy Calendar face</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 960px; height: 480px; position: relative; overflow: hidden; background: #000; color: {{fg}}; font-family: -apple-system, 'SF Pro Display', 'Inter', BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased;">
+
+  <!-- Date block + month -->
+  <div style="position: absolute; left: 48px; top: 36px; width: 280px;">
+    <div style="font-size: 22px; font-weight: 800; letter-spacing: 0.06em; color: {{accent}};">{{dayName}}</div>
+    <div style="font-size: 150px; font-weight: 600; line-height: 0.9; letter-spacing: -0.05em; font-variant-numeric: tabular-nums; margin-left: -6px;">{{dayNum}}</div>
+    <div style="font-size: 24px; font-weight: 600; color: {{fg2}}; margin-top: 4px;">{{monthName}}</div>
+    <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px 0; margin-top: 18px; width: 252px;">
+      <sc-for list="{{dow}}" as="w" hint-placeholder-count="7">
+        <div style="height: 20px; text-align: center; font-size: 11px; font-weight: 700; color: {{fg3}};">{{w}}</div>
+      </sc-for>
+      <sc-for list="{{cells}}" as="c" hint-placeholder-count="35">
+        <div style="height: 22px; display: flex; align-items: center; justify-content: center;">
+          <span style="width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: {{c.weight}}; color: {{c.ink}}; background: {{c.bg}}; font-variant-numeric: tabular-nums;">{{c.label}}</span>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- Agenda -->
+  <div style="position: absolute; left: 380px; right: 44px; top: 40px; bottom: 30px; display: flex; flex-direction: column; gap: 10px;">
+    <sc-for list="{{rows}}" as="r" hint-placeholder-count="6">
+      <sc-if value="{{r.header}}" hint-placeholder-val="{{ false }}">
+        <div style="font-size: 15px; font-weight: 800; letter-spacing: 0.06em; color: {{fg3}}; margin-top: {{r.gap}}px;">{{r.label}}</div>
+      </sc-if>
+      <sc-if value="{{r.nowLine}}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; align-items: center; gap: 8px; height: 10px;">
+          <span style="width: 10px; height: 10px; border-radius: 50%; background: {{accent}};"></span>
+          <span style="flex: 1; height: 2px; background: {{accent}};"></span>
+          <span style="font-size: 13px; font-weight: 700; color: {{accent}}; font-variant-numeric: tabular-nums;">{{r.label}}</span>
+        </div>
+      </sc-if>
+      <sc-if value="{{r.event}}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; gap: 14px; align-items: stretch; opacity: {{r.opacity}};">
+          <span style="width: 5px; border-radius: 3px; background: {{r.color}};"></span>
+          <span style="width: 92px; flex-shrink: 0; font-size: 17px; font-weight: 600; color: {{fg2}}; font-variant-numeric: tabular-nums; padding-top: 2px;">{{r.time}}</span>
+          <span style="flex: 1; min-width: 0;">
+            <span style="display: block; font-size: 22px; font-weight: 700; letter-spacing: -0.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{r.title}}</span>
+            <span style="display: block; font-size: 15px; font-weight: 500; color: {{fg2}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{r.where}}</span>
+          </span>
+          <sc-if value="{{r.soon}}" hint-placeholder-val="{{ false }}">
+            <span style="align-self: center; height: 30px; padding: 0 12px; border-radius: 15px; display: flex; align-items: center; font-size: 13px; font-weight: 800; color: #000; background: {{accent}};">{{r.soonLabel}}</span>
+          </sc-if>
+        </div>
+      </sc-if>
+    </sc-for>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"color":{"editor":"color","default":"#FF453A","options":["#FF453A","#FF9F0A","#30D158","#0A84FF","#BF5AF2"]},"night":{"editor":"boolean","default":false},"$preview":{"width":960,"height":480}}'>
+class Component extends DCLogic {
+  componentDidMount() { this.timer = setInterval(() => this.setState({ t: Date.now() }), 30000); }
+  componentWillUnmount() { clearInterval(this.timer); }
+  fmt(m) { const h = Math.floor(m / 60), mm = m % 60; return ((h % 12) || 12) + ':' + String(mm).padStart(2, '0') + (h < 12 ? ' AM' : ' PM'); }
+  renderVals() {
+    const night = this.props.night ?? false;
+    const accent = night ? '#BE180E' : (this.props.color ?? '#FF453A');
+    const d = new Date();
+    const days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const nowMin = d.getHours() * 60 + d.getMinutes();
+    const today = [
+      { s: 600, e: 690, title: 'Farmers market', where: 'Downtown · with Maya', color: '#30D158' },
+      { s: 870, e: 900, title: 'Family call', where: 'Video call', color: '#0A84FF' },
+      { s: 1140, e: 1260, title: 'Dinner with Maya', where: 'Seabright · 2 people', color: '#FF9F0A' }
+    ];
+    const tomorrow = [
+      { s: 570, e: 600, title: 'Team sync', where: 'Video call · 4 people', color: '#BF5AF2' },
+      { s: 720, e: 780, title: 'Lunch', where: 'Penny Ice Creamery', color: '#FF375F' }
+    ];
+    const rows = [{ header: true, label: 'TODAY', gap: 0 }];
+    let placedNow = false;
+    today.forEach(ev => {
+      if (!placedNow && nowMin < ev.s) { rows.push({ nowLine: true, label: this.fmt(nowMin) }); placedNow = true; }
+      const past = ev.e < nowMin;
+      const until = ev.s - nowMin;
+      rows.push({ event: true, time: this.fmt(ev.s), title: ev.title, where: ev.where, color: night ? accent : ev.color, opacity: past ? 0.4 : 1, soon: until > 0 && until <= 60, soonLabel: 'in ' + until + ' min' });
+    });
+    if (!placedNow) rows.push({ nowLine: true, label: this.fmt(nowMin) });
+    rows.push({ header: true, label: 'TOMORROW', gap: 8 });
+    tomorrow.forEach(ev => rows.push({ event: true, time: this.fmt(ev.s), title: ev.title, where: ev.where, color: night ? accent : ev.color, opacity: 1, soon: false, soonLabel: '' }));
+    const first = new Date(d.getFullYear(), d.getMonth(), 1).getDay();
+    const dim = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < first; i++) cells.push({ label: '', ink: 'transparent', bg: 'transparent', weight: 500 });
+    for (let k = 1; k <= dim; k++) {
+      const isToday = k === d.getDate();
+      cells.push({ label: String(k), ink: isToday ? '#000' : (night ? accent : 'rgba(255,255,255,0.85)'), bg: isToday ? accent : 'transparent', weight: isToday ? 800 : 500 });
+    }
+    return {
+      fg: night ? accent : '#FFFFFF',
+      fg2: night ? accent : 'rgba(255,255,255,0.68)',
+      fg3: night ? accent : 'rgba(255,255,255,0.5)',
+      accent,
+      dayName: days[d.getDay()],
+      dayNum: String(d.getDate()),
+      monthName: months[d.getMonth()] + ' ' + d.getFullYear(),
+      dow: ['S', 'M', 'T', 'W', 'T', 'F', 'S'],
+      cells,
+      rows
+    };
+  }
+}
+</script>
+</body>
+</html>

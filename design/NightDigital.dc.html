@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>StandBy Night mode, Digital</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Nunito:wght@700;800;900&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 960px; height: 480px; position: relative; overflow: hidden; background: #000; color: #BE180E; font-family: -apple-system, 'SF Pro Display', 'Inter', BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased;">
+
+  <!-- The chosen face, rendered in Night mode's red and dimmed for a dark room -->
+  <div style="position: absolute; inset: 0; opacity: {{level}}; transition: opacity 1.6s ease;">
+    <sc-if value="{{is.digital}}" hint-placeholder-val="{{ true }}">
+      <dc-import name="Digital" night="{{ true }}" live="{{ true }}" complications="{{ true }}" hint-size="960px,480px"></dc-import>
+    </sc-if>
+    <sc-if value="{{is.analog}}" hint-placeholder-val="{{ false }}">
+      <dc-import name="Analog" night="{{ true }}" live="{{ true }}" complications="{{ true }}" hint-size="960px,480px"></dc-import>
+    </sc-if>
+    <sc-if value="{{is.world}}" hint-placeholder-val="{{ false }}">
+      <dc-import name="World" night="{{ true }}" live="{{ true }}" hint-size="960px,480px"></dc-import>
+    </sc-if>
+    <sc-if value="{{is.solar}}" hint-placeholder-val="{{ false }}">
+      <dc-import name="Solar" night="{{ true }}" live="{{ true }}" hint-size="960px,480px"></dc-import>
+    </sc-if>
+    <sc-if value="{{is.float}}" hint-placeholder-val="{{ false }}">
+      <dc-import name="Float" night="{{ true }}" live="{{ true }}" hint-size="960px,480px"></dc-import>
+    </sc-if>
+    <sc-if value="{{is.glass}}" hint-placeholder-val="{{ false }}">
+      <dc-import name="Glass" night="{{ true }}" live="{{ true }}" hint-size="960px,480px"></dc-import>
+    </sc-if>
+  </div>
+
+  <!-- Tap anywhere (or motion, on the Echo) wakes the display to full Night brightness -->
+  <button type="button" aria-label="Wake display" onClick="{{wake}}" style="position: absolute; inset: 0; width: 100%; height: 100%; border: 0; padding: 0; margin: 0; background: transparent; cursor: pointer;"></button>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"face":{"editor":"enum","default":"Digital","options":["Digital","Analog","World","Solar","Float","Liquid Glass"]},"dimLevel":{"editor":"range","default":0.42,"min":0.15,"max":1,"step":0.05},"$preview":{"width":960,"height":480}}'>
+class Component extends DCLogic {
+  componentDidMount() { this.timer = setInterval(() => this.setState({ t: Date.now() }), 1000); }
+  componentWillUnmount() { clearInterval(this.timer); }
+  renderVals() {
+    const st = this.state || {};
+    const map = { 'Digital': 'digital', 'Analog': 'analog', 'World': 'world', 'Solar': 'solar', 'Float': 'float', 'Liquid Glass': 'glass' };
+    const pick = map[this.props.face ?? 'Digital'] || 'analog';
+    const is = { digital: false, analog: false, world: false, solar: false, float: false, glass: false };
+    is[pick] = true;
+    const awake = st.wokeAt && Date.now() - st.wokeAt < 6000;
+    return {
+      is,
+      level: awake ? 1 : (this.props.dimLevel ?? 0.42),
+      wake: () => this.setState({ wokeAt: Date.now() })
+    };
+  }
+}
+</script>
+</body>
+</html>

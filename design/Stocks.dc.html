@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Stocks glance</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 960px; height: 480px; position: relative; overflow: hidden; background: #000; color: #fff; font-family: -apple-system, 'SF Pro Display', 'Inter', BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased;">
+
+  <!-- Featured symbol -->
+  <div style="position: absolute; left: 44px; top: 36px; width: 440px;">
+    <div style="font-size: 15px; font-weight: 700; letter-spacing: 0.05em; color: rgba(255,255,255,0.55);">{{marketLine}}</div>
+    <div style="display: flex; align-items: baseline; gap: 12px; margin-top: 10px;">
+      <span style="font-size: 40px; font-weight: 800; letter-spacing: -0.02em;">{{hero.sym}}</span>
+      <span style="font-size: 18px; font-weight: 600; color: rgba(255,255,255,0.6);">{{hero.name}}</span>
+    </div>
+    <div style="display: flex; align-items: baseline; gap: 14px; margin-top: 2px;">
+      <span style="font-size: 64px; font-weight: 600; letter-spacing: -0.035em; font-variant-numeric: tabular-nums;">{{hero.price}}</span>
+      <span style="font-size: 22px; font-weight: 700; color: {{hero.color}}; font-variant-numeric: tabular-nums;">{{hero.change}}</span>
+    </div>
+    <svg width="440" height="190" viewBox="0 0 440 190" aria-hidden="true" style="margin-top: 14px; display: block;">
+      <defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{{hero.color}}" stop-opacity="0.35"/><stop offset="1" stop-color="{{hero.color}}" stop-opacity="0"/></linearGradient></defs>
+      <line x1="0" y1="{{hero.baseY}}" x2="440" y2="{{hero.baseY}}" stroke="rgba(255,255,255,0.25)" stroke-width="1" stroke-dasharray="3 5"/>
+      <path d="{{hero.area}}" fill="url(#area)"/>
+      <path d="{{hero.line}}" fill="none" stroke="{{hero.color}}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>
+    <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.45); margin-top: 6px;">
+      <span>9:30</span><span>12:00</span><span>4:00</span>
+    </div>
+  </div>
+
+  <!-- Watchlist -->
+  <div style="position: absolute; left: 520px; right: 40px; top: 36px; display: flex; flex-direction: column;">
+    <div style="font-size: 15px; font-weight: 700; letter-spacing: 0.05em; color: rgba(255,255,255,0.55); margin-bottom: 6px;">WATCHLIST</div>
+    <sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+      <button type="button" onClick="{{r.pick}}" aria-pressed="{{r.pressed}}" style="height: 74px; border: 0; border-bottom: 0.5px solid rgba(255,255,255,0.14); background: {{r.bg}}; cursor: pointer; font-family: inherit; color: #fff; display: flex; align-items: center; gap: 14px; padding: 0 10px; border-radius: 14px; text-align: left;">
+        <span style="width: 96px; flex-shrink: 0;">
+          <span style="display: block; font-size: 20px; font-weight: 800;">{{r.sym}}</span>
+          <span style="display: block; font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{r.name}}</span>
+        </span>
+        <svg width="110" height="36" viewBox="0 0 110 36" aria-hidden="true" style="flex-shrink: 0;">
+          <path d="{{r.spark}}" fill="none" stroke="{{r.color}}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>
+        <span style="flex: 1; text-align: right;">
+          <span style="display: block; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums;">{{r.price}}</span>
+          <span style="display: inline-block; margin-top: 3px; min-width: 72px; padding: 2px 8px; box-sizing: border-box; border-radius: 7px; font-size: 13px; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; background: {{r.pillBg}}; color: {{r.pillInk}};">{{r.pct}}</span>
+        </span>
+      </button>
+    </sc-for>
+    <div style="font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.4); margin-top: 8px;">Demo data · connect a quote source</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":960,"height":480}}'>
+class Component extends DCLogic {
+  series(seed, n, drift) {
+    let s = seed; const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+    const out = [0]; for (let i = 1; i < n; i++) out.push(out[i - 1] + (rnd() - 0.5) * 2 + drift);
+    return out;
+  }
+  path(vals, w, h, pad) {
+    const mn = Math.min(...vals), mx = Math.max(...vals), span = mx - mn || 1;
+    return vals.map((v, i) => (i ? 'L' : 'M') + (i * w / (vals.length - 1)).toFixed(1) + ' ' + (pad + (h - 2 * pad) * (1 - (v - mn) / span)).toFixed(1)).join(' ');
+  }
+  renderVals() {
+    const st = this.state || {};
+    const list = [
+      { sym: 'AAPL', name: 'Apple', price: 241.62, pct: 1.24, seed: 11 },
+      { sym: 'NVDA', name: 'NVIDIA', price: 168.05, pct: 2.87, seed: 23 },
+      { sym: 'TSLA', name: 'Tesla', price: 352.18, pct: -1.92, seed: 37 },
+      { sym: 'MSFT', name: 'Microsoft', price: 498.40, pct: 0.41, seed: 41 },
+      { sym: 'AMZN', name: 'Amazon', price: 226.75, pct: -0.63, seed: 53 }
+    ];
+    const sel = st.sel ?? 1;
+    const up = '#30D158', down = '#FF453A';
+    const money = (v) => '$' + v.toFixed(2);
+    const sign = (v) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2) + '%';
+    const rows = list.map((x, i) => {
+      const vals = this.series(x.seed, 40, x.pct / 14);
+      return {
+        sym: x.sym, name: x.name, price: x.price.toFixed(2), pct: sign(x.pct),
+        color: x.pct >= 0 ? up : down,
+        pillBg: x.pct >= 0 ? up : down, pillInk: '#000',
+        spark: this.path(vals, 110, 36, 3),
+        bg: i === sel ? 'rgba(255,255,255,0.08)' : 'transparent',
+        pressed: i === sel ? 'true' : 'false',
+        pick: () => this.setState({ sel: i })
+      };
+    });
+    const h = list[sel];
+    const hv = this.series(h.seed, 78, h.pct / 14);
+    const line = this.path(hv, 440, 190, 10);
+    const mn = Math.min(...hv), mx = Math.max(...hv), span = mx - mn || 1;
+    const baseY = (10 + 170 * (1 - (hv[0] - mn) / span)).toFixed(1);
+    const delta = h.price * h.pct / (100 + h.pct);
+    const d = new Date();
+    const weekend = d.getDay() === 0 || d.getDay() === 6;
+    return {
+      rows,
+      marketLine: weekend ? 'MARKETS CLOSED · FRIDAY CLOSE' : 'MARKETS · DELAYED 15 MIN',
+      hero: {
+        sym: h.sym, name: h.name, price: money(h.price),
+        change: (delta >= 0 ? '+' : '−') + Math.abs(delta).toFixed(2) + '  (' + sign(h.pct) + ')',
+        color: h.pct >= 0 ? up : down,
+        line, area: line + ' L440 190 L0 190 Z', baseY
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Echo Island states</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 1060px; box-sizing: border-box; padding: 48px; background: #0B0B0E; color: #fff; font-family: -apple-system, 'SF Pro Display', 'Inter', BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased;">
+  <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 32px;">
+    <div>
+      <div style="font-size: 44px; font-weight: 800; letter-spacing: -0.03em;">Echo Island</div>
+      <div style="font-size: 18px; font-weight: 500; color: rgba(255,255,255,0.66); margin-top: 6px; max-width: 860px; line-height: 1.4;">One live surface at the top edge, under the Echo’s buttons. Timers, music, the assistant, calls and the doorbell share it: compact while something runs, a second bead for a second activity, and it expands when tapped or when something needs you.</div>
+    </div>
+    <div style="font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.5); text-align: right; line-height: 1.6;">960 × 480 screen<br>12 px from the top edge<br>Spring: cubic-bezier(0.3, 1.32, 0.5, 1), 0.6 s</div>
+  </div>
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px 24px;">
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 422px; height: 211px; border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,0.1);">
+        <div style="width: 960px; height: 480px; transform: scale(0.4396); transform-origin: 0 0;">
+          <dc-import name="Island" scene="Timer" look="Liquid Glass" background="Glass clock" hint-size="960px,480px"></dc-import>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-size: 17px; font-weight: 700;">Compact · one activity</span>
+        <span style="font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums;">230 × 44</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 422px; height: 211px; border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,0.1);">
+        <div style="width: 960px; height: 480px; transform: scale(0.4396); transform-origin: 0 0;">
+          <dc-import name="Island" scene="Music + timer" look="Liquid Glass" background="Glass clock" hint-size="960px,480px"></dc-import>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-size: 17px; font-weight: 700;">Split · two activities</span>
+        <span style="font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums;">250 × 44 + 44 bead</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 422px; height: 211px; border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,0.1);">
+        <div style="width: 960px; height: 480px; transform: scale(0.4396); transform-origin: 0 0;">
+          <dc-import name="Island" scene="Assistant" look="Liquid Glass" background="Glass clock" hint-size="960px,480px"></dc-import>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-size: 17px; font-weight: 700;">Compact · assistant listening</span>
+        <span style="font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums;">220 × 44 + bead</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 422px; height: 211px; border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,0.1);">
+        <div style="width: 960px; height: 480px; transform: scale(0.4396); transform-origin: 0 0;">
+          <dc-import name="Island" scene="Now Playing expanded" look="Liquid Glass" background="Glass clock" hint-size="960px,480px"></dc-import>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-size: 17px; font-weight: 700;">Expanded · tap the island</span>
+        <span style="font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums;">660 × 160</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 422px; height: 211px; border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,0.1);">
+        <div style="width: 960px; height: 480px; transform: scale(0.4396); transform-origin: 0 0;">
+          <dc-import name="Island" scene="Doorbell" look="Liquid Glass" background="Glass clock" hint-size="960px,480px"></dc-import>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-size: 17px; font-weight: 700;">Alert · expands on its own</span>
+        <span style="font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums;">640 × 196</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 422px; height: 211px; border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,0.1);">
+        <div style="width: 960px; height: 480px; transform: scale(0.4396); transform-origin: 0 0;">
+          <dc-import name="Island" scene="Call" look="Liquid Glass" background="Glass clock" hint-size="960px,480px"></dc-import>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-size: 17px; font-weight: 700;">Alert · incoming call</span>
+        <span style="font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums;">580 × 116</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 422px; height: 211px; border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,0.1);">
+        <div style="width: 960px; height: 480px; transform: scale(0.4396); transform-origin: 0 0;">
+          <dc-import name="Island" scene="Timer" look="Black" background="Analog" hint-size="960px,480px"></dc-import>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-size: 17px; font-weight: 700;">Black look on a StandBy face</span>
+        <span style="font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums;">230 × 44</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 422px; height: 211px; border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,0.1);">
+        <div style="width: 960px; height: 480px; transform: scale(0.4396); transform-origin: 0 0;">
+          <dc-import name="Island" scene="Music + timer" look="Black" background="Analog" hint-size="960px,480px"></dc-import>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-size: 17px; font-weight: 700;">Black look, split</span>
+        <span style="font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums;">250 × 44 + 44 bead</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="width: 422px; height: 211px; border-radius: 18px; overflow: hidden; box-shadow: 0 0 0 1px rgba(255,255,255,0.1);">
+        <div style="width: 960px; height: 480px; transform: scale(0.4396); transform-origin: 0 0;">
+          <dc-import name="Island" scene="Music + timer" look="Liquid Glass" background="Photos" hint-size="960px,480px"></dc-import>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: baseline;">
+        <span style="font-size: 17px; font-weight: 700;">Glass over a photo</span>
+        <span style="font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums;">250 × 44 + 44 bead</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1060}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

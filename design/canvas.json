@@ -1,0 +1,313 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "Alarm.dc.html": {
+      "h": 480,
+      "radius": 20,
+      "title": "Alarm · ring → snooze → good morning",
+      "w": 960,
+      "x": 0,
+      "y": 600,
+      "is_interactive": true
+    },
+    "Analog.dc.html": {
+      "h": 480,
+      "radius": 20,
+      "title": "StandBy · Analog clock",
+      "w": 960,
+      "x": 0,
+      "y": 1560
+    },
+    "Customize.dc.html": {
+      "h": 480,
+      "is_interactive": true,
+      "radius": 20,
+      "title": "StandBy · Edit faces (interactive)",
+      "w": 960,
+      "x": 2080,
+      "y": 2160
+    },
+    "Float.dc.html": {
+      "h": 480,
+      "radius": 20,
+      "title": "StandBy · Float clock",
+      "w": 960,
+      "x": 0,
+      "y": 2160
+    },
+    "Glass.dc.html": {
+      "h": 480,
+      "radius": 20,
+      "title": "StandBy · Liquid Glass clock",
+      "w": 960,
+      "x": 1040,
+      "y": 2160
+    },
+    "Lamp.dc.html": {
+      "h": 480,
+      "radius": 20,
+      "title": "Lamp · controls",
+      "w": 960,
+      "x": 1040,
+      "y": 600
+    },
+    "Night.dc.html": {
+      "h": 480,
+      "radius": 20,
+      "title": "Night mode · red, dims in the dark (tap to wake)",
+      "w": 960,
+      "x": 2080,
+      "y": 0,
+      "is_interactive": true
+    },
+    "NowPlaying.dc.html": {
+      "h": 480,
+      "radius": 20,
+      "title": "Now Playing · AirPlay receiver",
+      "w": 960,
+      "x": 1040,
+      "y": 0,
+      "is_interactive": true
+    },
+    "Solar.dc.html": {
+      "h": 480,
+      "radius": 20,
+      "title": "StandBy · Solar clock",
+      "w": 960,
+      "x": 2080,
+      "y": 1560
+    },
+    "World.dc.html": {
+      "h": 480,
+      "radius": 20,
+      "title": "StandBy · World clock",
+      "w": 960,
+      "x": 1040,
+      "y": 1560
+    },
+    "Digital.dc.html": {
+      "x": 3120,
+      "y": 1560,
+      "w": 960,
+      "h": 480,
+      "title": "StandBy · Digital clock",
+      "radius": 20
+    },
+    "NightDigital.dc.html": {
+      "x": 3120,
+      "y": 0,
+      "w": 960,
+      "h": 480,
+      "title": "Night mode · Digital (tap to wake)",
+      "radius": 20,
+      "is_interactive": true
+    },
+    "Assistant.dc.html": {
+      "x": 0,
+      "y": 3160,
+      "w": 960,
+      "h": 480,
+      "title": "AI assistant · listen → think → answer",
+      "radius": 20,
+      "is_interactive": true
+    },
+    "Home.dc.html": {
+      "x": 1040,
+      "y": 3160,
+      "w": 960,
+      "h": 480,
+      "title": "Home · lights, climate, scenes, locks",
+      "radius": 20,
+      "is_interactive": true
+    },
+    "Weather.dc.html": {
+      "x": 2080,
+      "y": 3160,
+      "w": 960,
+      "h": 480,
+      "title": "StandBy · Weather face",
+      "radius": 20
+    },
+    "Timers.dc.html": {
+      "x": 3120,
+      "y": 3160,
+      "w": 960,
+      "h": 480,
+      "title": "Timers · Live Activity platters",
+      "radius": 20,
+      "is_interactive": true
+    },
+    "ControlCenter.dc.html": {
+      "x": 0,
+      "y": 4160,
+      "w": 960,
+      "h": 480,
+      "title": "Control Center · pull-down",
+      "radius": 20,
+      "is_interactive": true
+    },
+    "HUDs.dc.html": {
+      "x": 1040,
+      "y": 4160,
+      "w": 960,
+      "h": 480,
+      "title": "Volume, brightness, mic & camera indicators",
+      "radius": 20,
+      "is_interactive": true
+    },
+    "Banners.dc.html": {
+      "x": 2080,
+      "y": 4160,
+      "w": 960,
+      "h": 480,
+      "title": "Notification banners · tap to expand",
+      "radius": 20,
+      "is_interactive": true
+    },
+    "Profiles.dc.html": {
+      "x": 3120,
+      "y": 4160,
+      "w": 960,
+      "h": 480,
+      "title": "Profile switching by face",
+      "radius": 20,
+      "is_interactive": true
+    },
+    "Calendar.dc.html": {
+      "x": 0,
+      "y": 4760,
+      "w": 960,
+      "h": 480,
+      "title": "StandBy · Calendar face",
+      "radius": 20
+    },
+    "Photos.dc.html": {
+      "x": 1040,
+      "y": 4760,
+      "w": 960,
+      "h": 480,
+      "title": "Photo frame · Immich",
+      "radius": 20,
+      "is_interactive": true
+    },
+    "Commute.dc.html": {
+      "x": 2080,
+      "y": 4760,
+      "w": 960,
+      "h": 480,
+      "title": "Commute glance",
+      "radius": 20
+    },
+    "Stocks.dc.html": {
+      "x": 3120,
+      "y": 4760,
+      "w": 960,
+      "h": 480,
+      "title": "Stocks glance",
+      "radius": 20,
+      "is_interactive": true
+    },
+    "Island.dc.html": {
+      "x": 0,
+      "y": 5760,
+      "w": 960,
+      "h": 480,
+      "title": "Echo Island · live (tap it)",
+      "radius": 20,
+      "is_interactive": true
+    },
+    "IslandSheet.dc.html": {
+      "x": 1040,
+      "y": 5760,
+      "w": 1440,
+      "h": 1060,
+      "title": "Echo Island · all states",
+      "radius": 20
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-11-22T09:30:00Z",
+    "v": 1
+  },
+  "designSystems": [],
+  "launch": {
+    "view": "canvas"
+  },
+  "noteOrder": [
+    "intro",
+    "clocks",
+    "more",
+    "system",
+    "island"
+  ],
+  "notes": {
+    "clocks": {
+      "kind": "title1",
+      "maxW": 4080,
+      "text": "StandBy clock faces",
+      "w": 240,
+      "x": 0,
+      "y": 1300
+    },
+    "intro": {
+      "kind": "title1",
+      "maxW": 2920,
+      "text": "Echo Show 5 · Liquid Glass bedside",
+      "w": 240,
+      "x": 0,
+      "y": -240
+    },
+    "more": {
+      "x": 0,
+      "y": 2900,
+      "text": "Assistant, Home & everyday screens",
+      "kind": "title1",
+      "maxW": 4080
+    },
+    "system": {
+      "x": 0,
+      "y": 3900,
+      "text": "System screens & glances",
+      "kind": "title1",
+      "maxW": 4080
+    },
+    "island": {
+      "x": 0,
+      "y": 5500,
+      "text": "Echo Island",
+      "kind": "title1",
+      "maxW": 2480
+    }
+  },
+  "order": [
+    "NowPlaying.dc.html",
+    "Night.dc.html",
+    "Alarm.dc.html",
+    "Lamp.dc.html",
+    "Analog.dc.html",
+    "World.dc.html",
+    "Solar.dc.html",
+    "Float.dc.html",
+    "Glass.dc.html",
+    "Customize.dc.html",
+    "Digital.dc.html",
+    "NightDigital.dc.html",
+    "Assistant.dc.html",
+    "Home.dc.html",
+    "Weather.dc.html",
+    "Timers.dc.html",
+    "ControlCenter.dc.html",
+    "HUDs.dc.html",
+    "Banners.dc.html",
+    "Profiles.dc.html",
+    "Calendar.dc.html",
+    "Photos.dc.html",
+    "Commute.dc.html",
+    "Stocks.dc.html",
+    "Island.dc.html",
+    "IslandSheet.dc.html"
+  ],
+  "pages": [],
+  "title": "Echo Bedside — Liquid Glass UI"
+}

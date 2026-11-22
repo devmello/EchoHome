@@ -1,0 +1,26 @@
+# Device tooling and images (large binaries, kept locally only)
+amonet/
+rom/
+platform-tools/
+platform-tools.zip
+backups/
+
+# Per-machine / per-device state and secrets
+.echo-*
+local.properties
+secrets.properties
+*.keystore
+
+# Build outputs
+.gradle/
+build/
+.kotlin/
+*.apk
+*.aab
+
+# Editors / OS
+.DS_Store
+.idea/
+*.iml
+.vscode/
+.claude/worktrees/

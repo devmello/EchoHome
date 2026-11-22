@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Now Playing over AirPlay</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 960px; height: 480px; position: relative; overflow: hidden; background: {{bgBase}}; color: #fff; font-family: -apple-system, 'SF Pro Display', 'Inter', BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased; transition: background 1.2s ease;">
+
+  <!-- Content layer: living colour pulled from the artwork, drifting slowly -->
+  <div aria-hidden="true" style="position: absolute; left: -160px; top: -220px; width: 680px; height: 680px; border-radius: 50%; background: {{blobA}}; filter: blur(80px); opacity: 0.85; transform: translate({{ax}}px, {{ay}}px); transition: transform 1s linear, background 1.2s ease;"></div>
+  <div aria-hidden="true" style="position: absolute; left: 420px; top: 120px; width: 720px; height: 620px; border-radius: 50%; background: {{blobB}}; filter: blur(90px); opacity: 0.8; transform: translate({{bx}}px, {{by}}px); transition: transform 1s linear, background 1.2s ease;"></div>
+  <div aria-hidden="true" style="position: absolute; left: 300px; top: -260px; width: 520px; height: 460px; border-radius: 50%; background: {{blobC}}; filter: blur(80px); opacity: 0.6; transform: translate({{cx}}px, {{cy}}px); transition: transform 1s linear, background 1.2s ease;"></div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.38));"></div>
+
+  <!-- Top bar -->
+  <div style="position: absolute; left: 56px; right: 56px; top: 26px; display: flex; justify-content: space-between; align-items: center;">
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: rgba(255,255,255,0.78);">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1"/><path d="m12 15 5 6H7z" fill="currentColor"/></svg>
+      <span>AirPlay from iPhone</span>
+    </div>
+    <div style="font-size: 17px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.9);">{{clock}}</div>
+  </div>
+
+  <!-- Artwork (content). Shrinks when paused, like Apple's Now Playing -->
+  <div style="position: absolute; left: 56px; top: 78px; width: 324px; height: 324px; border-radius: 22px; overflow: hidden; box-shadow: 0 24px 60px rgba(0,0,0,0.5), 0 0 0 0.5px rgba(255,255,255,0.12); transform: scale({{artScale}}); transition: transform 0.55s cubic-bezier(0.3, 1.35, 0.5, 1);">
+    <sc-if value="{{art.a}}" hint-placeholder-val="{{ true }}">
+      <div style="position: absolute; inset: 0; background: linear-gradient(180deg, #17485A 0%, #B9654E 44%, #F7B98A 58%);"></div>
+      <div style="position: absolute; left: 97px; top: 92px; width: 130px; height: 130px; border-radius: 50%; background: linear-gradient(180deg, #FFE7BC 0%, #FF8A4C 70%, #FF6A3D 100%); box-shadow: 0 0 60px rgba(255,150,80,0.65);"></div>
+      <div style="position: absolute; left: 0; right: 0; top: 188px; bottom: 0; background: linear-gradient(180deg, #0F3E48 0%, #06191E 100%);"></div>
+      <div style="position: absolute; left: 92px; width: 140px; top: 192px; height: 104px; background: repeating-linear-gradient(180deg, rgba(255,160,95,0.8) 0px, rgba(255,160,95,0.8) 3px, rgba(255,160,95,0) 3px, rgba(255,160,95,0) 11px); -webkit-mask-image: radial-gradient(ellipse 50% 100% at 50% 0%, #000 20%, rgba(0,0,0,0) 80%); mask-image: radial-gradient(ellipse 50% 100% at 50% 0%, #000 20%, rgba(0,0,0,0) 80%);"></div>
+      <div style="position: absolute; left: 22px; top: 20px; font-size: 11px; font-weight: 700; letter-spacing: 0.22em; color: rgba(255,240,225,0.9);">COASTLINE HOURS</div>
+    </sc-if>
+    <sc-if value="{{art.b}}" hint-placeholder-val="{{ false }}">
+      <div style="position: absolute; inset: 0; background: radial-gradient(circle at 28% 26%, #6A34B8 0%, #2A0F57 55%, #12052A 100%);"></div>
+      <div style="position: absolute; left: 62px; top: 62px; width: 260px; height: 260px; border-radius: 50%; border: 1.5px solid rgba(255,170,220,0.35); box-sizing: border-box;"></div>
+      <div style="position: absolute; left: 97px; top: 97px; width: 190px; height: 190px; border-radius: 50%; border: 1.5px solid rgba(255,170,220,0.55); box-sizing: border-box;"></div>
+      <div style="position: absolute; left: 132px; top: 132px; width: 120px; height: 120px; border-radius: 50%; border: 1.5px solid rgba(255,170,220,0.75); box-sizing: border-box;"></div>
+      <div style="position: absolute; left: 157px; top: 157px; width: 70px; height: 70px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #FFC2DD 0%, #FF4F9A 60%, #B21E62 100%); box-shadow: 0 0 40px rgba(255,79,154,0.6);"></div>
+      <div style="position: absolute; left: 272px; top: 124px; width: 14px; height: 14px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 0 14px rgba(255,255,255,0.9);"></div>
+      <div style="position: absolute; left: 22px; bottom: 20px; font-size: 11px; font-weight: 700; letter-spacing: 0.22em; color: rgba(255,220,240,0.9);">SMALL ORBITS</div>
+    </sc-if>
+    <sc-if value="{{art.c}}" hint-placeholder-val="{{ false }}">
+      <div style="position: absolute; inset: 0; background: linear-gradient(165deg, #0D2A66 0%, #050D26 70%, #02050F 100%);"></div>
+      <div style="position: absolute; left: 214px; top: 46px; width: 62px; height: 62px; border-radius: 50%; background: #EAF7FF; box-shadow: 0 0 50px 8px rgba(160,225,255,0.45);"></div>
+      <div style="position: absolute; left: -40px; right: -40px; top: 150px; bottom: -40px; background: repeating-radial-gradient(ellipse 70% 40% at 50% 120%, rgba(63,208,255,0) 0px, rgba(63,208,255,0) 16px, rgba(63,208,255,0.6) 16px, rgba(63,208,255,0.6) 19px); -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0) 0%, #000 35%); mask-image: linear-gradient(180deg, rgba(0,0,0,0) 0%, #000 35%);"></div>
+      <div style="position: absolute; left: 22px; top: 20px; font-size: 11px; font-weight: 700; letter-spacing: 0.22em; color: rgba(220,245,255,0.9);">NIGHT SWIM</div>
+    </sc-if>
+  </div>
+
+  <!-- Track info, scrubber, transport -->
+  <div style="position: absolute; left: 424px; right: 56px; top: 86px; bottom: 36px; display: flex; flex-direction: column;">
+    <div style="min-width: 0;">
+      <div style="font-size: 40px; font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{track.title}}</div>
+      <div style="font-size: 22px; font-weight: 500; letter-spacing: -0.015em; color: rgba(255,255,255,0.72); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{track.artist}} — {{track.album}}</div>
+    </div>
+
+    <div style="margin-top: 30px;">
+      <button type="button" aria-label="Seek" onClick="{{seek}}" style="display: block; width: 100%; height: 22px; padding: 7px 0; border: 0; background: none; cursor: pointer; box-sizing: border-box;">
+        <span style="display: block; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.24); overflow: hidden;">
+          <span style="display: block; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.95); width: {{pct}}%; transition: width 1s linear;"></span>
+        </span>
+      </button>
+      <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; color: rgba(255,255,255,0.66);">
+        <span>{{elapsed}}</span>
+        <span>{{remaining}}</span>
+      </div>
+    </div>
+
+    <!-- Transport: plain glyphs at rest; they lift into Liquid Glass while pressed -->
+    <div style="margin-top: 14px; height: 96px; display: flex; align-items: center; justify-content: center; gap: 40px;">
+      <button type="button" aria-label="Previous track" onClick="{{prev}}" onMouseDown="{{pressPrev}}" onMouseUp="{{release}}" onMouseLeave="{{release}}" style="position: relative; width: 80px; height: 80px; border: 0; background: none; cursor: pointer; color: #fff; display: flex; align-items: center; justify-content: center; padding: 0;">
+        <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 50%; background: rgba(255,255,255,0.14); border: 0.5px solid rgba(255,255,255,0.3); backdrop-filter: blur(12px) saturate(1.8) brightness(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.8) brightness(1.2); box-shadow: inset 0 1px 1px rgba(255,255,255,0.5), 0 6px 18px rgba(0,0,0,0.3); opacity: {{lift.prev}}; transform: scale({{liftScale.prev}}); transition: opacity 0.18s ease, transform 0.3s cubic-bezier(0.3, 1.5, 0.5, 1);"></span>
+        <svg style="position: relative;" width="40" height="40" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M16 9.2a1.4 1.4 0 0 0-2.1-1.2l-9.5 6.8a1.5 1.5 0 0 0 0 2.4l9.5 6.8a1.4 1.4 0 0 0 2.1-1.2z"/><path d="M29 9.2a1.4 1.4 0 0 0-2.1-1.2l-9.5 6.8a1.5 1.5 0 0 0 0 2.4l9.5 6.8a1.4 1.4 0 0 0 2.1-1.2z"/></svg>
+      </button>
+      <button type="button" aria-label="{{playLabel}}" onClick="{{togglePlay}}" onMouseDown="{{pressPlay}}" onMouseUp="{{release}}" onMouseLeave="{{release}}" style="position: relative; width: 96px; height: 96px; border: 0; background: none; cursor: pointer; color: #fff; display: flex; align-items: center; justify-content: center; padding: 0;">
+        <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 50%; background: rgba(255,255,255,0.14); border: 0.5px solid rgba(255,255,255,0.3); backdrop-filter: blur(12px) saturate(1.8) brightness(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.8) brightness(1.2); box-shadow: inset 0 1px 1px rgba(255,255,255,0.5), 0 6px 18px rgba(0,0,0,0.3); opacity: {{lift.play}}; transform: scale({{liftScale.play}}); transition: opacity 0.18s ease, transform 0.3s cubic-bezier(0.3, 1.5, 0.5, 1);"></span>
+        <sc-if value="{{playing}}" hint-placeholder-val="{{ true }}">
+          <svg style="position: relative;" width="54" height="54" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><rect x="7" y="5" width="6.4" height="22" rx="1.8"/><rect x="18.6" y="5" width="6.4" height="22" rx="1.8"/></svg>
+        </sc-if>
+        <sc-if value="{{paused}}" hint-placeholder-val="{{ false }}">
+          <svg style="position: relative; margin-left: 6px;" width="54" height="54" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M8 6.3a1.6 1.6 0 0 1 2.4-1.4l16 9.7a1.6 1.6 0 0 1 0 2.8l-16 9.7A1.6 1.6 0 0 1 8 25.7z"/></svg>
+        </sc-if>
+      </button>
+      <button type="button" aria-label="Next track" onClick="{{next}}" onMouseDown="{{pressNext}}" onMouseUp="{{release}}" onMouseLeave="{{release}}" style="position: relative; width: 80px; height: 80px; border: 0; background: none; cursor: pointer; color: #fff; display: flex; align-items: center; justify-content: center; padding: 0;">
+        <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 50%; background: rgba(255,255,255,0.14); border: 0.5px solid rgba(255,255,255,0.3); backdrop-filter: blur(12px) saturate(1.8) brightness(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.8) brightness(1.2); box-shadow: inset 0 1px 1px rgba(255,255,255,0.5), 0 6px 18px rgba(0,0,0,0.3); opacity: {{lift.next}}; transform: scale({{liftScale.next}}); transition: opacity 0.18s ease, transform 0.3s cubic-bezier(0.3, 1.5, 0.5, 1);"></span>
+        <svg style="position: relative;" width="40" height="40" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true"><path d="M3 9.2a1.4 1.4 0 0 1 2.1-1.2l9.5 6.8a1.5 1.5 0 0 1 0 2.4l-9.5 6.8A1.4 1.4 0 0 1 3 22.8z"/><path d="M16 9.2a1.4 1.4 0 0 1 2.1-1.2l9.5 6.8a1.5 1.5 0 0 1 0 2.4l-9.5 6.8a1.4 1.4 0 0 1-2.1-1.2z"/></svg>
+      </button>
+    </div>
+
+    <div style="flex: 1;"></div>
+
+    <!-- Glass control bar: volume + AirPlay -->
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div style="position: relative; flex: 1; height: 52px; border-radius: 26px; display: flex; align-items: center; gap: 12px; padding: 0 18px; box-sizing: border-box; background: rgba(255,255,255,0.1); border: 0.5px solid rgba(255,255,255,0.24); backdrop-filter: blur(16px) saturate(1.8) brightness(1.15); -webkit-backdrop-filter: blur(16px) saturate(1.8) brightness(1.15); box-shadow: inset 0 1px 1px rgba(255,255,255,0.45), inset 0 -1px 1px rgba(255,255,255,0.08), 0 10px 28px rgba(0,0,0,0.35); overflow: hidden;">
+        <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 26px; background: linear-gradient(170deg, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0.04) 40%, rgba(255,255,255,0) 65%, rgba(255,255,255,0.07) 100%); pointer-events: none;"></span>
+        <svg style="position: relative; flex-shrink: 0;" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 9.5v5a1 1 0 0 0 1 1h3l4.4 3.6a.9.9 0 0 0 1.6-.7V5.6a.9.9 0 0 0-1.6-.7L7 8.5H4a1 1 0 0 0-1 1z"/></svg>
+        <button type="button" aria-label="Volume {{volPct}} percent" onClick="{{setVolume}}" style="position: relative; flex: 1; height: 44px; padding: 18px 0; border: 0; background: none; cursor: pointer; box-sizing: border-box;">
+          <span style="display: block; height: 8px; border-radius: 4px; background: rgba(255,255,255,0.22); overflow: hidden;">
+            <span style="display: block; height: 8px; border-radius: 4px; background: #FFFFFF; width: {{volPct}}%; transition: width 0.25s ease;"></span>
+          </span>
+        </button>
+        <svg style="position: relative; flex-shrink: 0;" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 9.5v5a1 1 0 0 0 1 1h3l4.4 3.6a.9.9 0 0 0 1.6-.7V5.6a.9.9 0 0 0-1.6-.7L7 8.5H4a1 1 0 0 0-1 1z" fill="currentColor" stroke="none"/><path d="M16 9a4.5 4.5 0 0 1 0 6"/><path d="M18.8 6.2a8.5 8.5 0 0 1 0 11.6"/></svg>
+      </div>
+      <button type="button" aria-label="AirPlay details" aria-expanded="{{routeOpenStr}}" onClick="{{toggleRoute}}" style="position: relative; width: 52px; height: 52px; flex-shrink: 0; border-radius: 26px; cursor: pointer; color: {{routeFg}}; display: flex; align-items: center; justify-content: center; padding: 0; background: {{routeBg}}; border: 0.5px solid rgba(255,255,255,0.26); backdrop-filter: blur(16px) saturate(1.8) brightness(1.15); -webkit-backdrop-filter: blur(16px) saturate(1.8) brightness(1.15); box-shadow: inset 0 1px 1px rgba(255,255,255,0.45), inset 0 -1px 1px rgba(255,255,255,0.08), 0 10px 28px rgba(0,0,0,0.35); overflow: hidden;">
+        <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 26px; background: linear-gradient(170deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0) 55%); pointer-events: none;"></span>
+        <svg style="position: relative;" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-1"/><path d="m12 15 5 6H7z" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- AirPlay popover: pops open from its button -->
+  <sc-if value="{{routeOpen}}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; right: 56px; bottom: 100px; width: 300px; border-radius: 26px; padding: 18px 20px; box-sizing: border-box; background: rgba(30,30,36,0.38); border: 0.5px solid rgba(255,255,255,0.24); backdrop-filter: blur(24px) saturate(1.8) brightness(0.95); -webkit-backdrop-filter: blur(24px) saturate(1.8) brightness(0.95); box-shadow: inset 0 1px 1px rgba(255,255,255,0.4), 0 18px 48px rgba(0,0,0,0.5); overflow: hidden; display: flex; flex-direction: column; gap: 12px;">
+      <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 26px; background: linear-gradient(165deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0) 45%); pointer-events: none;"></span>
+      <div style="position: relative; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; color: rgba(255,255,255,0.6);">AIRPLAY RECEIVER</div>
+      <div style="position: relative; display: flex; align-items: center; gap: 12px;">
+        <div style="width: 40px; height: 40px; border-radius: 12px; background: rgba(255,255,255,0.14); display: flex; align-items: center; justify-content: center;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>
+        </div>
+        <div>
+          <div style="font-size: 16px; font-weight: 600;">iPhone</div>
+          <div style="font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.62);">Streaming to Echo Bedside</div>
+        </div>
+      </div>
+      <div style="position: relative; display: flex; gap: 8px; flex-wrap: wrap;">
+        <span style="font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 10px; background: rgba(255,255,255,0.12);">AirPlay 2</span>
+        <span style="font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 10px; background: rgba(255,255,255,0.12);">Lossless · ALAC</span>
+        <span style="font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 10px; background: rgba(255,255,255,0.12);">44.1 kHz</span>
+      </div>
+      <button type="button" onClick="{{toggleRoute}}" style="position: relative; height: 44px; border-radius: 22px; border: 0; cursor: pointer; font-family: inherit; font-size: 15px; font-weight: 600; color: #FF6961; background: rgba(255,255,255,0.1);">Disconnect</button>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"autoplay":{"editor":"boolean","default":true},"$preview":{"width":960,"height":480}}'>
+class Component extends DCLogic {
+  tracks() {
+    return [
+      { id: 'a', title: 'Low Tide Radio', artist: 'Marisol Vey', album: 'Coastline Hours', dur: 227, base: '#0B2329', a: '#1E6A78', b: '#E0784C', c: '#F4B98A' },
+      { id: 'b', title: 'Paper Satellites', artist: 'The Northern Lakes', album: 'Small Orbits', dur: 252, base: '#140726', a: '#5A2AA8', b: '#E8418C', c: '#9B7BFF' },
+      { id: 'c', title: 'Afterglow (Slow)', artist: 'Kito Rae', album: 'Night Swim', dur: 201, base: '#030A1E', a: '#123A8A', b: '#1C9BD6', c: '#6FD8FF' }
+    ];
+  }
+  componentDidMount() {
+    this.timer = setInterval(() => {
+      const st = this.state || {};
+      const playing = st.playing ?? (this.props.autoplay ?? true);
+      if (!playing) { this.setState({ t: Date.now() }); return; }
+      const list = this.tracks();
+      const i = st.i ?? 0;
+      const pos = (st.pos ?? 83) + 1;
+      if (pos >= list[i].dur) this.setState({ i: (i + 1) % list.length, pos: 0 });
+      else this.setState({ pos });
+    }, 1000);
+  }
+  componentWillUnmount() { clearInterval(this.timer); }
+  mmss(s) { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+  renderVals() {
+    const st = this.state || {};
+    const list = this.tracks();
+    const i = st.i ?? 0;
+    const tr = list[i];
+    const pos = Math.min(st.pos ?? 83, tr.dur);
+    const playing = st.playing ?? (this.props.autoplay ?? true);
+    const vol = st.vol ?? 0.62;
+    const t = Date.now() / 1000;
+    const pr = st.pressed || '';
+    const d = new Date();
+    const ratioFrom = (e) => {
+      const r = e.currentTarget.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    };
+    return {
+      track: tr,
+      art: { a: tr.id === 'a', b: tr.id === 'b', c: tr.id === 'c' },
+      bgBase: tr.base,
+      blobA: tr.a, blobB: tr.b, blobC: tr.c,
+      ax: (40 * Math.sin(t / 6)).toFixed(1), ay: (30 * Math.cos(t / 7)).toFixed(1),
+      bx: (50 * Math.cos(t / 8)).toFixed(1), by: (36 * Math.sin(t / 5)).toFixed(1),
+      cx: (60 * Math.sin(t / 9 + 1)).toFixed(1), cy: (40 * Math.cos(t / 6 + 2)).toFixed(1),
+      clock: (d.getHours() % 12 || 12) + ':' + String(d.getMinutes()).padStart(2, '0'),
+      artScale: playing ? 1 : 0.86,
+      pct: (100 * pos / tr.dur).toFixed(2),
+      elapsed: this.mmss(pos),
+      remaining: '-' + this.mmss(tr.dur - pos),
+      playing, paused: !playing,
+      playLabel: playing ? 'Pause' : 'Play',
+      togglePlay: () => this.setState({ playing: !playing }),
+      next: () => this.setState({ i: (i + 1) % list.length, pos: 0 }),
+      prev: () => (pos > 3 ? this.setState({ pos: 0 }) : this.setState({ i: (i + list.length - 1) % list.length, pos: 0 })),
+      seek: (e) => this.setState({ pos: Math.round(ratioFrom(e) * tr.dur) }),
+      volPct: Math.round(vol * 100),
+      setVolume: (e) => this.setState({ vol: ratioFrom(e) }),
+      lift: { prev: pr === 'prev' ? 1 : 0, play: pr === 'play' ? 1 : 0, next: pr === 'next' ? 1 : 0 },
+      liftScale: { prev: pr === 'prev' ? 1 : 0.7, play: pr === 'play' ? 1 : 0.7, next: pr === 'next' ? 1 : 0.7 },
+      pressPrev: () => this.setState({ pressed: 'prev' }),
+      pressPlay: () => this.setState({ pressed: 'play' }),
+      pressNext: () => this.setState({ pressed: 'next' }),
+      release: () => (st.pressed ? this.setState({ pressed: '' }) : null),
+      routeOpen: !!st.route,
+      routeOpenStr: st.route ? 'true' : 'false',
+      routeBg: st.route ? 'rgba(255,255,255,0.88)' : 'rgba(255,255,255,0.1)',
+      routeFg: st.route ? '#0A84FF' : '#FFFFFF',
+      toggleRoute: () => this.setState({ route: !st.route })
+    };
+  }
+}
+</script>
+</body>
+</html>

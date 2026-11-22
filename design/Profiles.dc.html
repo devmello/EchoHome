@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Profile switching by face</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap&family=Nunito:wght@800;900">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 960px; height: 480px; position: relative; overflow: hidden; background: #000; color: #fff; font-family: -apple-system, 'SF Pro Display', 'Inter', BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased;">
+
+  <!-- Shared face (dims when the room is empty) -->
+  <div style="position: absolute; inset: 0; opacity: {{sharedOpacity}}; transition: opacity 0.9s ease;">
+    <dc-import name="Digital" color="#FFFFFF" live="{{ true }}" complications="{{ true }}" hint-size="960px,480px"></dc-import>
+  </div>
+  <!-- Maya's own face, colour and alarm -->
+  <div style="position: absolute; inset: 0; opacity: {{mineOpacity}}; transition: opacity 0.9s ease;">
+    <dc-import name="Float" color="#FF375F" live="{{ true }}" hint-size="960px,480px"></dc-import>
+  </div>
+
+  <!-- Camera-in-use indicator: always visible while the camera is sampling -->
+  <div style="position: absolute; right: 18px; top: 16px; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.7);">
+    <span>{{camLabel}}</span>
+    <span style="width: 9px; height: 9px; border-radius: 50%; background: #30D158; box-shadow: 0 0 8px rgba(48,209,88,0.8);"></span>
+  </div>
+
+  <!-- Detecting -->
+  <sc-if value="{{detecting}}" hint-placeholder-val="{{ false }}">
+    <div role="status" style="position: absolute; left: 50%; top: 18px; width: 220px; margin-left: -110px; height: 48px; border-radius: 24px; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 15px; font-weight: 700; background: rgba(255,255,255,0.1); border: 0.5px solid rgba(255,255,255,0.26); backdrop-filter: blur(18px) saturate(1.8); -webkit-backdrop-filter: blur(18px) saturate(1.8); box-shadow: inset 0 1px 1px rgba(255,255,255,0.45), 0 10px 30px rgba(0,0,0,0.45);">
+      <span style="display: inline-block; box-sizing: border-box; width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,0.3); border-top-color: #fff; transform: rotate({{spin}}deg); transition: transform 0.1s linear;"></span>
+      Who’s there?
+    </div>
+  </sc-if>
+
+  <!-- Recognized: greeting sheet (glass, a transient control surface) -->
+  <div style="position: absolute; left: 50%; bottom: 30px; width: 560px; margin-left: -280px; height: 132px; border-radius: 34px; padding: 18px 22px; box-sizing: border-box; display: flex; align-items: center; gap: 18px; background: rgba(255,255,255,0.1); border: 0.5px solid rgba(255,255,255,0.28); backdrop-filter: blur(22px) saturate(1.9) brightness(1.1); -webkit-backdrop-filter: blur(22px) saturate(1.9) brightness(1.1); box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.5), inset 0 -1px 1px rgba(255,255,255,0.1), 0 18px 48px rgba(0,0,0,0.55); overflow: hidden; opacity: {{cardOpacity}}; transform: translateY({{cardY}}px) scale({{cardScale}}); transition: opacity 0.35s ease, transform 0.6s cubic-bezier(0.3, 1.4, 0.5, 1);">
+    <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 34px; background: linear-gradient(165deg, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0.03) 40%, rgba(255,255,255,0) 70%); pointer-events: none;"></span>
+    <span style="position: relative; width: 84px; height: 84px; flex-shrink: 0; border-radius: 50%; background: linear-gradient(160deg, #FF6A88, #FF375F); display: flex; align-items: center; justify-content: center; font-size: 36px; font-weight: 800; box-shadow: 0 0 0 4px rgba(0,0,0,0.35), 0 0 0 7px rgba(255,255,255,0.9);">M</span>
+    <span style="position: relative; flex: 1; min-width: 0;">
+      <span style="display: block; font-size: 30px; font-weight: 800; letter-spacing: -0.025em;">Hi Maya</span>
+      <span style="display: block; font-size: 15px; font-weight: 600; color: rgba(255,255,255,0.8); margin-top: 2px;">Switched to your clock, alarm and music</span>
+      <span style="display: flex; gap: 8px; margin-top: 10px;">
+        <span style="height: 28px; padding: 0 10px; border-radius: 14px; display: flex; align-items: center; font-size: 13px; font-weight: 700; background: rgba(255,255,255,0.16);">Alarm 6:15 AM</span>
+        <span style="height: 28px; padding: 0 10px; border-radius: 14px; display: flex; align-items: center; font-size: 13px; font-weight: 700; background: rgba(255,255,255,0.16);">Dinner 7:00 PM</span>
+      </span>
+    </span>
+    <button type="button" onClick="{{notMe}}" style="position: relative; height: 44px; padding: 0 16px; border-radius: 22px; border: 0; cursor: pointer; font-family: inherit; font-size: 14px; font-weight: 700; color: #fff; background: rgba(255,255,255,0.16); flex-shrink: 0;">Not me</button>
+  </div>
+
+  <div style="position: absolute; left: 22px; bottom: 14px; font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.5);">On-device recognition · no images saved</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"step":{"editor":"enum","default":"Cycle","options":["Cycle","Empty room","Detecting","Recognized","Personalized"]},"$preview":{"width":960,"height":480}}'>
+class Component extends DCLogic {
+  componentDidMount() { this.t0 = Date.now(); this.timer = setInterval(() => this.setState({ t: Date.now() }), 100); }
+  componentWillUnmount() { clearInterval(this.timer); }
+  renderVals() {
+    const st = this.state || {};
+    const now = Date.now();
+    const el = (now - (this.t0 || now)) % 13000;
+    const mode = this.props.step ?? 'Cycle';
+    let step = mode;
+    if (mode === 'Cycle') step = el < 3000 ? 'Empty room' : el < 4600 ? 'Detecting' : el < 8600 ? 'Recognized' : 'Personalized';
+    if (st.rejectedAt && now - st.rejectedAt < 4000) step = 'Empty room';
+    const mine = step === 'Recognized' || step === 'Personalized';
+    const showCard = step === 'Recognized';
+    return {
+      sharedOpacity: step === 'Empty room' ? 0.35 : mine ? 0 : 1,
+      mineOpacity: mine ? 1 : 0,
+      detecting: step === 'Detecting',
+      spin: ((now / 2.2) % 360).toFixed(0),
+      camLabel: step === 'Empty room' ? 'Presence · 2 fps' : step === 'Detecting' ? 'Face check' : 'Recognized',
+      cardOpacity: showCard ? 1 : 0,
+      cardY: showCard ? 0 : 40,
+      cardScale: showCard ? 1 : 0.92,
+      notMe: () => this.setState({ rejectedAt: Date.now() })
+    };
+  }
+}
+</script>
+</body>
+</html>

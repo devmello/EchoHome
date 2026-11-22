@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Notification banners</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 960px; height: 480px; position: relative; overflow: hidden; background: #000; color: #fff; font-family: -apple-system, 'SF Pro Display', 'Inter', BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased;">
+
+  <div style="position: absolute; inset: 0; filter: blur({{bgBlur}}px); opacity: {{bgOpacity}}; transition: filter 0.4s ease, opacity 0.4s ease;">
+    <dc-import name="Glass" live="{{ true }}" glass="{{ 0.45 }}" wallpaper="Blue" hint-size="960px,480px"></dc-import>
+  </div>
+
+  <!-- ===== Banner (compact) ===== -->
+  <sc-if value="{{compact}}" hint-placeholder-val="{{ true }}">
+    <!-- the previous banner, tucked behind -->
+    <div aria-hidden="true" style="position: absolute; left: 50%; top: 22px; width: 580px; margin-left: -290px; height: 84px; border-radius: 30px; background: rgba(255,255,255,0.07); border: 0.5px solid rgba(255,255,255,0.16); backdrop-filter: blur(16px) saturate(1.6); -webkit-backdrop-filter: blur(16px) saturate(1.6); transform: translateY({{backY}}px) scale(0.94); opacity: {{backOpacity}}; transition: transform 0.5s ease, opacity 0.4s ease;"></div>
+    <button type="button" aria-label="Open notification: {{n.title}}" onClick="{{expand}}" style="position: absolute; left: 50%; top: 14px; width: 620px; margin-left: -310px; height: 88px; border-radius: 32px; padding: 0 22px 0 16px; box-sizing: border-box; cursor: pointer; font-family: inherit; text-align: left; color: #fff; display: flex; align-items: center; gap: 14px; background: rgba(255,255,255,0.12); border: 0.5px solid rgba(255,255,255,0.3); backdrop-filter: blur(20px) saturate(1.9) brightness(1.1); -webkit-backdrop-filter: blur(20px) saturate(1.9) brightness(1.1); box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.5), inset 0 -1px 1px rgba(255,255,255,0.1), 0 16px 44px rgba(0,0,0,0.45); overflow: hidden; transform: translateY({{bannerY}}px) scale({{bannerScale}}); opacity: {{bannerOpacity}}; transition: transform 0.55s cubic-bezier(0.3, 1.4, 0.5, 1), opacity 0.25s ease;">
+      <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 32px; background: linear-gradient(170deg, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0.03) 45%, rgba(255,255,255,0) 70%); pointer-events: none;"></span>
+      <span style="position: relative; width: 54px; height: 54px; flex-shrink: 0; border-radius: 15px; background: {{n.color}}; display: flex; align-items: center; justify-content: center; color: #fff;">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.icon}}"/></svg>
+      </span>
+      <span style="position: relative; flex: 1; min-width: 0;">
+        <span style="display: flex; justify-content: space-between; gap: 10px;">
+          <span style="font-size: 18px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{n.title}}</span>
+          <span style="font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.7); flex-shrink: 0;">now</span>
+        </span>
+        <span style="display: block; font-size: 16px; font-weight: 500; color: rgba(255,255,255,0.86); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{n.body}}</span>
+      </span>
+    </button>
+  </sc-if>
+
+  <!-- ===== Expanded, StandBy-size, readable from across the room ===== -->
+  <sc-if value="{{expanded}}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; left: 64px; top: 56px; right: 64px;">
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <span style="width: 64px; height: 64px; border-radius: 18px; background: {{n.color}}; display: flex; align-items: center; justify-content: center; color: #fff;">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.icon}}"/></svg>
+        </span>
+        <span style="font-size: 20px; font-weight: 700; color: rgba(255,255,255,0.8);">{{n.app}} · now</span>
+      </div>
+      <div style="font-size: 52px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; margin-top: 26px;">{{n.title}}</div>
+      <div style="font-size: 30px; font-weight: 500; letter-spacing: -0.015em; line-height: 1.25; color: rgba(255,255,255,0.88); margin-top: 10px;">{{n.body}}</div>
+    </div>
+    <div style="position: absolute; left: 64px; right: 64px; bottom: 34px; display: flex; gap: 14px;">
+      <button type="button" onClick="{{collapse}}" style="position: relative; flex: 1; height: 72px; border-radius: 36px; cursor: pointer; font-family: inherit; font-size: 22px; font-weight: 700; color: #fff; background: rgba(10,132,255,0.62); border: 0.5px solid rgba(255,255,255,0.3); backdrop-filter: blur(18px) saturate(1.8); -webkit-backdrop-filter: blur(18px) saturate(1.8); box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.5), 0 14px 36px rgba(0,0,0,0.45); overflow: hidden;">
+        <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 36px; background: linear-gradient(170deg, rgba(255,255,255,0.3) 0%, rgba(255,255,255,0) 55%); pointer-events: none;"></span>
+        <span style="position: relative;">{{n.action}}</span>
+      </button>
+      <button type="button" onClick="{{collapse}}" style="position: relative; flex: 1; height: 72px; border-radius: 36px; cursor: pointer; font-family: inherit; font-size: 22px; font-weight: 700; color: #fff; background: rgba(255,255,255,0.1); border: 0.5px solid rgba(255,255,255,0.24); backdrop-filter: blur(18px) saturate(1.8) brightness(1.15); -webkit-backdrop-filter: blur(18px) saturate(1.8) brightness(1.15); box-shadow: inset 0 1.5px 1px rgba(255,255,255,0.45), 0 14px 36px rgba(0,0,0,0.45); overflow: hidden;">
+        <span aria-hidden="true" style="position: absolute; inset: 0; border-radius: 36px; background: linear-gradient(170deg, rgba(255,255,255,0.26) 0%, rgba(255,255,255,0) 55%); pointer-events: none;"></span>
+        <span style="position: relative;">Dismiss</span>
+      </button>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":960,"height":480}}'>
+class Component extends DCLogic {
+  componentDidMount() { this.t0 = Date.now(); this.timer = setInterval(() => this.setState({ t: Date.now() }), 100); }
+  componentWillUnmount() { clearInterval(this.timer); }
+  renderVals() {
+    const st = this.state || {};
+    const list = [
+      { app: 'Messages', title: 'Maya', body: 'Landing at 6:40. Can you grab me from arrivals?', color: '#30D158', action: 'Reply by voice', icon: 'M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 20.5l1.7-5A8.5 8.5 0 1 1 21 11.5z' },
+      { app: 'Front Door', title: 'Someone’s at the door', body: 'Doorbell rang · tap for the live camera', color: '#FF9F0A', action: 'Show camera', icon: 'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0' },
+      { app: 'Home', title: 'Washer finished', body: '52-minute cycle done in the laundry room', color: '#0A84FF', action: 'Remind me in 15 min', icon: 'M5 3h14a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM12 9a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9zM7.5 6h.01M10.5 6h.01' },
+      { app: 'Calendar', title: 'Team sync in 10 minutes', body: '9:30 AM · Video call · 4 people', color: '#FF453A', action: 'Join call', icon: 'M4 5h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM16 3v4M8 3v4M3 10h18' }
+    ];
+    const now = Date.now();
+    const period = 3200;
+    const el = now - (this.t0 || now);
+    const idx = st.pinned != null ? st.pinned : Math.floor(el / period) % list.length;
+    const phase = el % period;
+    const show = st.pinned != null || phase < 2700;
+    const n = list[idx];
+    const expanded = !!st.expanded;
+    return {
+      n,
+      compact: !expanded,
+      expanded,
+      bannerY: show ? 0 : -120,
+      bannerScale: show ? 1 : 0.85,
+      bannerOpacity: show ? 1 : 0,
+      backY: show ? 12 : -110,
+      backOpacity: show && idx > 0 ? 0.8 : 0,
+      bgBlur: expanded ? 26 : 0,
+      bgOpacity: expanded ? 0.45 : 1,
+      expand: () => this.setState({ expanded: true, pinned: idx }),
+      collapse: () => { this.t0 = Date.now(); this.setState({ expanded: false, pinned: null }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

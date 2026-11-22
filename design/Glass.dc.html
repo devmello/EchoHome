@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>StandBy Liquid Glass clock</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 960px; height: 480px; position: relative; overflow: hidden; background: {{wallpaper}}; color: #fff; font-family: -apple-system, 'SF Pro Display', 'Inter', BlinkMacSystemFont, system-ui, sans-serif; -webkit-font-smoothing: antialiased;">
+
+  <!-- Date, vibrant text on the wallpaper -->
+  <div style="position: absolute; left: 0; right: 0; top: 46px; text-align: center; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; color: {{dateColor}}; text-shadow: 0 1px 12px rgba(0,0,0,0.25);">{{dateLine}}</div>
+
+  <!-- Glass time: shadow, lensed body, specular rim -->
+  <div aria-hidden="true" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding-top: 34px; font-size: 300px; font-weight: 700; line-height: 1; letter-spacing: -0.045em; font-variant-numeric: tabular-nums; white-space: nowrap; color: {{shadowColor}}; filter: blur(16px); transform: translateY(12px);">{{time}}</div>
+  <div aria-hidden="true" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding-top: 34px; font-size: 300px; font-weight: 700; line-height: 1; letter-spacing: -0.045em; font-variant-numeric: tabular-nums; white-space: nowrap; background: {{lens}}; background-size: 108% 108%; background-position: 50% 50%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent;">{{time}}</div>
+  <div role="img" aria-label="{{time}}" style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding-top: 34px; font-size: 300px; font-weight: 700; line-height: 1; letter-spacing: -0.045em; font-variant-numeric: tabular-nums; white-space: nowrap; background: {{specular}}; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; color: transparent; -webkit-text-stroke: 1.5px {{rim}};">{{time}}</div>
+
+  <!-- Next alarm -->
+  <div style="position: absolute; left: 0; right: 0; bottom: 34px; display: flex; justify-content: center; align-items: center; gap: 8px; color: {{dateColor}};">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/>
+    </svg>
+    <span style="font-size: 17px; font-weight: 600; letter-spacing: -0.01em; font-variant-numeric: tabular-nums;">7:00 AM</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"color":{"editor":"color","default":"#FFFFFF","options":["#FFFFFF","#FF9F0A","#FF375F","#BF5AF2","#64D2FF","#30D158"]},"glass":{"editor":"range","default":0.45,"min":0,"max":1,"step":0.05,"unit":""},"wallpaper":{"editor":"enum","default":"Blue","options":["Blue","Dusk","Graphite"]},"night":{"editor":"boolean","default":false},"live":{"editor":"boolean","default":true},"$preview":{"width":960,"height":480}}'>
+class Component extends DCLogic {
+  componentDidMount() { this.timer = setInterval(() => this.setState({ t: Date.now() }), 1000); }
+  componentWillUnmount() { clearInterval(this.timer); }
+  rgb(hex) {
+    let h = String(hex).replace('#', '');
+    if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    const n = parseInt(h, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  // blend a colour toward a tint and then toward white, like light through coloured glass
+  pass(hex, tint, tAmt, wAmt, a) {
+    const p = this.rgb(hex), q = this.rgb(tint);
+    const c = p.map((v, i) => {
+      const tinted = v + (q[i] * (0.35 + 0.65 * v / 255) - v) * tAmt;
+      return Math.round(tinted + (255 - tinted) * wAmt);
+    });
+    return 'rgba(' + c.join(',') + ',' + (a ?? 1) + ')';
+  }
+  paper(pal, f) {
+    return 'linear-gradient(118deg, rgba(0,0,0,0) 26%, ' + f(pal[1], 0.55) + ' 36%, rgba(0,0,0,0) 47%), '
+      + 'linear-gradient(118deg, rgba(0,0,0,0) 50%, ' + f(pal[2], 0.5) + ' 60%, rgba(0,0,0,0) 71%), '
+      + 'radial-gradient(ellipse 55% 70% at 18% 22%, ' + f(pal[1], 0.9) + ' 0%, rgba(0,0,0,0) 70%), '
+      + 'radial-gradient(ellipse 50% 65% at 82% 18%, ' + f(pal[2], 0.85) + ' 0%, rgba(0,0,0,0) 70%), '
+      + 'radial-gradient(ellipse 60% 70% at 75% 92%, ' + f(pal[3], 0.9) + ' 0%, rgba(0,0,0,0) 72%), '
+      + 'linear-gradient(180deg, ' + f(pal[0], 1) + ', ' + f(pal[4], 1) + ')';
+  }
+  renderVals() {
+    const live = this.props.live ?? true;
+    const d = new Date();
+    if (!live) d.setHours(9, 41, 0, 0);
+    const night = this.props.night ?? false;
+    const glass = Math.max(0, Math.min(1, this.props.glass ?? 0.45));
+    const tint = this.props.color ?? '#FFFFFF';
+    const tAmt = /^#?f{3}(f{3})?$/i.test(tint) ? 0 : 0.55;
+    const pals = {
+      Blue: ['#0B2A6B', '#2F74FF', '#62C6FF', '#1840B8', '#06112E'],
+      Dusk: ['#2A1240', '#FF6A5C', '#B05CFF', '#5A2C9E', '#12081F'],
+      Graphite: ['#2A2C31', '#6B7380', '#A9B2BF', '#3E434C', '#0E0F12']
+    };
+    const pal = pals[this.props.wallpaper] || pals.Blue;
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const h12 = d.getHours() % 12 || 12;
+    const base = (c, a) => { const p = this.rgb(c); return 'rgba(' + p.join(',') + ',' + a + ')'; };
+    if (night) {
+      return {
+        time: h12 + ':' + String(d.getMinutes()).padStart(2, '0'),
+        dateLine: days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate(),
+        wallpaper: '#000',
+        lens: 'linear-gradient(180deg, rgba(190,24,14,0.55), rgba(120,12,6,0.35))',
+        specular: 'linear-gradient(180deg, rgba(0,0,0,0) 27%, rgba(220,40,24,0.7) 31%, rgba(190,24,14,0) 48%)',
+        rim: 'rgba(190,24,14,0.9)',
+        shadowColor: 'rgba(0,0,0,0)',
+        dateColor: '#BE180E'
+      };
+    }
+    return {
+      time: h12 + ':' + String(d.getMinutes()).padStart(2, '0'),
+      dateLine: days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate(),
+      wallpaper: this.paper(pal, base),
+      lens: this.paper(pal, (c, a) => this.pass(c, tint, tAmt, 0.14 + 0.5 * glass, Math.min(1, a * (0.55 + 0.45 * glass)))),
+      specular: 'linear-gradient(180deg, rgba(255,255,255,0) 27%, rgba(255,255,255,' + (0.5 + 0.3 * glass).toFixed(2) + ') 31%, rgba(255,255,255,0.08) 44%, rgba(255,255,255,0) 58%, rgba(255,255,255,0.18) 71%, rgba(255,255,255,0) 76%)',
+      rim: 'rgba(255,255,255,' + (0.32 + 0.25 * glass).toFixed(2) + ')',
+      shadowColor: 'rgba(0,8,30,' + (0.18 + 0.2 * glass).toFixed(2) + ')',
+      dateColor: 'rgba(255,255,255,0.86)'
+    };
+  }
+}
+</script>
+</body>
+</html>
