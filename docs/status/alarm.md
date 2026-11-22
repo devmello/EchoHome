@@ -50,8 +50,16 @@ Spec: NOTES §6 "Alarms", §2.1 Alarm / Timers, `design/Alarm.dc.html`, `design/
   - `AlarmService` was in the foreground (category=alarm).
   - The `Hassium` default alarm played through MediaPlayer, `USAGE_ALARM`, `state:started`.
   - Audio focus was held: `GAIN_TRANSIENT`, `USAGE_ALARM`.
-- **Not shown full-screen over another app.** Android 11 blocked our background activity start ("Background activity start … isBgStartWhitelisted: false"), and with the screen on and unlocked the full-screen intent became a heads-up "5:03 · Wake Up" (`real-ringing.png`). Since then the heads-up has Snooze / Stop buttons. For the full screen over other apps, the module now declares the privileged `START_ACTIVITIES_FROM_BACKGROUND` (the app is installed as a /system/priv-app with it allow-listed); not yet verified on the device. With our launcher in front (the normal case), `startActivity` is allowed.
-- The test alarm was then cancelled and its persisted state deleted. At the lead's request, **no alarms, timers or sound on the device tonight** (the user is asleep next to it), so the full ring → Snooze → Stop → Done tap-through and a perf run while really ringing are still to do. JVM tests cover those transitions; the demo screens cover the UI.
+- **Not shown full-screen over another app** at the time: Android 11 blocked the background activity start and showed a heads-up instead. Fixed since, see the next test.
+
+## Real ring tests after quiet hours (12:54–13:20, Nov 22; alarm stream at 2/7, restored to 5)
+Main a8c903f plus the fixes below. The app is a /system/priv-app (updated by the debug build) with `START_ACTIVITIES_FROM_BACKGROUND: granted=true`.
+- **Full screen over another app works.** Android Settings was in front. At the ring (`Sunrise → Ringing` at 12:56:00 and again at 13:15:00), `mResumedActivity` became `com.echobedside/.MainActivity` on the alarm screen. The default alarm played (`USAGE_ALARM` player started).
+- **Tap-through**: Snooze (sound stops, "Snoozed · rings again at 1:05", 8:57 countdown) → Stop Alarm → Good morning (weather, up next, lamp) → Done → `Idle`, back to the clock face. Shots: `real-ringing.png`, `real-snoozed.png`, `real-morning.png`.
+- **Bug found and fixed: user actions weren't saved.** The store compared the engine with a snapshot taken after Snooze / Stop / Done / edits had already changed it, so only evaluation-driven changes reached `alarms.json`. The file stayed `RINGING` after Done. When the process restarted (another agent's install), it loaded that state and **rang again** (`Idle → Ringing (start)` at 13:01:15; the alarm stream showed repeated starts until I deleted the file). It now compares with what's on disk. Re-test: the file goes SNOOZED → MORNING → no active state, and the deleted alarm is gone.
+- **Bug found and fixed: our heads-up covered the ringing screen.** The ringing notification (high importance, full-screen intent) showed as a heads-up over our own alarm screen. It now starts on the quiet channel and moves to the heads-up / full-screen channel only if the alarm screen isn't in front 1.5 s after the ring starts (or is left while ringing). So the fallback stays for a blocked start or a screen-off FSI. Re-test: no heads-up, notification on `alarm.quiet`.
+- **Timer**: three timers (25 s, 12 min, 25 min) on the Timers screen, with three exact `ELAPSED_REALTIME_WAKEUP` wake-ups. Tea finished at 25 s: green Done ring and Repeat button, the chime played on `USAGE_ALARM` (quiet notification, no heads-up), and clearing stopped it. Shots: `real-timers.png`, `real-timer-done.png`.
+- End state: no `com.echobedside` entries under "Pending alarm batches", `alarms.json` / `timers.json` empty, alarm volume back to 5/7, no audio focus held, app ops and DND untouched.
 
 ## Measured on the Echo
 (debug build, AirPlay service also running)
@@ -60,7 +68,13 @@ Spec: NOTES §6 "Alarms", §2.1 Alarm / Timers, `design/Alarm.dc.html`, `design/
 |---|---|---|---|
 | Ringing demo, glow breathing (60 fps animation) | 54.4 MB | 24.1 % of one core | 619 in 10 s, p50/p90/p99 10/11/13 ms, 0.32 % janky |
 | Snoozed demo, 1 tick/s | 55.6 MB | 1.6 % | 8 in 8 s |
-| Timers, 3 running, 1 tick/s | 64.0 MB | 2.9 % | 11 in 10 s, 20 ms each (before the fix that stopped redrawing the whole screen every second; not re-measured, since no timers can run on the device tonight) |
+| Timers, 3 running, 1 tick/s (Nov 22 night, before the music island) | 64.0 MB | 2.9 % | 11 in 10 s, 20 ms each (before the fix that stopped redrawing the whole screen every second) |
+| **Real ringing**, over Settings, before the heads-up fix (12:56) | 75.9 MB | 36.7 % | 624 in 10 s, p50/p90/p99 18/20/25 ms, 80 % janky |
+| **Real ringing**, after the fix (13:15) | 88.2 MB | 54.0 % | 624 in 10 s, p50/p90/p99 16/19/22 ms, 46 % janky |
+| Ringing demo, same build, same time (13:00) | 129.8 MB | 64.6 % | 624 in 10 s, p50/p90/p99 9/12/18 ms, 1.4 % janky |
+| **Real timers**, 3 running (13:18) | 105.0 MB | 58.1 % | 628 in 10 s, p50/p90/p99 10/22/28 ms, 27 % janky |
+
+The PSS and CPU numbers in the after-quiet-hours rows are the whole app with every feature merged (music island, presence camera at 2 fps, AirPlay), so they don't compare with the night rows. **The app now draws about 60 fps everywhere, even on the Timers screen, which needs one frame a second.** The music island's equalizer bars at the top animate continuously (visible in every shot, with nothing playing on the alarm stream). Each of those frames recomposites the whole window, which on the Ringing screen's large glow layers costs ~16 ms. That island belongs to agent D (media). It should stop animating when nothing is playing, and the alarm screen should hide it (contract request below). The remaining difference from the demo is the alarm audio decoding on the same CPU.
 
 ## Screenshots (`docs/status/shots/alarm/`)
 Each was compared with a static headless-Chrome render of the board at 960×480:
@@ -69,15 +83,13 @@ Each was compared with a static headless-Chrome render of the board at 960×480:
 - `morning.png` vs good morning: matches. Data comes from the fakes: 54° partly cloudy (cloud icon) and "Farmers market" instead of the board's 52° Sunny / Morning run.
 - `timers.png`, `timers-done.png` vs Timers.dc.html. `timers.png` shows a bug since fixed: the cards' backdrop was offset because they drew mid pager-scroll, so they look uniformly red. `timers-done.png` shows the right backdrop, the green Done ring and the Repeat button. Its SystemUI heads-up ("Tea timer done") is also fixed: timers now use a quiet channel and the island shows them.
 - `timers-empty.png`: empty state after the fixes.
-- `real-sunrise.png`, `real-ringing.png`: see the ring test above.
+- `real-sunrise.png`: the night test. `real-ringing.png`, `real-snoozed.png`, `real-morning.png`, `real-timers.png`, `real-timer-done.png`: the real tests after quiet hours (the island at the top is the music island). On `real-snoozed.png` the island covers the "Snoozed · rings again at 1:05" caption.
 
 ## Open questions
 - "Ring again" on Good morning: the board's script rings again *immediately* (a demo convenience). I made it snooze (rings again in 9 min), which seems like the real intent.
 - Sunrise ramp vs Night mode / auto-brightness: the ramp writes brightness every 10 s for 30 min. If `:feature:clock` / `:feature:system` also drive brightness from the light sensor, they should back off while `services.alarms.phase` is `Sunrise` or `Ringing`.
 
 ## Needs from the user
-- The go-ahead to finish the device tests that make sound: a real ring → Snooze → Stop → Done, perf while really ringing, a timer finishing. The lead put the device on no-sound for the night.
-- Once the priv-app install is in: check that a ringing alarm opens full screen over another app (`START_ACTIVITIES_FROM_BACKGROUND` granted: `dumpsys package com.echobedside | grep START_ACTIVITIES`).
 - A reboot test: schedule an alarm (debug receiver), reboot the Echo, check it still rings. Wireless adb may not come back on its own after a reboot.
 
 ## Device setup
@@ -86,3 +98,5 @@ Each was compared with a static headless-Chrome render of the board at 960×480:
 ## Requests to the lead (docs/contract-requests.md)
 - `--es demo <string>` and `setBrightness(showHud)`: landed in contracts round 1.
 - Alarm list editing from the phone settings page: an `AlarmJson` codec in `:core:model`, plus endpoints for K (open).
+- Let full-screen screens hide the island (`ScreenSpec(hidesIsland = true)`), for the alarm screen (open).
+- For agent D: the music island animates its bars at 60 fps with nothing playing, so the whole app redraws at 60 fps on every screen.
