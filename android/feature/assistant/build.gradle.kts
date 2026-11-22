@@ -5,6 +5,8 @@ apply(from = rootProject.file("gradle/echo-library.gradle"))
 
 android {
     namespace = "com.echobedside.feature.assistant"
+    // sherpa-onnx JNI reads its Kotlin classes, fields and callbacks by name: keep them in release.
+    defaultConfig { consumerProguardFiles("consumer-rules.pro") }
 }
 
 dependencies {

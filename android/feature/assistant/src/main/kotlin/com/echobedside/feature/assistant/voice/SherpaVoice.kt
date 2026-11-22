@@ -270,7 +270,7 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
             val keep = if (saveTo != null) ArrayList<FloatArray>() else null
             return try {
                 // Nothing is played: the samples are only counted.
-                engine.generateWithCallback(text, 0, speed) { s -> samples += s.size; keep?.add(s.copyOf()); 1 }
+                engine.generateWithCallback(text, 0, speed, SampleCallback { s -> samples += s.size; keep?.add(s.copyOf()); 1 })
                 if (saveTo != null && keep != null) {
                     val all = FloatArray(keep.sumOf { it.size }); var o = 0
                     for (k in keep) { k.copyInto(all, o); o += k.size }
@@ -301,8 +301,8 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
             var written = 0L
             try {
                 t.play()
-                engine.generateWithCallback(text, 0, speed) { samples ->
-                    if (stopped) return@generateWithCallback 0
+                engine.generateWithCallback(text, 0, speed, SampleCallback { samples ->
+                    if (stopped) return@SampleCallback 0
                     addRms(samples)
                     var off = 0
                     while (off < samples.size && !stopped) {
@@ -312,7 +312,7 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
                     }
                     written += samples.size
                     if (stopped) 0 else 1
-                }
+                })
                 // Let the buffer drain.
                 val deadline = SystemClock.elapsedRealtime() + 2000 + written * 1000 / rate
                 while (!stopped && t.playbackHeadPosition < written && SystemClock.elapsedRealtime() < deadline) Thread.sleep(20)

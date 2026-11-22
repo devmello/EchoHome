@@ -98,3 +98,13 @@ fun pcm16ToFloat(pcm: ByteArray, out: FloatArray = FloatArray(pcm.size / 2)): Fl
     }
     return out
 }
+
+/**
+ * The TTS sample callback for sherpa-onnx. Its JNI code calls `invoke([F)Ljava/lang/Integer;` on
+ * the object it's given. A plain Kotlin lambda compiles (invokedynamic + D8) to a class with only
+ * the generic `invoke(Object)`, and the call fails (NoSuchMethodError, then a CheckJNI abort).
+ * Kept in release by consumer-rules.pro.
+ */
+class SampleCallback(private val f: (FloatArray) -> Int) : (FloatArray) -> Int {
+    override fun invoke(samples: FloatArray): Int = f(samples)
+}
