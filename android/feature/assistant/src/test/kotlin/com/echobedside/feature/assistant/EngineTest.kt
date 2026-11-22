@@ -12,6 +12,7 @@ import com.echobedside.feature.assistant.llm.AssistantAgent
 import com.echobedside.feature.assistant.llm.ClaudeApi
 import com.echobedside.feature.assistant.llm.ClaudeException
 import com.echobedside.feature.assistant.llm.ClaudeMessage
+import com.echobedside.feature.assistant.llm.ClaudeModels
 import com.echobedside.feature.assistant.llm.ToolHost
 import com.echobedside.feature.assistant.llm.ToolOutcome
 import com.echobedside.feature.assistant.llm.ToolSpec
@@ -54,6 +55,7 @@ class EngineTest {
         var sttOpened = 0
         var sttReleased = 0
         var wakeOpened = 0
+        val thresholds = ArrayList<Float>()
         val spoken = ArrayList<String>()
         var ttsReleased = 0
         override val sttAvailable get() = stt
@@ -69,7 +71,8 @@ class EngineTest {
                 override fun close() {}
             }
         }
-        override fun openWakeWord(): WakeWordSession {
+        override fun openWakeWord(threshold: Float): WakeWordSession {
+            thresholds += threshold
             wakeOpened++
             return object : WakeWordSession {
                 override fun accept(pcm: ByteArray) = "HEY_NOVA"
@@ -79,7 +82,7 @@ class EngineTest {
         }
         val speaker = object : Speaker {
             override fun prepare() {}
-            override fun speak(text: String): Boolean { spoken += text; return true }
+            override fun speak(text: String, speed: Float): Boolean { spoken += text; return true }
             override val level = 0f
             override fun stop() {}
             override fun release() { ttsReleased++ }
@@ -119,6 +122,7 @@ class EngineTest {
         queries += m.getJSONObject(m.length() - 1).getJSONArray("content").getJSONObject(0).getString("text")
         textMessage("Your timer is set.")
     }) {
+        val key = MutableStateFlow(withKey)
         val system = DefaultSystemStateStore()
         val island = DefaultIslandManager()
         val settings = FakeSettings().also { it.map[AssistantEngine.KEY_WAKE] = wake }
@@ -131,11 +135,11 @@ class EngineTest {
             override suspend fun run(name: String, input: JSONObject) = ToolOutcome.error("X", "x")
         }
         private val dispatcher = StandardTestDispatcher(scope.testScheduler)
-        val agent = AssistantAgent(api, noTools, now = { 0L })
+        val agent = AssistantAgent(api, noTools, model = { settings.getString(AssistantEngine.KEY_MODEL, ClaudeModels.DEFAULT) }, now = { 0L })
         val engine = AssistantEngine(
             scope = TestScope(dispatcher), system = system, island = island, settings = settings, navigator = { nav },
             mic = mic, ducker = object : Ducker { override fun duck() { ducked++ }; override fun release() {} },
-            voice = voice, agent = { if (withKey) agent else null }, hasMicPermission = { true },
+            voice = voice, agent = { if (key.value) agent else null }, keyConfigured = key, hasMicPermission = { true },
             voiceThread = dispatcher, demoData = true, now = { scope.testScheduler.currentTime },
         )
     }
@@ -269,6 +273,91 @@ class EngineTest {
         assertFalse(r.mic.running)
         assertEquals("no-models", r.engine.state.value.errorCode)
         assertNull(r.mic.cb)
+    }
+
+    @Test fun `a key set at runtime makes it ready without a restart`() = runTest {
+        val r = Rig(this, withKey = false)
+        r.engine.start(); runCurrent()
+        assertEquals(Availability.NO_KEY, r.engine.availability.value)
+        r.key.value = true; runCurrent()
+        assertEquals(Availability.READY, r.engine.availability.value)
+        assertFalse(r.engine.useDemo())
+        r.key.value = false; runCurrent()
+        assertEquals(Availability.NO_KEY, r.engine.availability.value)
+    }
+
+    @Test fun `night mode shows the answer without speaking it`() = runTest {
+        val r = Rig(this)
+        r.system.update { it.copy(nightActive = true) }
+        r.engine.start(); runCurrent()
+        r.engine.ask("What time is it?")
+        advanceTimeBy(5000)
+        assertEquals("Your timer is set.", r.engine.state.value.answer)
+        assertTrue(r.voice.spoken.isEmpty())
+
+        r.settings.putBoolean(AssistantEngine.KEY_SPEAK_AT_NIGHT, true)
+        r.engine.ask("And now?")
+        advanceTimeBy(5000)
+        assertEquals(1, r.voice.spoken.size)
+    }
+
+    @Test fun `speaking can be turned off`() = runTest {
+        val r = Rig(this)
+        r.settings.putBoolean(AssistantEngine.KEY_SPEAK, false)
+        r.engine.start(); runCurrent()
+        r.engine.ask("x")
+        advanceTimeBy(5000)
+        assertEquals(Phase.ANSWER, r.engine.state.value.phase)
+        assertTrue(r.voice.spoken.isEmpty())
+    }
+
+    @Test fun `a question from Claude listens for the reply, and silence keeps the answer`() = runTest {
+        val r = Rig(this, api = ClaudeApi { _, _ -> textMessage("For how long?") })
+        r.engine.start(); runCurrent()
+        r.engine.ask("Set a timer")
+        advanceTimeBy(3000)
+        assertEquals(Phase.LISTENING, r.engine.state.value.phase) // follow-up
+        assertTrue(r.mic.running)
+        r.voice.transcript = ""
+        r.voice.endpointAfter = 2
+        repeat(2) { r.mic.chunk(false); runCurrent() }
+        advanceTimeBy(1000)
+        val s = r.engine.state.value
+        assertEquals(Phase.ANSWER, s.phase)
+        assertEquals("For how long?", s.answer)
+        assertFalse(r.mic.running)
+    }
+
+    @Test fun `follow-up listening can be turned off`() = runTest {
+        val r = Rig(this, api = ClaudeApi { _, _ -> textMessage("For how long?") })
+        r.settings.putBoolean(AssistantEngine.KEY_FOLLOW_UP, false)
+        r.engine.start(); runCurrent()
+        r.engine.ask("Set a timer")
+        advanceTimeBy(3000)
+        assertEquals(Phase.ANSWER, r.engine.state.value.phase)
+        assertFalse(r.mic.running)
+    }
+
+    @Test fun `a model change starts a new conversation`() = runTest {
+        val sent = ArrayList<Int>()
+        val r = Rig(this, api = ClaudeApi { body, _ -> sent += body.getJSONArray("messages").length(); textMessage("Ok.") })
+        r.engine.start(); runCurrent()
+        r.engine.ask("one"); advanceTimeBy(3000)
+        r.engine.ask("two"); advanceTimeBy(3000)
+        r.settings.putString(AssistantEngine.KEY_MODEL, ClaudeModels.SONNET); runCurrent()
+        r.engine.ask("three"); advanceTimeBy(3000)
+        assertEquals(listOf(1, 3, 1), sent)
+    }
+
+    @Test fun `wake sensitivity sets the spotter threshold and reloads it`() = runTest {
+        val r = Rig(this, wake = true)
+        r.voice.wake = true
+        val v = r.voice
+        r.engine.start(); runCurrent()
+        assertEquals(listOf(0.25f), v.thresholds)
+        r.settings.putString(AssistantEngine.KEY_WAKE_SENSITIVITY, "high"); runCurrent()
+        assertEquals(listOf(0.25f, 0.15f), v.thresholds)
+        assertTrue(r.mic.running)
     }
 
     private fun TestScope.advanceTimeBy(ms: Long) = testScheduler.advanceTimeBy(ms).also { runCurrent() }

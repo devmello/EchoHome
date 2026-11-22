@@ -15,7 +15,8 @@ import org.json.JSONObject
  * tools; tool calls run on [tools] (each one a "Working on it…" step); the loop ends with a short
  * spoken answer plus the cards the tools produced.
  *
- * - Model: Claude Haiku 5.5 for speed, thinking off and effort low (a voice turn is latency-bound).
+ * - Model: Claude Haiku 5.5 by default (the settings page offers Sonnet and Opus); thinking off or
+ *   minimal and effort low, since a voice turn is latency-bound ([ClaudeModels]).
  * - Tool inputs stream eagerly, so each is validated before it runs; a bad one goes back as an
  *   `is_error` tool_result (INVALID_JSON / INVALID_INPUT) and Claude retries.
  * - All tool results of one response go back in one user message; assistant content goes back unchanged.
@@ -25,13 +26,16 @@ import org.json.JSONObject
 class AssistantAgent(
     private val api: ClaudeApi,
     private val tools: ToolHost,
+    /** The Claude model id, read per turn (the settings CHOICE). */
+    val model: () -> String = { ClaudeModels.DEFAULT },
     private val name: () -> String = { "Nova" },
     private val location: () -> String = { "" },
     private val zone: () -> ZoneId = ZoneId::systemDefault,
     private val now: () -> Long = System::currentTimeMillis,
     private val retryDelayMs: Long = 800,
 ) {
-    class Result(val answer: String, val cards: List<ResultCard>, val history: List<JSONObject>)
+    /** [model]: the model that wrote [history] (history is only reused with the same model). */
+    class Result(val answer: String, val cards: List<ResultCard>, val history: List<JSONObject>, val model: String)
 
     /**
      * Runs the turn. [history] is the previous turns' messages (a follow-up within a minute), [emit]
@@ -45,21 +49,22 @@ class AssistantAgent(
         val byName = specs.associateBy { it.name }
         val toolsJson = JSONArray(specs.map { it.toJson() })
         val cards = ArrayList<ResultCard>()
+        val model = ClaudeModels.of(model())
         repeat(MAX_STEPS) {
-            val msg = send(messages, toolsJson, emit)
+            val msg = send(model, messages, toolsJson, emit)
             when (msg.stopReason) {
                 "refusal" -> throw ClaudeException("refusal", "refused")
                 "max_tokens" -> {
                     val t = msg.text.trim()
                     if (t.isEmpty()) throw ClaudeException("unknown", "max_tokens")
                     messages += JSONObject().put("role", "assistant").put("content", msg.contentForHistory())
-                    return Result(t, pick(cards), messages)
+                    return Result(t, pick(cards), messages, model)
                 }
             }
             val uses = msg.toolUses
             messages += JSONObject().put("role", "assistant").put("content", msg.contentForHistory())
             if (msg.stopReason != "tool_use" || uses.isEmpty()) {
-                return Result(msg.text.trim(), pick(cards), messages)
+                return Result(msg.text.trim(), pick(cards), messages, model)
             }
             val results = JSONArray()
             for (u in uses) {
@@ -84,7 +89,7 @@ class AssistantAgent(
         throw ClaudeException("timeout", "too many tool steps")
     }
 
-    private suspend fun send(messages: List<JSONObject>, toolsJson: JSONArray, emit: (TurnEvent) -> Unit): ClaudeMessage {
+    private suspend fun send(model: String, messages: List<JSONObject>, toolsJson: JSONArray, emit: (TurnEvent) -> Unit): ClaudeMessage {
         var attempt = 0
         while (true) {
             var streamed = false
@@ -93,7 +98,7 @@ class AssistantAgent(
                 override fun onToolUse(id: String, name: String) { streamed = true; emit(TurnEvent.ToolStart(id, name)) }
             }
             try {
-                return api.stream(body(messages, toolsJson), listener)
+                return api.stream(body(messages, toolsJson, model), listener)
             } catch (e: ClaudeException) {
                 if (!e.retryable || streamed || attempt >= 1) throw e
                 attempt++
@@ -102,14 +107,17 @@ class AssistantAgent(
         }
     }
 
-    internal fun body(messages: List<JSONObject>, toolsJson: JSONArray): JSONObject = JSONObject()
-        .put("model", MODEL)
-        .put("max_tokens", MAX_TOKENS)
-        .put("system", systemPrompt())
-        .put("thinking", JSONObject().put("type", "disabled"))
-        .put("output_config", JSONObject().put("effort", "low"))
-        .put("tools", toolsJson)
-        .put("messages", JSONArray(messages))
+    internal fun body(messages: List<JSONObject>, toolsJson: JSONArray, model: String = ClaudeModels.of(model())): JSONObject {
+        val b = JSONObject()
+            .put("model", model)
+            .put("max_tokens", MAX_TOKENS)
+            .put("system", systemPrompt())
+        ClaudeModels.thinking(model)?.let { b.put("thinking", it) }
+        return b
+            .put("output_config", JSONObject().put("effort", "low"))
+            .put("tools", toolsJson)
+            .put("messages", JSONArray(messages))
+    }
 
     internal fun systemPrompt() = """
         You are ${name()}, the voice assistant on a bedside smart display. Your reply is spoken aloud by text-to-speech and shown in large type, so answer in one to three short sentences of plain speech: no markdown, lists, emoji or links.
@@ -134,7 +142,6 @@ class AssistantAgent(
     }
 
     companion object {
-        const val MODEL = "claude-haiku-5-5"
         const val MAX_TOKENS = 1024
         const val MAX_STEPS = 6
     }

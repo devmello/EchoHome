@@ -17,6 +17,7 @@ import com.echobedside.feature.assistant.audio.TAG
 import com.echobedside.feature.assistant.audio.VoiceGate
 import com.echobedside.feature.assistant.llm.AssistantAgent
 import com.echobedside.feature.assistant.llm.ClaudeException
+import com.echobedside.feature.assistant.llm.ClaudeModels
 import com.echobedside.feature.assistant.pipeline.AssistReducer
 import com.echobedside.feature.assistant.pipeline.AssistState
 import com.echobedside.feature.assistant.pipeline.DemoScripts
@@ -35,7 +36,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -77,6 +80,8 @@ class AssistantEngine(
     private val ducker: Ducker,
     private val voice: VoiceStack,
     private val agent: () -> AssistantAgent?,
+    /** Whether an Anthropic key is set; emits when it changes (the settings page sets it at runtime). */
+    private val keyConfigured: Flow<Boolean> = flowOf(true),
     private val hasMicPermission: () -> Boolean,
     private val voiceThread: CoroutineDispatcher,
     val demoData: Boolean,
@@ -112,6 +117,8 @@ class AssistantEngine(
     /** Bumped for every turn; events from an older turn are dropped. */
     @Volatile private var token = 0
     private var history: List<JSONObject> = emptyList()
+    /** The model that wrote [history]; another model starts a fresh conversation. */
+    private var historyModel: String? = null
     private var lastAnswerAt = 0L
 
     // ---------------- lifecycle ----------------
@@ -123,11 +130,12 @@ class AssistantEngine(
         enabled.value = settings.getBoolean(KEY_ENABLED, true)
         wakeSetting.value = settings.getBoolean(KEY_WAKE, false)
         Log.i(TAG, "voice: ${voice.describe()}")
+        selectVoice()
         scope.launch {
             combine(
                 system.state.map { it.micMuted }.distinctUntilChanged(),
-                permission, enabled,
-            ) { muted, perm, on -> availabilityFor(muted, perm, on) }
+                permission, enabled, keyConfigured.distinctUntilChanged(),
+            ) { muted, perm, on, key -> availabilityFor(muted, perm, on, key) }
                 .distinctUntilChanged()
                 .collect { a ->
                     _availability.value = a
@@ -141,22 +149,39 @@ class AssistantEngine(
                 when (key) {
                     KEY_ENABLED -> enabled.value = settings.getBoolean(KEY_ENABLED, true)
                     KEY_WAKE -> { wakeSetting.value = settings.getBoolean(KEY_WAKE, false); syncWake() }
+                    KEY_WAKE_SENSITIVITY -> if (wakeJob != null) { stopWake(keepMic = false); syncWake() } // reload with the new threshold
+                    KEY_VOICE -> selectVoice()
+                    KEY_MODEL -> { history = emptyList(); historyModel = null }
                 }
             }
         }
         scope.launch { combine(_state, _speaking) { s, sp -> s to sp }.collect { (s, sp) -> updateIsland(s, sp) } }
     }
 
-    private fun availabilityFor(muted: Boolean, perm: Boolean, on: Boolean) = when {
+    private fun availabilityFor(muted: Boolean, perm: Boolean, on: Boolean, key: Boolean) = when {
         muted -> Availability.MUTED
         !on -> Availability.DISABLED
-        agent() == null -> Availability.NO_KEY
+        !key || agent() == null -> Availability.NO_KEY
         !perm -> Availability.NO_PERMISSION
         !voice.sttAvailable -> Availability.NO_MODELS
         else -> Availability.READY
     }
 
     fun refreshPermission() { permission.value = hasMicPermission() }
+
+    private fun selectVoice() {
+        val id = settings.getString(KEY_VOICE, voice.defaultVoice)
+        scope.launch(voiceThread) { voice.selectVoice(id) }
+    }
+
+    /**
+     * Whether answers are spoken: `assistant.speak`, and in night mode only with
+     * `assistant.speakAtNight` (the screen still shows the answer word by word).
+     */
+    fun shouldSpeak(): Boolean = voice.ttsAvailable && settings.getBoolean(KEY_SPEAK, true) &&
+        (!system.state.value.nightActive || settings.getBoolean(KEY_SPEAK_AT_NIGHT, false))
+
+    private fun speechRate() = settings.getFloat(KEY_SPEECH_RATE, 1f).coerceIn(0.5f, 2f)
 
     /** Mic off / disabled: stop capturing right away and end a turn that's listening. */
     private fun onNotReady(muted: Boolean) {
@@ -228,8 +253,11 @@ class AssistantEngine(
         _state.update { AssistReducer.reduce(it, e) }
     }
 
-    /** [text] null = listen first; otherwise send [text] straight to Claude. */
-    private fun startTurn(text: String?, byWake: Boolean, echoOnly: Boolean = false) {
+    /**
+     * [text] null = listen first; otherwise send [text] straight to Claude. [restore]: a follow-up
+     * (listening again after Claude asked something); silence then puts this answer back quietly.
+     */
+    private fun startTurn(text: String?, byWake: Boolean, echoOnly: Boolean = false, restore: AssistState? = null) {
         demoJob?.cancel(); demoJob = null
         turnJob?.cancel()
         dismissJob?.cancel()
@@ -239,8 +267,9 @@ class AssistantEngine(
         if (!byWake) openedByWake = false
         turnActive.value = true
         turnJob = scope.launch {
+            var again = false
             try {
-                runTurn(t, text, echoOnly)
+                again = runTurn(t, text, echoOnly, restore) && _availability.value == Availability.READY
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -252,26 +281,33 @@ class AssistantEngine(
                     turnActive.value = false
                     _speaking.value = false
                     ducker.release()
-                    if (!micTest) stopMic()
-                    syncWake()
+                    if (!micTest && !again) stopMic()
+                    if (!again) syncWake()
                 }
             }
+            if (again && t == token) startTurn(null, byWake = openedByWake, restore = _state.value)
         }
     }
 
-    private suspend fun runTurn(t: Int, text: String?, echoOnly: Boolean) {
+    /** Returns true when Claude asked a question and follow-up listening is on. */
+    private suspend fun runTurn(t: Int, text: String?, echoOnly: Boolean, restore: AssistState?): Boolean {
         ducker.duck()
         val query: String
         if (text == null) {
             emit(t, TurnEvent.ListenStart)
             val ch = Channel<ByteArray>(LISTEN_BUFFER_CHUNKS, BufferOverflow.DROP_OLDEST)
             audio = ch
-            if (!startMic()) { emit(t, TurnEvent.Failed("mic")); return }
+            if (!startMic()) { emit(t, TurnEvent.Failed("mic")); return false }
             val heard = withContext(voiceThread) { listen(t, ch) }
             audio = null
             if (!micTest) stopMic()
             query = Transcript.pretty(heard)
-            if (query.isBlank()) { emit(t, TurnEvent.Failed("no-speech")); finishTurn(t, speakText = null); return }
+            if (query.isBlank() && restore != null) {
+                // No reply to Claude's question: back to its answer, no apology.
+                if (t == token) { _state.value = restore; scheduleDismiss() }
+                return false
+            }
+            if (query.isBlank()) { emit(t, TurnEvent.Failed("no-speech")); finishTurn(t, speakText = null); return false }
         } else {
             _state.value = AssistState(phase = Phase.LISTENING)
             query = text
@@ -279,16 +315,18 @@ class AssistantEngine(
         emit(t, TurnEvent.Heard(query))
         if (echoOnly) {
             // On-device round trip (STT → TTS) without Claude, for measuring the voice models.
-            if (voice.ttsAvailable) withContext(voiceThread) { voice.speaker().prepare() }
+            // Spoken only when answers are (never in night mode unless allowed).
+            val speak = shouldSpeak()
+            if (speak) withContext(voiceThread) { voice.speaker().prepare() }
             emit(t, TurnEvent.Answer(query))
-            finishTurn(t, query, voice.ttsAvailable)
-            return
+            finishTurn(t, query, speak)
+            return false
         }
-        val a = agent() ?: run { emit(t, TurnEvent.Failed("no-key")); return }
+        val a = agent() ?: run { emit(t, TurnEvent.Failed("no-key")); return false }
         // Load the voice while Claude works.
-        val tts = if (voice.ttsAvailable && settings.getBoolean(KEY_SPEAK, true))
+        val tts = if (shouldSpeak())
             scope.async(voiceThread) { runCatching { voice.speaker().prepare() }.isSuccess } else null
-        val follow = now() - lastAnswerAt < CONVERSATION_KEEP_MS
+        val follow = now() - lastAnswerAt < CONVERSATION_KEEP_MS && historyModel == ClaudeModels.of(a.model())
         val answer = try {
             withTimeout(TURN_TIMEOUT_MS) { a.turn(query, if (follow) history else emptyList()) { ev -> emit(t, ev) } }
         } catch (e: ClaudeException) {
@@ -296,24 +334,20 @@ class AssistantEngine(
             emit(t, TurnEvent.Failed(e.code))
             if (e.code == "auth" || e.code == "refusal") history = emptyList()
             finishTurn(t, AssistReducer.friendly(e.code), tts?.await() == true)
-            return
+            return false
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
             emit(t, TurnEvent.Failed("timeout"))
             finishTurn(t, AssistReducer.friendly("timeout"), tts?.await() == true)
-            return
+            return false
         }
-        history = answer.history.takeLast(MAX_HISTORY_MESSAGES).let { trimToUserStart(it) }
+        // A conversation that grew too long starts over (rather than cutting its start, which
+        // would break the thinking blocks of models that think between tools).
+        history = if (answer.history.size > MAX_HISTORY_MESSAGES) emptyList() else answer.history
+        historyModel = answer.model
         lastAnswerAt = now()
         emit(t, TurnEvent.Answer(answer.answer.ifBlank { "Done." }, answer.cards))
         finishTurn(t, answer.answer, tts?.await() == true)
-    }
-
-    /** History must start at a plain user message (not a tool_result). */
-    private fun trimToUserStart(list: List<JSONObject>): List<JSONObject> {
-        val i = list.indexOfFirst { m ->
-            m.optString("role") == "user" && (m.optJSONArray("content")?.optJSONObject(0)?.optString("type") == "text")
-        }
-        return if (i < 0) emptyList() else list.drop(i)
+        return t == token && answer.answer.trim().endsWith("?") && settings.getBoolean(KEY_FOLLOW_UP, true)
     }
 
     /** Streams the buffered mic audio through STT until the speaker stops. Runs on the voice thread. */
@@ -343,7 +377,8 @@ class AssistantEngine(
             ducker.duck()
             _speaking.value = true
             try {
-                withContext(voiceThread) { voice.speaker().speak(speakText) }
+                val rate = speechRate()
+                withContext(voiceThread) { voice.speaker().speak(speakText, rate) }
             } finally {
                 _speaking.value = false
             }
@@ -409,7 +444,8 @@ class AssistantEngine(
         _wakeActive.value = true
         val hit = try {
             withContext(voiceThread) {
-                val session = try { voice.openWakeWord() } catch (e: Throwable) {
+                val threshold = AssistantSettings.threshold(settings)
+                val session = try { voice.openWakeWord(threshold) } catch (e: Throwable) {
                     Log.w(TAG, "wake word load failed: ${e.javaClass.simpleName}"); null
                 } ?: return@withContext false
                 val gate = VoiceGate()
@@ -488,7 +524,24 @@ class AssistantEngine(
         startTurn(null, byWake = false, echoOnly = true)
     }
 
-    /** Speaks [text] with the on-device voice only (no Claude), for measuring TTS. */
+    /**
+     * Synthesizes [text] with the on-device voice and plays nothing: logs load time, synthesis
+     * time and the real-time factor (measuring TTS silently, e.g. at night). Frees the voice after.
+     */
+    fun synthTest(text: String) {
+        if (!voice.ttsAvailable) { Log.i(TAG, "synth: no voice installed"); return }
+        scope.launch(voiceThread) {
+            val sp = voice.speaker()
+            val cold = sp.synthesize(text, speechRate())
+            val warm = sp.synthesize(text, speechRate())
+            if (cold == null || warm == null) { Log.w(TAG, "synth failed"); return@launch }
+            Log.i(TAG, "synth: load ${cold.loadMs} ms, first ${cold.synthMs} ms, again ${warm.synthMs} ms " +
+                "for ${warm.audioMs} ms of audio (RTF ${"%.2f".format(java.util.Locale.US, warm.rtf)}), ${text.length} chars")
+            if (!settings.getBoolean(KEY_KEEP_TTS, false)) sp.release()
+        }
+    }
+
+    /** Speaks [text] with the on-device voice only (no Claude), for measuring TTS. Plays sound. */
     fun sayTest(text: String) {
         if (!voice.ttsAvailable) return
         stopAll()
@@ -591,11 +644,17 @@ class AssistantEngine(
         const val KEY_KEEP_TTS = "assistant.keepTtsLoaded"
         const val KEY_DISMISS_S = "assistant.dismissSec"
         const val KEY_NAME = "assistant.name"
+        const val KEY_WAKE_SENSITIVITY = "assistant.wakeSensitivity"
+        const val KEY_MODEL = "assistant.model"
+        const val KEY_FOLLOW_UP = "assistant.followUp"
+        const val KEY_SPEAK_AT_NIGHT = "assistant.speakAtNight"
+        const val KEY_VOICE = "assistant.voice"
+        const val KEY_SPEECH_RATE = "assistant.speechRate"
         const val DISMISS_S = 12
         const val CONVERSATION_KEEP_MS = 60_000L
         const val TURN_TIMEOUT_MS = 45_000L
         const val LISTEN_MAX_MS = 20_000L
-        const val MAX_HISTORY_MESSAGES = 16
+        const val MAX_HISTORY_MESSAGES = 24
         /** 16 s of 40 ms chunks: covers the STT model load. */
         const val LISTEN_BUFFER_CHUNKS = 400
         const val WAKE_BUFFER_CHUNKS = 50

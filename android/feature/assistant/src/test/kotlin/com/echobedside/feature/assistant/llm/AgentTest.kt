@@ -168,4 +168,28 @@ class AgentTest {
         assertTrue(r.cards[0] is ResultCard.Weather)
         assertTrue(r.cards[1] is ResultCard.Action)
     }
+
+    @Test fun `each model gets its own thinking setting`() = runBlocking {
+        suspend fun bodyFor(model: String): JSONObject {
+            server.enqueue(sse(SseFixtures.text("Hi.")))
+            val a = AssistantAgent(ClaudeClient({ "k" }, baseUrl = server.url("/").toString().trimEnd('/')), tools, model = { model })
+            val r = a.turn("hi", emptyList()) {}
+            assertEquals(ClaudeModels.of(model), r.model)
+            return bodyOf(server.takeRequest())
+        }
+        val haiku = bodyFor(ClaudeModels.HAIKU)
+        assertEquals("disabled", haiku.getJSONObject("thinking").getString("type"))
+        val sonnet = bodyFor(ClaudeModels.SONNET)
+        assertEquals("claude-sonnet-5-5", sonnet.getString("model"))
+        assertEquals("between_tools", sonnet.getJSONObject("thinking").getString("type"))
+        val opus = bodyFor(ClaudeModels.OPUS)
+        assertEquals("claude-opus-5-5", opus.getString("model"))
+        assertFalse(opus.has("thinking"))
+        for (b in listOf(haiku, sonnet, opus)) {
+            assertEquals("low", b.getJSONObject("output_config").getString("effort"))
+            assertFalse(b.has("temperature") || b.has("top_p") || b.has("top_k"))
+        }
+        // An unknown id (an old saved value) falls back to Haiku.
+        assertEquals("claude-haiku-5-5", bodyFor("claude-unknown").getString("model"))
+    }
 }

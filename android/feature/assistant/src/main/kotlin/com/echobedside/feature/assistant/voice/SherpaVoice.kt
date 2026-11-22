@@ -35,7 +35,12 @@ import kotlin.math.sqrt
 class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceStack {
     private val kwsDir = File(root, "kws")
     private val sttDir = File(root, "stt")
-    private val ttsDir = File(root, "tts")
+    private val ttsRoot = File(root, "tts")
+    /** The selected voice: "amy" is the flat tts/ dir, any other id a tts/<id>/ subdir. */
+    @Volatile private var voiceId = DEFAULT_VOICE
+    private val ttsDir get() = if (voiceId == DEFAULT_VOICE) ttsRoot else File(ttsRoot, voiceId)
+    private val ttsModel get() = if (voiceId == DEFAULT_VOICE) TTS_MODEL
+        else ttsDir.listFiles { f -> f.name.endsWith(".onnx") }?.minOfOrNull { it.name } ?: TTS_MODEL
 
     private val native: Boolean by lazy {
         try { System.loadLibrary("sherpa-onnx-jni"); true }
@@ -46,7 +51,26 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
 
     override val sttAvailable get() = native && has(sttDir, STT_ENC, STT_DEC, STT_JOIN, "tokens.txt")
     override val wakeAvailable get() = native && has(kwsDir, KWS_ENC, KWS_DEC, KWS_JOIN, "tokens.txt", "keywords.txt")
-    override val ttsAvailable get() = native && has(ttsDir, TTS_MODEL, "tokens.txt")
+    override val ttsAvailable get() = native && has(ttsDir, ttsModel, "tokens.txt")
+
+    override val defaultVoice get() = DEFAULT_VOICE
+
+    /** amy (flat tts/ dir) plus every tts/<id>/ with a .onnx voice and tokens.txt (e.g. a Piper voice). */
+    override fun voices(): List<Pair<String, String>> {
+        val list = ArrayList<Pair<String, String>>()
+        if (has(ttsRoot, TTS_MODEL, "tokens.txt")) list += DEFAULT_VOICE to "Amy (US English)"
+        ttsRoot.listFiles { f -> f.isDirectory && File(f, "tokens.txt").isFile && f.listFiles { x -> x.name.endsWith(".onnx") }?.isNotEmpty() == true }
+            ?.sortedBy { it.name }
+            ?.forEach { d -> list += d.name to d.name.replace('-', ' ').replace('_', ' ') }
+        return list
+    }
+
+    override fun selectVoice(id: String) {
+        val v = if (id == DEFAULT_VOICE || File(ttsRoot, id).isDirectory) id else DEFAULT_VOICE
+        if (v == voiceId) return
+        voiceId = v
+        speaker.release()
+    }
 
     override fun describe() = "native=$native stt=$sttAvailable wake=$wakeAvailable tts=$ttsAvailable root=$root"
 
@@ -112,7 +136,7 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
 
     // ---------------- wake word ----------------
 
-    override fun openWakeWord(): WakeWordSession {
+    override fun openWakeWord(threshold: Float): WakeWordSession {
         val t0 = SystemClock.elapsedRealtime()
         val kws = KeywordSpotter(null, KeywordSpotterConfig(
             featConfig = FeatureConfig(16000, 80),
@@ -128,8 +152,10 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
             keywordsThreshold = 0.25f,
             numTrailingBlanks = 1,
         ))
-        Log.i(TAG, "wake word loaded in ${SystemClock.elapsedRealtime() - t0} ms")
-        val stream = kws.createStream()
+        Log.i(TAG, "wake word loaded in ${SystemClock.elapsedRealtime() - t0} ms (threshold $threshold)")
+        // The per-stream keywords carry the sensitivity setting's threshold.
+        val keywords = try { Keywords.withThreshold(File(kwsDir, "keywords.txt").readLines(), threshold) } catch (e: Exception) { "" }
+        val stream = kws.createStream(keywords)
         return object : WakeWordSession {
             private val buf = FloatArray(640)
             override fun accept(pcm: ByteArray): String? {
@@ -155,6 +181,9 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
 
     private inner class PiperSpeaker : Speaker {
         private var tts: OfflineTts? = null
+        /** The voice model [tts] was loaded from. */
+        private var loadedFrom: String? = null
+        private var lastLoadMs = 0L
         @Volatile private var stopped = false
         @Volatile private var track: AudioTrack? = null
         /** RMS per 20 ms window of what's been written, indexed by playback position. */
@@ -163,22 +192,41 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
         @Volatile private var window = 320
 
         override fun prepare() {
-            if (tts != null) return
+            val from = f(ttsDir, ttsModel)
+            if (tts != null && loadedFrom == from) return
+            release()
             val t0 = SystemClock.elapsedRealtime()
+            loadedFrom = from
             tts = OfflineTts(null, OfflineTtsConfig(
                 model = OfflineTtsModelConfig(
                     vits = OfflineTtsVitsModelConfig(
-                        model = f(ttsDir, TTS_MODEL), tokens = f(ttsDir, "tokens.txt"),
+                        model = from, tokens = f(ttsDir, "tokens.txt"),
                         dataDir = f(ttsDir, "espeak-ng-data"),
                     ),
                     numThreads = threads,
                 ),
                 maxNumSentences = 1,
             ))
-            Log.i(TAG, "TTS loaded in ${SystemClock.elapsedRealtime() - t0} ms")
+            lastLoadMs = SystemClock.elapsedRealtime() - t0
+            Log.i(TAG, "TTS loaded in $lastLoadMs ms")
         }
 
-        override fun speak(text: String): Boolean {
+        override fun synthesize(text: String, speed: Float): SynthStats? {
+            val wasLoaded = tts != null && loadedFrom == f(ttsDir, ttsModel)
+            try { prepare() } catch (e: Throwable) { Log.w(TAG, "TTS load failed: ${e.javaClass.simpleName}"); return null }
+            val engine = tts ?: return null
+            val t0 = SystemClock.elapsedRealtime()
+            var samples = 0L
+            return try {
+                // Nothing is played: the samples are only counted.
+                engine.generateWithCallback(text, 0, speed) { s -> samples += s.size; 1 }
+                SynthStats(if (wasLoaded) 0 else lastLoadMs, SystemClock.elapsedRealtime() - t0, samples * 1000 / engine.sampleRate())
+            } catch (e: Throwable) {
+                Log.w(TAG, "TTS failed: ${e.javaClass.simpleName}"); null
+            }
+        }
+
+        override fun speak(text: String, speed: Float): Boolean {
             stopped = false
             try { prepare() } catch (e: Throwable) { Log.w(TAG, "TTS load failed: ${e.javaClass.simpleName}"); return false }
             val engine = tts ?: return false
@@ -197,7 +245,7 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
             var written = 0L
             try {
                 t.play()
-                engine.generateWithCallback(text, 0, SPEED) { samples ->
+                engine.generateWithCallback(text, 0, speed) { samples ->
                     if (stopped) return@generateWithCallback 0
                     addRms(samples)
                     var off = 0
@@ -254,6 +302,7 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
         override fun release() {
             tts?.free()
             tts = null
+            loadedFrom = null
         }
     }
 
@@ -267,6 +316,6 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
         const val KWS_DEC = "decoder-epoch-12-avg-2-chunk-16-left-64.onnx"
         const val KWS_JOIN = "joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
         const val TTS_MODEL = "en_US-amy-low.onnx"
-        const val SPEED = 1.0f
+        const val DEFAULT_VOICE = "amy"
     }
 }

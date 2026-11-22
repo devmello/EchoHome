@@ -12,12 +12,14 @@ import com.echobedside.feature.assistant.audio.AndroidMic
 import com.echobedside.feature.assistant.audio.AudioFocusDucker
 import com.echobedside.feature.assistant.llm.AssistantAgent
 import com.echobedside.feature.assistant.llm.ClaudeClient
+import com.echobedside.feature.assistant.llm.ClaudeModels
 import com.echobedside.feature.assistant.llm.EchoTools
 import com.echobedside.feature.assistant.ui.AssistantScreen
 import com.echobedside.feature.assistant.voice.SherpaVoice
 import java.io.File
 import java.util.concurrent.Executors
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.flow.map
 
 /**
  * `:feature:assistant` (agent G — Voice assistant).
@@ -46,6 +48,7 @@ object AssistantFeature : EchoFeature {
         val agent = AssistantAgent(
             api = ClaudeClient({ services.config.secrets.anthropicApiKey }),
             tools = EchoTools({ services }),
+            model = { ClaudeModels.of(services.settings.getString(AssistantEngine.KEY_MODEL, ClaudeModels.DEFAULT)) },
             name = { services.settings.getString(AssistantEngine.KEY_NAME, "Nova") },
             location = { services.location.value.name.ifBlank { services.weather.weather.value?.location.orEmpty() } },
         )
@@ -58,12 +61,15 @@ object AssistantFeature : EchoFeature {
             mic = AndroidMic(),
             ducker = AudioFocusDucker(ctx),
             voice = voice,
+            // The key is read per request; the page can set it at runtime (configFlow emits then).
             agent = { if (services.config.secrets.anthropicConfigured) agent else null },
+            keyConfigured = services.configFlow.map { it.secrets.anthropicConfigured },
             hasMicPermission = { ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED },
             voiceThread = voiceThread,
             demoData = services.config.demoData,
         )
         this.engine = engine
+        host.registerSettings(AssistantSettings.section(voice.voices(), voice.defaultVoice))
         host.registerScreen(ScreenSpec(AssistantEngine.SCREEN_ID, order = 60, inPager = false) { AssistantScreen(it, services, engine) })
         // After every feature installed (slots may be replaced during install).
         Handler(Looper.getMainLooper()).post { engine.start() }

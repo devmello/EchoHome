@@ -202,7 +202,8 @@ class AssistantScreen(context: Context, private val services: EchoServices, priv
         when {
             s("script") != null -> engine.runDemo(s("script")!!, s("at")?.toLongOrNull())
             s("mictest") != null -> engine.setMicTest(s("mictest") == "1" || s("mictest") == "true")
-            s("say") != null -> engine.sayTest(s("say")!!)
+            s("synth") != null -> engine.synthTest(s("synth")!!) // silent: synthesizes, plays nothing
+            s("say") != null -> engine.sayTest(s("say")!!)       // plays sound
             s("ask") != null -> engine.ask(s("ask")!!)
             s("listen") != null -> engine.tapDroplet()
             s("echo") != null -> engine.echoTest()
