@@ -156,7 +156,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(
         val spec = if (black) GlassSpec.ISLAND_BLACK else GlassSpec.ISLAND
         glass.spec = spec; beadGlass.spec = spec
         backdropTakenFor = null
-        retakeBackdrop.run()
+        if (isAttachedToWindow) retakeBackdrop.run() // (readLook also runs from init, before retakeBackdrop exists)
         invalidate()
     }
 

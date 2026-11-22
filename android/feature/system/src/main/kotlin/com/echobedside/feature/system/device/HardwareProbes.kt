@@ -35,7 +35,11 @@ internal object HardwareProbes {
     /** Lens covered, or null when no source works. Also reports which source answered. */
     fun readShutterClosed(ctx: Context): Pair<Boolean, String>? {
         if (ctx.checkSelfPermission("android.permission.DUMP") == PackageManager.PERMISSION_GRANTED) {
-            dumpService(ctx, "window", arrayOf("policy"))?.let { parseLensCover(it) }?.let { return it to "window-policy" }
+            val d = dumpService(ctx, "window", arrayOf("policy"))
+            if (d != null) {
+                parseLensCover(d)?.let { return it to "window-policy" }
+                if (!loggedEmptyDump) { loggedEmptyDump = true; Log.i(TAG, "window policy dump: ${d.length} chars, no lens state: ${d.take(160).replace('\n', ' ')}") }
+            }
         }
         try {
             parseGpioLine(File(DEBUGFS_GPIO).readText(), "Camera Lens Cover")?.let { high -> return (!high) to "debugfs" }
@@ -70,6 +74,7 @@ internal object HardwareProbes {
     }
 
     private var dumpBroken = false
+    private var loggedEmptyDump = false
 
     /** `dumpsys <service> <args>` in-process: needs DUMP; uses the hidden ServiceManager by reflection. */
     fun dumpService(ctx: Context, name: String, args: Array<String>): String? {
