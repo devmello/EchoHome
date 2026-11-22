@@ -50,7 +50,7 @@ Spec: NOTES §6 "Alarms", §2.1 Alarm / Timers, `design/Alarm.dc.html`, `design/
   - `AlarmService` was in the foreground (category=alarm).
   - The `Hassium` default alarm played through MediaPlayer, `USAGE_ALARM`, `state:started`.
   - Audio focus was held: `GAIN_TRANSIENT`, `USAGE_ALARM`.
-- **Not shown full-screen over another app.** Android 11 blocked our background activity start ("Background activity start … isBgStartWhitelisted: false"), and with the screen on and unlocked the full-screen intent became a heads-up "5:03 · Wake Up" (`real-ringing.png`). Since then the heads-up has Snooze / Stop buttons. The full screen over other apps needs the overlay grant (Needs from the user). With our launcher in front (the normal case), `startActivity` is allowed.
+- **Not shown full-screen over another app.** Android 11 blocked our background activity start ("Background activity start … isBgStartWhitelisted: false"), and with the screen on and unlocked the full-screen intent became a heads-up "5:03 · Wake Up" (`real-ringing.png`). Since then the heads-up has Snooze / Stop buttons. For the full screen over other apps, the module now declares the privileged `START_ACTIVITIES_FROM_BACKGROUND` (the app is installed as a /system/priv-app with it allow-listed); not yet verified on the device. With our launcher in front (the normal case), `startActivity` is allowed.
 - The test alarm was then cancelled and its persisted state deleted. At the lead's request, **no alarms, timers or sound on the device tonight** (the user is asleep next to it), so the full ring → Snooze → Stop → Done tap-through and a perf run while really ringing are still to do. JVM tests cover those transitions; the demo screens cover the UI.
 
 ## Measured on the Echo
@@ -77,11 +77,11 @@ Each was compared with a static headless-Chrome render of the board at 960×480:
 
 ## Needs from the user
 - The go-ahead to finish the device tests that make sound: a real ring → Snooze → Stop → Done, perf while really ringing, a timer finishing. The lead put the device on no-sound for the night.
-- The overlay grant, so a ringing alarm opens full-screen even when another app is in front: `adb shell appops set com.echobedside SYSTEM_ALERT_WINDOW allow`. The permission is declared; the grant was not applied, since the lead asked for no app-ops changes tonight.
+- Once the priv-app install is in: check that a ringing alarm opens full screen over another app (`START_ACTIVITIES_FROM_BACKGROUND` granted: `dumpsys package com.echobedside | grep START_ACTIVITIES`).
 - A reboot test: schedule an alarm (debug receiver), reboot the Echo, check it still rings. Wireless adb may not come back on its own after a reboot.
 
 ## Device setup
-- None applied. Pending: the `SYSTEM_ALERT_WINDOW` appop above.
+- None. Full screen over other apps relies on the priv-app allow-list for `START_ACTIVITIES_FROM_BACKGROUND`, not an app op.
 
 ## Requests to the lead (docs/contract-requests.md)
 - `--es demo <string>` and `setBrightness(showHud)`: landed in contracts round 1.
