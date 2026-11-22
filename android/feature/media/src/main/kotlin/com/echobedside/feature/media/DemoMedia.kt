@@ -61,8 +61,10 @@ class DemoMedia(private val hub: MediaHub, private val scope: CoroutineScope) {
         private var advance: Runnable? = null
 
         override fun publish(sourceId: String, state: MediaState, controls: MediaControls) {
-            val withArt = if (state.artwork == null && state.title.isNotEmpty()) state.copy(artwork = DemoArt.forAlbum(state.album, state.title)) else state
-            real.publish(sourceId, withArt, controls)
+            var withArt = if (state.artwork == null && state.title.isNotEmpty()) state.copy(artwork = DemoArt.forAlbum(state.album, state.title)) else state
+            // The design's sample route for the sample AirPlay sender.
+            if (withArt.route.isEmpty()) withArt = withArt.copy(route = DEMO_ROUTE)
+            real.publish(sourceId, withArt, DemoControls(controls))
             cancelAdvance()
             if (withArt.playing && withArt.durationMs > 0) {
                 val left = withArt.durationMs - withArt.positionNow()
@@ -75,8 +77,14 @@ class DemoMedia(private val hub: MediaHub, private val scope: CoroutineScope) {
         fun cancelAdvance() { advance?.let { main.removeCallbacks(it) }; advance = null }
     }
 
+    /** The fake's controls, with Disconnect meaning "stop the demo" (back to the empty state). */
+    private inner class DemoControls(c: MediaControls) : MediaControls by c {
+        override fun disconnect() = stopByUser()
+    }
+
     companion object {
         private const val TAG = "EchoMedia"
+        private val DEMO_ROUTE = listOf("AirPlay 2", "Lossless · ALAC", "44.1 kHz")
         private val TRACKS = listOf("Low Tide Radio" to "Coastline Hours", "Paper Satellites" to "Small Orbits", "Afterglow (Slow)" to "Night Swim")
     }
 }

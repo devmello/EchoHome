@@ -164,7 +164,8 @@ class AppSessions(private val context: Context, private val services: EchoServic
         override fun next() = tc.skipToNext()
         override fun previous() = tc.skipToPrevious()
         override fun seekTo(positionMs: Long) = tc.seekTo(positionMs)
-        fun stop() = tc.stop()
+        /** The popover's Stop: an app session has nothing to disconnect, so stop it. */
+        override fun disconnect() = tc.stop()
         override fun setVolume(volume: Float) {
             val info = controller.playbackInfo
             if (info != null && info.playbackType == MediaController.PlaybackInfo.PLAYBACK_TYPE_REMOTE) {
@@ -174,6 +175,8 @@ class AppSessions(private val context: Context, private val services: EchoServic
             }
         }
         override val canSeek: Boolean get() = SessionMapping.canSeek(snapshot())
+        override val canSkip: Boolean get() = SessionMapping.canSkip(snapshot())
+        override val canPause: Boolean get() = SessionMapping.canPause(snapshot())
     }
 
     private fun appLabel(pkg: String): String = try {
@@ -184,11 +187,5 @@ class AppSessions(private val context: Context, private val services: EchoServic
     companion object {
         private const val TAG = "EchoMedia"
         @Volatile var instance: AppSessions? = null; private set
-
-        /** Stops a Tracked app session (the popover's Stop); false if [controls] isn't one. */
-        fun stop(controls: MediaControls): Boolean {
-            val t = controls as? AppSessions.Tracked ?: return false
-            t.stop(); return true
-        }
     }
 }

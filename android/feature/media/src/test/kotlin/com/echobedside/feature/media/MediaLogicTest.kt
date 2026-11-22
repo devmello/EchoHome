@@ -180,6 +180,14 @@ class SessionMappingTest {
         assertEquals(0.25f, SessionMapping.toMediaState(base.copy(remoteVolume = 0.25f), 0)!!.volume)
     }
 
+    @Test fun skipAndPauseFromActions() {
+        assertTrue(SessionMapping.canSkip(base.copy(actions = 0)))
+        assertFalse(SessionMapping.canSkip(base.copy(actions = SessionMapping.ACTION_SEEK_TO)))
+        assertTrue(SessionMapping.canSkip(base.copy(actions = SessionMapping.ACTION_SKIP_TO_NEXT)))
+        assertFalse(SessionMapping.canPause(base.copy(actions = SessionMapping.ACTION_SEEK_TO)))
+        assertTrue(SessionMapping.canPause(base.copy(actions = SessionMapping.ACTION_PLAY_PAUSE)))
+    }
+
     @Test fun bluetoothAndOwnSessionsAreNotMirrored() {
         // :feature:phone publishes the phone's Bluetooth audio itself (MediaSourceKind.BLUETOOTH).
         assertFalse(SessionMapping.isMirrored("com.android.bluetooth", "com.echobedside"))

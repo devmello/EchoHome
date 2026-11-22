@@ -395,6 +395,9 @@ internal class TransportButton(context: Context, iconRes: Int, private val iconP
     var night = false
         set(v) { field = v; lift.night = v; invalidate() }
     var onTap: (() -> Unit)? = null
+    /** false: the source can't do this (canSkip / canPause): dimmed, no lift, no tap. */
+    var available = true
+        set(v) { if (v != field) { field = v; if (!v) press(false); invalidate() } }
     private var pressed = false
     private var anim: AnimatorSet? = null
 
@@ -402,7 +405,8 @@ internal class TransportButton(context: Context, iconRes: Int, private val iconP
 
     override fun onDraw(canvas: Canvas) {
         val s = iconPx
-        icon.draw(canvas, (width - s) / 2f + iconDx, (height - s) / 2f, s, if (night) Night.COLOR else Color.WHITE)
+        val c = if (night) Night.COLOR else Color.WHITE
+        icon.draw(canvas, (width - s) / 2f + iconDx, (height - s) / 2f, s, if (available) c else withAlpha(c, 0.3f))
     }
 
     private fun press(on: Boolean) {
@@ -423,6 +427,7 @@ internal class TransportButton(context: Context, iconRes: Int, private val iconP
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
         val inside = e.x in 0f..width.toFloat() && e.y in 0f..height.toFloat()
+        if (!available) return e.actionMasked == MotionEvent.ACTION_DOWN
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> press(true)
             MotionEvent.ACTION_MOVE -> if (!inside) press(false)

@@ -66,7 +66,17 @@ object SessionMapping {
         return title(s).isNotBlank()
     }
 
+    const val ACTION_PAUSE = 1L shl 1
+    const val ACTION_SKIP_TO_PREVIOUS = 1L shl 4
+    const val ACTION_SKIP_TO_NEXT = 1L shl 5
+    const val ACTION_PLAY_PAUSE = 1L shl 9
+
     fun canSeek(s: SessionSnapshot) = s.durationMs > 0 && (s.actions and ACTION_SEEK_TO) != 0L
+
+    /** Next or previous is offered (actions 0 = the app didn't say: assume yes). */
+    fun canSkip(s: SessionSnapshot) = s.actions == 0L || (s.actions and (ACTION_SKIP_TO_NEXT or ACTION_SKIP_TO_PREVIOUS)) != 0L
+
+    fun canPause(s: SessionSnapshot) = s.actions == 0L || (s.actions and (ACTION_PAUSE or ACTION_PLAY_PAUSE)) != 0L
 
     fun title(s: SessionSnapshot): String = firstNonBlank(s.title, s.displayTitle)
 

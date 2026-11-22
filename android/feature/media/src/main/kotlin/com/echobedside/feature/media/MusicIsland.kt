@@ -46,10 +46,11 @@ class MusicIsland(private val hub: MediaHub, private val island: IslandManager, 
                 id = ID,
                 kind = ActivityKind.MUSIC,
                 content = LiveContent.Music(st.title, st.artist, st.artwork, st.playing, st.source),
-                actions = listOf(
-                    IslandAction("previous", "Previous") { c.previous() },
-                    if (st.playing) IslandAction("pause", "Pause") { c.pause() } else IslandAction("play", "Play") { c.play() },
-                    IslandAction("next", "Next") { c.next() },
+                // Only what the source supports (AirPlay 2 senders can't skip, some can't pause).
+                actions = listOfNotNull(
+                    IslandAction("previous", "Previous") { c.previous() }.takeIf { c.canSkip },
+                    if (st.playing) IslandAction("pause", "Pause") { c.pause() }.takeIf { c.canPause } else IslandAction("play", "Play") { c.play() },
+                    IslandAction("next", "Next") { c.next() }.takeIf { c.canSkip },
                 ),
                 staleAfterElapsed = if (st.playing) null else now + PAUSED_STALE_MS,
                 ownerScreen = NowPlayingScreen.ID,

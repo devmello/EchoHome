@@ -40,7 +40,7 @@ import java.util.WeakHashMap
  * presses, the art spring and the 1.2 s palette crossfade. Paused, the drift settles after
  * [PAUSED_DRIFT_MS]. Empty or hidden: no frames at all.
  *
- * Debug args (`--es np <cmd>`): empty, demo, paused, playing, next, popover, night, day, bt, bt-off, perf:<flags>.
+ * Debug args (`--es np <cmd>`): empty, demo, paused, playing, next, popover, night, day, bt, ap2, preview-off, perf:<flags>.
  */
 @SuppressLint("ViewConstructor")
 class NowPlayingScreen(context: Context, private val services: EchoServices) : FrameLayout(context), EchoScreen {
@@ -49,11 +49,11 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
         const val ID = "nowplaying"
         private const val PAUSED_DRIFT_MS = 30_000L
         private val palettes = WeakHashMap<Bitmap, AmbientPalette>()
-        private const val DEBUG_BT = "debug-bluetooth"
+        private const val DEBUG_SRC = "debug-preview"
     }
 
-    /** The `np=bt` preview source: AVRCP-like, no seeking. */
-    private object DebugBtControls : MediaControls {
+    /** The `np=bt` / `np=ap2` preview sources: inert controls with the source's capabilities. */
+    private class DebugControls(override val canSkip: Boolean) : MediaControls {
         override fun play() {}
         override fun pause() {}
         override fun next() {}
@@ -140,9 +140,9 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
         scrim.visibility = GONE
         popover.visibility = GONE
 
-        prev.onTap = { session?.controls?.previous() }
-        next.onTap = { session?.controls?.next() }
-        play.onTap = { session?.let { if (it.state.playing) it.controls.pause() else it.controls.play() } }
+        prev.onTap = { session?.controls?.let { if (it.canSkip) it.previous() } }
+        next.onTap = { session?.controls?.let { if (it.canSkip) it.next() } }
+        play.onTap = { session?.let { if (!it.state.playing) it.controls.play() else if (it.controls.canPause) it.controls.pause() } }
         progress.position = { session?.state?.positionNow() ?: 0L }
         progress.onSeek = { ms -> session?.controls?.seekTo(ms) }
         volume.onChange = { v -> setVolume(v) }
@@ -202,6 +202,10 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
         }
         // Play/pause glyph (the play triangle sits 6 px right, as in the design) and the art spring.
         play.setIcon(if (st.playing) R.drawable.media_ic_pause else R.drawable.media_ic_play, if (st.playing) 0f else 3f)
+        // Unsupported controls are dimmed and inert (AirPlay 2 senders can't skip; some can't pause).
+        prev.available = s.controls.canSkip
+        next.available = s.controls.canSkip
+        play.available = !st.playing || s.controls.canPause
         val scale = if (st.playing) 1f else 0.86f
         if (was == null || !shown) { art.animate().cancel(); art.scaleX = scale; art.scaleY = scale }
         else if (art.scaleX != scale || (was.state.playing != st.playing)) {
@@ -315,13 +319,12 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
     private fun fillPopover() {
         val s = session ?: return
         val st = s.state
-        val demo = MediaFeature.demo?.isDemo(s.sourceId) == true
         when (st.source) {
             MediaSourceKind.OTHER_APP -> {
                 popover.header = "PLAYING FROM"
                 popover.name = st.sourceLabel.ifBlank { "App" }
                 popover.subtitle = "Playing on Echo Bedside"
-                popover.chips = emptyList()
+                popover.chips = st.route
                 popover.buttonLabel = "Stop"
                 popover.deviceIcon = R_note
             }
@@ -329,8 +332,7 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
                 popover.header = "BLUETOOTH"
                 popover.name = st.sourceLabel.ifBlank { "iPhone" }
                 popover.subtitle = "Connected to Echo Bedside"
-                // Codec/profile details would come with MediaState.route (contract request).
-                popover.chips = listOf("Bluetooth")
+                popover.chips = st.route
                 popover.buttonLabel = "Disconnect"
                 popover.deviceIcon = R_phone
             }
@@ -338,8 +340,8 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
                 popover.header = if (st.source == MediaSourceKind.SPOTIFY) "SPOTIFY CONNECT" else "AIRPLAY RECEIVER"
                 popover.name = st.sourceLabel.ifBlank { "iPhone" }
                 popover.subtitle = "Streaming to Echo Bedside"
-                // Codec details aren't in MediaState yet (docs/contract-requests.md); the demo shows the design's.
-                popover.chips = if (demo) listOf("AirPlay 2", "Lossless · ALAC", "44.1 kHz") else listOf(if (st.source == MediaSourceKind.SPOTIFY) "Spotify" else "AirPlay")
+                // The sender's route ("AirPlay 2", codec, rate) from the receiver; the demo carries the design's.
+                popover.chips = st.route
                 popover.buttonLabel = "Disconnect"
                 popover.deviceIcon = R_phone
             }
@@ -385,13 +387,8 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
     private fun disconnect() {
         val s = session ?: return
         closePopover()
-        val demo = MediaFeature.demo
-        when {
-            demo?.isDemo(s.sourceId) == true -> demo.stopByUser()
-            AppSessions.stop(s.controls) -> {}
-            // No disconnect in MediaControls yet (contract request); pausing is the closest.
-            else -> s.controls.pause()
-        }
+        // AirPlay / Bluetooth drop the sender, app sessions stop, the demo goes back to empty.
+        s.controls.disconnect()
     }
 
     // --- EchoScreen ---
@@ -433,9 +430,14 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
             // Debug only: preview Night mode (the clock feature owns nightActive; its sensor logic may flip it back).
             "night", "day" -> services.system.update { it.copy(nightActive = cmd == "night") }
             // Debug only: a sample Bluetooth source as :feature:phone will publish it (no art, no seek).
-            "bt" -> services.media.publish(DEBUG_BT, MediaState("Slow Bloom", "Ines Calder", "Greenhouse", null, 214_000, 61_000,
-                SystemClock.elapsedRealtime(), true, MediaSourceKind.BLUETOOTH, "Maya's iPhone"), DebugBtControls)
-            "bt-off" -> services.media.clear(DEBUG_BT)
+            "bt" -> services.media.publish(DEBUG_SRC, MediaState("Slow Bloom", "Ines Calder", "Greenhouse", null, 214_000, 61_000,
+                SystemClock.elapsedRealtime(), true, MediaSourceKind.BLUETOOTH, "Maya's iPhone", route = listOf("Bluetooth", "AAC")),
+                DebugControls(canSkip = true))
+            // Debug only: an AirPlay 2 sender as C publishes it (no skip, no seek).
+            "ap2" -> services.media.publish(DEBUG_SRC, MediaState("Paper Satellites", "The Northern Lakes", "Small Orbits",
+                DemoArt.forAlbum("Small Orbits", ""), 252_000, 40_000, SystemClock.elapsedRealtime(), true, MediaSourceKind.AIRPLAY,
+                "Maya's iPhone", route = listOf("AirPlay 2", "ALAC", "44.1 kHz")), DebugControls(canSkip = false))
+            "bt-off", "preview-off" -> services.media.clear(DEBUG_SRC)
             // Debug only: hide view groups to profile GPU cost, e.g. "perf:ar" (a ambient, r art, g glass, t text).
             else -> if (cmd.startsWith("perf:")) {
                 val f = cmd.removePrefix("perf:")
