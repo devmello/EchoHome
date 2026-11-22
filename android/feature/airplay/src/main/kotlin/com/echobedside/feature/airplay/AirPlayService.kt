@@ -131,7 +131,8 @@ class AirPlayService : Service() {
         }
         val settings = services.settings
         val name = settings.getString(AirPlayFeature.KEY_NAME, AirPlayFeature.DEFAULT_NAME)
-        val ap2 = settings.getString(AirPlayFeature.KEY_MODE, AirPlayFeature.MODE_AP2) != AirPlayFeature.MODE_AP1
+        // AirPlay 1 by default (user decision): the iPhone accepts play/pause/skip over DACP; no multi-room needed.
+        val ap2 = settings.getString(AirPlayFeature.KEY_MODE, AirPlayFeature.MODE_AP1) == AirPlayFeature.MODE_AP2
         libMdns = settings.getString(AirPlayFeature.KEY_MDNS, AirPlayFeature.MDNS_NSD) == AirPlayFeature.MDNS_LIB
         val started = SystemClock.elapsedRealtime()
         handle = try {

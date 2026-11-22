@@ -26,7 +26,7 @@ object AirPlayFeature : EchoFeature {
     /** Control Center's AirPlay toggle (written by `:feature:system`); off stops the receiver like [KEY_ENABLED]. */
     const val KEY_CC_AIRPLAY = "system.cc.airplay"
     const val KEY_NAME = "airplay.name"
-    /** [MODE_AP2] (default) or [MODE_AP1]. */
+    /** [MODE_AP1] (default: remote control works, user decision Nov 22, 2026) or [MODE_AP2]. */
     const val KEY_MODE = "airplay.mode"
     /** [MDNS_NSD] (default, Android's daemon) or [MDNS_LIB] (the library's responder). */
     const val KEY_MDNS = "airplay.mdns"
