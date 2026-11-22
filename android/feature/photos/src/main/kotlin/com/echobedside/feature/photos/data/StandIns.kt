@@ -66,7 +66,8 @@ object StandIns {
             if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
         }
         p.close()
-        paint.shader = shader; paint.color = color
+        paint.shader = shader
+        paint.color = if (shader != null) 0xFF000000.toInt() else color // a shader takes its alpha from the colour
         c.drawPath(p, paint)
     }
 
@@ -116,7 +117,9 @@ object StandIns {
             val o = ((0.45 + rnd() * 0.5) * 100).roundToInt() / 100f
             val r = s / 2f
             val clear = col and 0x00FFFFFF // fade to the same colour, as CSS does in premultiplied space
-            paint.shader = RadialGradient(x + r, y + r, r * sqrt(2f), intArrayOf(col, clear), floatArrayOf(0f, 0.7f), Shader.TileMode.CLAMP)
+            // Centre nudged off the pixel centre: Skia's raster radial gradient leaves a dark
+            // pixel where the distance is exactly 0.
+            paint.shader = RadialGradient(x + r + 0.31f, y + r + 0.27f, r * sqrt(2f), intArrayOf(col, clear), floatArrayOf(0f, 0.7f), Shader.TileMode.CLAMP)
             paint.alpha = (o * 255).roundToInt()
             c.drawCircle(x + r, y + r, r, paint)
             paint.alpha = 255

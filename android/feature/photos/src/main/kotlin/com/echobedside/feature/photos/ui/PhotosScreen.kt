@@ -65,12 +65,12 @@ import kotlinx.coroutines.withContext
  * after 4 s.
  *
  * Cost rules (docs/architecture.md): at most the current and the next photo are decoded
- * (960×480); fades and zoom are View alpha/scale only; the text overlay is a hardware layer;
+ * (960×480); fades and zoom are View alpha/scale only; the text bands are hardware layers;
  * the glass samples a pre-blurred copy of the photo made once per photo off the main thread;
  * nothing runs while the screen is hidden.
  *
  * Debug args (`--es screen photos --es KEY VALUE`): `album NAME`, `seconds N`, `controls 1`
- * (show and keep the controls), `sheet 1` (open the album picker), `paused 1`.
+ * (show and keep the controls), `sheet 1` (open the album picker), `paused 1`, `night 1|0`.
  */
 @SuppressLint("ViewConstructor")
 class PhotosScreen(context: Context, private val services: EchoServices) : FrameLayout(context), EchoScreen {
@@ -83,7 +83,8 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
     // Views, bottom to top. layers[1] always holds the current photo; layers[0] the outgoing one.
     private val bottom = PhotoLayer(context)
     private val top = PhotoLayer(context)
-    private val overlay = FrameOverlay(context)
+    private val overlay = FrameOverlay(context, FrameOverlay.Part.TOP)
+    private val caption = FrameOverlay(context, FrameOverlay.Part.BOTTOM)
     private val controlsBox = FrameLayout(context)
     private val capsule = GlassLayout(context)
     private val bar = ControlsBar(context)
@@ -135,11 +136,12 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
     private var downAt = 0L
 
     init {
-        setBackgroundColor(Color.BLACK)
+        // No background: the window is already black (one full-screen fill less per frame).
         clipChildren = false
         val match = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         for (l in listOf(bottom, top)) { l.alpha = 0f; addView(l, LayoutParams(match)) }
-        addView(overlay, LayoutParams(match))
+        addView(overlay, LayoutParams(LayoutParams.MATCH_PARENT, FrameOverlay.Part.TOP.height))
+        addView(caption, LayoutParams(LayoutParams.MATCH_PARENT, FrameOverlay.Part.BOTTOM.height).apply { topMargin = FrameOverlay.Part.BOTTOM.top })
 
         // Controls: right 28, bottom 26, inside a padded box so the lift shadow fades with them.
         capsule.cornerRadius = -1f
@@ -147,6 +149,7 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
         capsule.addView(bar, LayoutParams(LayoutParams.WRAP_CONTENT, ControlsBar.HEIGHT))
         controlsBox.setPadding(SHADOW_PAD, SHADOW_PAD, SHADOW_PAD, SHADOW_PAD)
         controlsBox.clipChildren = false
+        controlsBox.clipToPadding = false // the glass draws its lift shadow outside its bounds
         controlsBox.addView(capsule, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         controlsBox.visibility = INVISIBLE
         controlsBox.alpha = 0f
@@ -163,6 +166,7 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
         sheet.addView(albumList, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         sheetBox.setPadding(SHADOW_PAD, SHADOW_PAD, SHADOW_PAD, SHADOW_PAD)
         sheetBox.clipChildren = false
+        sheetBox.clipToPadding = false
         sheetBox.addView(sheet, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
         sheetBox.visibility = INVISIBLE
         sheetBox.alpha = 0f
@@ -246,6 +250,8 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
     private fun applyArgs(args: Bundle) {
         args.getString("seconds")?.toIntOrNull()?.let { show.seconds = it.coerceIn(3, 600) }
         if (args.getString("paused") == "1") { show.paused = true; bar.paused = true }
+        // Preview Night mode without the light sensor (normally SystemState.nightActive drives it).
+        args.getString("night")?.let { setNight(it == "1") }
         args.getString("album")?.let { name ->
             val a = albums.firstOrNull { it.name.equals(name, ignoreCase = true) }
             if (a != null && a.id != album?.id) pick(a)
@@ -567,17 +573,17 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
         val a = album
         when {
             r == null -> {
-                overlay.captionTitle = "Photo frame"
-                overlay.captionSubtitle = "Add an Immich server and API key to show your albums"
+                caption.captionTitle = "Photo frame"
+                caption.captionSubtitle = "Add an Immich server and API key to show your albums"
             }
             cur != null && a != null -> {
                 val c = Captions.caption(cur.asset, a.name, LocalDate.now(), r.sourceName, offline)
-                overlay.captionTitle = c.title
-                overlay.captionSubtitle = c.subtitle
+                caption.captionTitle = c.title
+                caption.captionSubtitle = c.subtitle
             }
             else -> {
-                overlay.captionTitle = ""
-                overlay.captionSubtitle = status ?: ""
+                caption.captionTitle = ""
+                caption.captionSubtitle = status ?: ""
             }
         }
     }
@@ -634,7 +640,7 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     controlsBox.setLayerType(LAYER_TYPE_NONE, null)
-                    if (!controlsVisible) controlsBox.visibility = INVISIBLE
+                    if (!controlsVisible) { controlsBox.visibility = INVISIBLE; updateGlassBackdrop() }
                 }
             })
             start()
@@ -646,6 +652,7 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
         sheetAnim?.cancel(); sheetAnim = null
         controlsVisible = false; sheetOpen = false; keepControls = false
         for (b in listOf(controlsBox, sheetBox)) { b.alpha = 0f; b.visibility = INVISIBLE; b.setLayerType(LAYER_TYPE_NONE, null) }
+        updateGlassBackdrop()
     }
 
     private fun openSheet() {
@@ -717,7 +724,7 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     sheetBox.setLayerType(LAYER_TYPE_NONE, null)
-                    if (!sheetOpen) sheetBox.visibility = INVISIBLE
+                    if (!sheetOpen) { sheetBox.visibility = INVISIBLE; updateGlassBackdrop() }
                 }
             })
             start()
@@ -727,16 +734,23 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
     /**
      * Points the glass at the current photo's pre-blurred copy, placed where the photo is drawn
      * right now (it may be zoomed up to 1.08 around its pivot). Cheap: a new Backdrop wrapper.
+     *
+     * Hidden glass gets no backdrop: GlassTracker re-checks a glass view's window position every
+     * frame while it has one, and a view inside an INVISIBLE parent never draws, so it would keep
+     * invalidating and the screen would never go idle.
      */
     private fun updateGlassBackdrop() {
         val cur = current
-        if (cur == null || night) { capsule.backdrop = null; sheet.backdrop = null; return }
-        val s = top.scaleX
-        val w = width.coerceAtLeast(1).toFloat()
-        val h = height.coerceAtLeast(1).toFloat()
-        val bd = Backdrop(cur.blur, top.pivotX * (1 - s), top.pivotY * (1 - s), w * s, h * s)
-        capsule.backdrop = bd
-        sheet.backdrop = bd
+        val bd = if (cur == null || night) null else {
+            val s = top.scaleX
+            val w = width.coerceAtLeast(1).toFloat()
+            val h = height.coerceAtLeast(1).toFloat()
+            Backdrop(cur.blur, top.pivotX * (1 - s), top.pivotY * (1 - s), w * s, h * s)
+        }
+        val forCapsule = bd.takeIf { controlsVisible }
+        val forSheet = bd.takeIf { sheetOpen }
+        if (capsule.backdrop !== forCapsule) capsule.backdrop = forCapsule
+        if (sheet.backdrop !== forSheet) sheet.backdrop = forSheet
     }
 
     // --- night -------------------------------------------------------------------------------
@@ -746,6 +760,7 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
         dimAnim?.cancel()
         nightDim = Night.DIM
         overlay.night = on
+        caption.night = on
         bar.night = on
         capsule.night = on
         sheet.night = on
@@ -760,6 +775,7 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
         top.setNight(night, dim)
         bottom.setNight(night, dim)
         overlay.alpha = dim
+        caption.alpha = dim
     }
 
     private val reDim = Runnable { animateDim(Night.DIM) }
