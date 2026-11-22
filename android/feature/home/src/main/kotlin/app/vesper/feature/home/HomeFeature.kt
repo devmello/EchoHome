@@ -1,0 +1,87 @@
+package app.vesper.feature.home
+
+import android.os.Bundle
+import app.vesper.core.model.VesperFeature
+import app.vesper.core.model.FeatureHost
+import app.vesper.core.model.ScreenSpec
+import app.vesper.feature.home.commute.CommuteView
+import app.vesper.feature.home.doorbell.DemoSnapshot
+import app.vesper.feature.home.doorbell.DoorbellWatcher
+import app.vesper.feature.home.glance.AutoLocation
+import app.vesper.feature.home.glance.IcsCalendarProvider
+import app.vesper.feature.home.glance.LocationResolver
+import app.vesper.feature.home.glance.NetworkChanges
+import app.vesper.feature.home.glance.OpenMeteoWeatherProvider
+import app.vesper.feature.home.ha.DemoHomeAssistant
+import app.vesper.feature.home.home.HomeScreenView
+import app.vesper.feature.home.stocks.StocksView
+import kotlinx.coroutines.flow.map
+
+/**
+ * `:feature:home` (agent F — glances + optional smart home). Works with no Home Assistant (NOTES §4.1):
+ *  - services.weather → Open-Meteo for the manual location, else the IP-detected one, else
+ *    Livermore (works with no settings). Demo mode with no manual location: the sample weather.
+ *  - services.calendar → the iCal URLs in secrets (`calendar.icsUrls`, followed live); none = the fake.
+ *  - services.location → manual > IP-detected > Livermore (demo: Santa Cruz unless manual).
+ *  - Settings sections: [HomeSettingsSchema].
+ *  - Commute (order 40): Nominatim + OSRM, no key. Stocks (order 50): Yahoo chart, no key.
+ *  - Home (order 20) + doorbell: only with Home Assistant configured. In demo mode without HA the
+ *    Home screen still shows, driven by [DemoHomeAssistant] and labelled demo.
+ */
+object HomeFeature : VesperFeature {
+    override val id = "home"
+
+    private var demoHa: DemoHomeAssistant? = null
+    private var doorbell: DoorbellWatcher? = null
+
+    override fun install(host: FeatureHost) {
+        val s = host.services
+        // services.location: manual > (demo: Santa Cruz) > IP-detected (daily, and after a network
+        // change) > Livermore. Weather and commute read it; in demo with nothing manual, weather
+        // keeps the sample data.
+        val location = LocationResolver(s.settings, s.scope, s.config.demoData, AutoLocation(s.settings), NetworkChanges.flow(host.context))
+        s.location = location.location
+        location.start()
+        val weather = OpenMeteoWeatherProvider(s.settings, s.scope, fallback = s.weather, location = location.location)
+        s.weather = weather
+        weather.start()
+
+        // Always bound: the iCal URLs are a secret that can be set or changed live (configFlow).
+        // With none it mirrors the fake (sample calendar in demo mode, empty otherwise).
+        val cal = IcsCalendarProvider(s.configFlow.map { it.secrets.calendarIcsUrls }, host.context.cacheDir, s.settings, s.scope, fallback = s.calendar)
+        s.calendar = cal
+        cal.start()
+
+        HomeSettingsSchema.all.forEach(host::registerSettings)
+
+        host.registerScreen(ScreenSpec("commute", order = 40) { ctx -> CommuteView(ctx, host.services) })
+        host.registerScreen(ScreenSpec("stocks", order = 50) { ctx -> StocksView(ctx, host.services) })
+
+        val haConfigured = s.config.secrets.haConfigured
+        if (haConfigured) {
+            // services.homeAssistant is bound by :app before install when HA is configured.
+            doorbell = DoorbellWatcher(s.homeAssistant, s.settings, s.notifications, s.island, s.scope).also { it.start() }
+            host.registerScreen(ScreenSpec("home", order = 20) { ctx -> HomeScreenView(ctx, host.services, host.services.homeAssistant, demo = false) })
+        } else if (s.config.demoData) {
+            host.registerScreen(ScreenSpec("home", order = 20) { ctx ->
+                val ha = DemoHomeAssistant(host.services.scope).also { demoHa = it }
+                object : HomeScreenView(ctx, host.services, ha, demo = true, defaults = DemoHomeAssistant::demoDefaults) {
+                    override fun onScreenShown(args: Bundle?) {
+                        super.onScreenShown(args)
+                        // Debug: `--es screen home --es doorbell ring` runs the doorbell flow on the demo home.
+                        if (args?.getString("doorbell") == "ring") demoRing(host)
+                    }
+                }
+            })
+        }
+    }
+
+    private fun demoRing(host: FeatureHost) {
+        val ha = demoHa ?: return
+        val s = host.services
+        if (ha.cameraImage == null) ha.cameraImage = DemoSnapshot.jpeg()
+        if (doorbell == null) doorbell = DoorbellWatcher(ha, s.settings, s.notifications, s.island, s.scope).also { it.start() }
+        ha.ringDoorbell()
+    }
+}
+

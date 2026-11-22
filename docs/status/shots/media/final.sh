@@ -3,7 +3,7 @@
 # song list scrolled to the end. Run via build-install.sh --then. Usage: final.sh SCRATCH_DIR
 D=$(cd "$(dirname "$0")" && pwd); S=$1
 A="$ADB -s $SERIAL"
-np() { $A shell am start -n com.echobedside/.MainActivity --es screen nowplaying ${1:+--es np "$1"} >/dev/null 2>&1; }
+np() { $A shell am start -n app.vesper/.MainActivity --es screen nowplaying ${1:+--es np "$1"} >/dev/null 2>&1; }
 shot() { $A exec-out screencap -p > "$D/$1.png"; echo "shot $1"; }
 np popover; sleep 1.2; shot popover
 $A shell input tap 120 120; sleep 0.4

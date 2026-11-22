@@ -6,10 +6,10 @@
 set -e
 : "${ADB:?run via build-install.sh / echo-lock.sh}" "${SERIAL:?}"
 SEC=${PROBE_SEC:-28}
-"$ADB" -s "$SERIAL" shell pm grant com.echobedside android.permission.CAMERA || true
-"$ADB" -s "$SERIAL" shell am force-stop com.echobedside
+"$ADB" -s "$SERIAL" shell pm grant app.vesper android.permission.CAMERA || true
+"$ADB" -s "$SERIAL" shell am force-stop app.vesper
 "$ADB" -s "$SERIAL" logcat -c
 # shellcheck disable=SC2068
-"$ADB" -s "$SERIAL" shell am start -W -n com.echobedside/.MainActivity --es screen camera-probe $@ >/dev/null
+"$ADB" -s "$SERIAL" shell am start -W -n app.vesper/.MainActivity --es screen camera-probe $@ >/dev/null
 sleep "$SEC"
-"$ADB" -s "$SERIAL" logcat -d -s EchoCamProbe:* EchoCam1:* EchoCam2:* AndroidRuntime:E | grep -v beginning
+"$ADB" -s "$SERIAL" logcat -d -s VesperCamProbe:* VesperCam1:* VesperCam2:* AndroidRuntime:E | grep -v beginning

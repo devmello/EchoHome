@@ -204,7 +204,7 @@ Both EdgeFace models use the same `MatchPolicy.NEURAL` rule as MobileFaceNet did
 - **LBP keeps its old rule** (floor 0.5, slack 0.01, margin 0.02). Templates carry the embedder id (`edgeface-xxs-fp16-v1` or `edgeface-xs-g06-fp16-v1`). Older templates are ignored and the person needs to re-enrol: LBP, MobileFaceNet (`mbf-w600k-int8-v1`), or ones from the other EdgeFace model.
 - **Not checked on real faces.** The brief allowed downloading only weights (no face dataset), and nobody was in front of the camera. On our crops, EdgeFace's spread of different-people scores may differ a little from MobileFaceNet's, so recalibrate once real people are enrolled.
 - **How to recalibrate on the Echo:**
-  1. Enrol each person. Logcat (tag `EchoCamera`) prints `enrolled <id> with edgeface-xxs-fp16-v1: weakest pair X, threshold Y` (numbers only).
+  1. Enrol each person. Logcat (tag `VesperCamera`) prints `enrolled <id> with edgeface-xxs-fp16-v1: weakest pair X, threshold Y` (numbers only).
   2. Walk in a few times and have other people walk in. Each try logs `match try n: <id|-> score=S second=R`.
   3. Set **Match threshold** (advanced, web settings) about halfway between the highest stranger score and the lowest genuine score.
   4. If two enrolled people's `score − second` is often under 0.05, raise the margin in `MatchPolicy.NEURAL`.

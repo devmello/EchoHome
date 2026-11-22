@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace = "com.echobedside"
+    namespace = "app.vesper"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.echobedside"
+        applicationId = "app.vesper"
         // The Echo Show 5 (checkers) runs LineageOS 18.1 = Android 11 = API 30.
         minSdk = 30
         targetSdk = 30

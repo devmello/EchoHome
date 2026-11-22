@@ -3,7 +3,7 @@
 # build-install.sh --then. Denies the system "make visible" prompt so the Echo doesn't stay discoverable.
 SHOTS=$(cd "$(dirname "$0")" && pwd)
 A="$ADB -s $SERIAL"
-$A shell am start -n com.echobedside/.MainActivity --es screen phone-pairing >/dev/null
+$A shell am start -n app.vesper/.MainActivity --es screen phone-pairing >/dev/null
 sleep 3
 $A shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
 B=$($A shell cat /sdcard/ui.xml | tr '>' '\n' | grep -i 'text="Deny"' | grep -o 'bounds="[^"]*"' | head -1)
@@ -15,4 +15,4 @@ fi
 $A shell rm -f /sdcard/ui.xml
 sleep 2
 $A exec-out screencap -p > "$SHOTS/pairing-real.png"
-$A shell am start -n com.echobedside/.MainActivity --es screen standby >/dev/null
+$A shell am start -n app.vesper/.MainActivity --es screen standby >/dev/null

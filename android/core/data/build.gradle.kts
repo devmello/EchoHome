@@ -3,7 +3,7 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.library)
 }
-apply(from = rootProject.file("gradle/echo-library.gradle"))
+apply(from = rootProject.file("gradle/vesper-library.gradle"))
 
 /**
  * Secrets come from android/secrets.properties (git-ignored; see secrets.properties.example).
@@ -17,7 +17,7 @@ val secrets = Properties().apply {
 fun secret(key: String) = "\"" + (secrets.getProperty(key) ?: "").replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
-    namespace = "com.echobedside.core.data"
+    namespace = "app.vesper.core.data"
     buildFeatures { buildConfig = true }
     defaultConfig {
         buildConfigField("String", "HA_URL", secret("ha.url"))

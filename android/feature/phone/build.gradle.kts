@@ -1,10 +1,10 @@
 plugins {
     alias(libs.plugins.android.library)
 }
-apply(from = rootProject.file("gradle/echo-library.gradle"))
+apply(from = rootProject.file("gradle/vesper-library.gradle"))
 
 android {
-    namespace = "com.echobedside.feature.phone"
+    namespace = "app.vesper.feature.phone"
 }
 
 dependencies {

@@ -1,4 +1,4 @@
-//! `tracing` → logcat (tag `EchoAirPlayRs`). INFO and above only, to keep the log quiet.
+//! `tracing` → logcat (tag `VesperAirPlayRs`). INFO and above only, to keep the log quiet.
 
 use std::io::Write;
 use std::sync::Once;
@@ -15,7 +15,7 @@ mod sys {
     }
 }
 
-const TAG: &[u8] = b"EchoAirPlayRs\0";
+const TAG: &[u8] = b"VesperAirPlayRs\0";
 
 pub struct LogLine {
     prio: i32,

@@ -11,7 +11,7 @@
 
     <application>
         <service
-            android:name="com.echobedside.feature.airplay.AirPlayService"
+            android:name="app.vesper.feature.airplay.AirPlayService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
     </application>

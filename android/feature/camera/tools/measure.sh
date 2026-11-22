@@ -8,8 +8,8 @@ set -e
 SEC=${MEASURE_SEC:-30}
 LABEL=${1:-measure}
 sh() { "$ADB" -s "$SERIAL" shell "$@" | tr -d '\r'; }
-sh pm grant com.echobedside android.permission.CAMERA >/dev/null 2>&1 || true
-APP=$(sh pidof com.echobedside)
+sh pm grant app.vesper android.permission.CAMERA >/dev/null 2>&1 || true
+APP=$(sh pidof app.vesper)
 CS=$(sh pidof cameraserver)
 HAL=$(sh pidof camerahalserver)
 ticks() { for p in "$@"; do sh cat /proc/"$p"/stat 2>/dev/null | awk '{printf "%d ", $14 + $15}' || printf "0 "; done; }
@@ -28,4 +28,4 @@ pss() { sh dumpsys meminfo "$1" 2>/dev/null | awk '/TOTAL PSS:/ {printf "%.1f MB
 echo "### $LABEL ($(date '+%Y-%m-%d %H:%M'), ${dt}s)"
 echo "- CPU (% of one core): app $(pct $((a1 - a0))), cameraserver $(pct $((c1 - c0))), camerahalserver $(pct $((h1 - h0))) → camera total $(pct $(( (a1 - a0) + (c1 - c0) + (h1 - h0) )))"
 echo "- Whole device busy: ${dev}% of 4 cores"
-echo "- PSS: app $(pss com.echobedside), cameraserver $(pss "$CS"), camerahalserver $(pss "$HAL")"
+echo "- PSS: app $(pss app.vesper), cameraserver $(pss "$CS"), camerahalserver $(pss "$HAL")"

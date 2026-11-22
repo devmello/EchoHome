@@ -1,0 +1,68 @@
+package app.vesper.feature.media
+
+import android.os.SystemClock
+import app.vesper.core.model.ActivityKind
+import app.vesper.core.model.IslandAction
+import app.vesper.core.model.IslandManager
+import app.vesper.core.model.LiveActivity
+import app.vesper.core.model.LiveContent
+import app.vesper.core.model.MediaHub
+import app.vesper.core.model.MediaSession
+import app.vesper.core.model.SettingsStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+
+/**
+ * Publishes the MUSIC live activity for the island (agent B renders it, NOTES §5.4) from
+ * `services.media.current`. Updates only on identity / play-state / artwork changes, not on
+ * position (the renderer reads the live position from the hub). The island hides it on Now
+ * Playing via [LiveActivity.ownerScreen]. A paused session goes stale after [PAUSED_STALE_MS].
+ */
+class MusicIsland(
+    private val hub: MediaHub,
+    private val island: IslandManager,
+    private val scope: CoroutineScope,
+    private val settings: SettingsStore,
+) {
+
+    private data class Key(val sourceId: String, val title: String, val artist: String, val playing: Boolean, val artId: Int, val source: Any)
+
+    fun start() {
+        scope.launch {
+            // "Show music in the island" off = nothing published (and the current one ended).
+            combine(hub.current, MediaSettings.watch(settings, MediaSettings.ISLAND, MediaSettings::island)) { s, on -> s.takeIf { on } }
+                .map { s -> s?.let { Key(it.sourceId, it.state.title, it.state.artist, it.state.playing, System.identityHashCode(it.state.artwork), it.state.source) to it } }
+                .distinctUntilChanged { a, b -> a?.first == b?.first }
+                .collect { pair ->
+                    if (pair == null) island.end(ID) else island.publish(activityFor(pair.second))
+                    android.util.Log.d("VesperMedia", "island music: " + (pair?.first?.let { "${it.title} playing=${it.playing}" } ?: "ended"))
+                }
+        }
+    }
+
+    companion object {
+        const val ID = "media.music"
+        const val PAUSED_STALE_MS = 10 * 60_000L
+
+        fun activityFor(session: MediaSession, now: Long = SystemClock.elapsedRealtime()): LiveActivity {
+            val st = session.state
+            val c = session.controls
+            return LiveActivity(
+                id = ID,
+                kind = ActivityKind.MUSIC,
+                content = LiveContent.Music(st.title, st.artist, st.artwork, st.playing, st.source),
+                // Only what the source supports (AirPlay 2 senders can't skip, some can't pause).
+                actions = listOfNotNull(
+                    IslandAction("previous", "Previous") { c.previous() }.takeIf { c.canSkip },
+                    if (st.playing) IslandAction("pause", "Pause") { c.pause() }.takeIf { c.canPause } else IslandAction("play", "Play") { c.play() },
+                    IslandAction("next", "Next") { c.next() }.takeIf { c.canSkip },
+                ),
+                staleAfterElapsed = if (st.playing) null else now + PAUSED_STALE_MS,
+                ownerScreen = NowPlayingScreen.ID,
+            )
+        }
+    }
+}

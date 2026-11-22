@@ -13,17 +13,17 @@
     <application>
         <!-- Rings alarms and timers while our activity is in the background / the screen is off. -->
         <service
-            android:name="com.echobedside.feature.alarm.AlarmService"
+            android:name="app.vesper.feature.alarm.AlarmService"
             android:exported="false" />
 
         <!-- Our AlarmManager wake-ups. -->
         <receiver
-            android:name="com.echobedside.feature.alarm.AlarmTriggerReceiver"
+            android:name="app.vesper.feature.alarm.AlarmTriggerReceiver"
             android:exported="false" />
 
         <!-- Reschedule after boot, clock / time zone changes and app updates. -->
         <receiver
-            android:name="com.echobedside.feature.alarm.AlarmSystemReceiver"
+            android:name="app.vesper.feature.alarm.AlarmSystemReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

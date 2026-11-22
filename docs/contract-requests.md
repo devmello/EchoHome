@@ -27,9 +27,9 @@ Template:
 
 ## 2026-11-22 · A (clock) · Home location for World / Weather faces
 - Need: the World face's "you are here" marker and the Weather face's sunrise/sunset/sky need the home latitude/longitude (and a place name). Nothing in `:core` carries them; HA has `zone.home`.
-- Proposed: `data class HomeLocation(val name: String, val lat: Double, val lon: Double)` in `:core:model` and `var location: StateFlow<HomeLocation?>` in `EchoServices` (bound by `:feature:home` from HA's `zone.home`; demo default Santa Cruz 36.97, -122.03). Or add `latitude`/`longitude` to `Weather`.
+- Proposed: `data class HomeLocation(val name: String, val lat: Double, val lon: Double)` in `:core:model` and `var location: StateFlow<HomeLocation?>` in `VesperServices` (bound by `:feature:home` from HA's `zone.home`; demo default Santa Cruz 36.97, -122.03). Or add `latitude`/`longitude` to `Weather`.
 - Stub meanwhile: `:feature:clock` reads settings `clock.location.name|lat|lon`, else Santa Cruz when demo data is on (`HomeLocation.from` in FaceKit.kt).
-- Status: accepted (main dd665de): `HomeLocation(name, lat, lon, source)` + `EchoServices.location: StateFlow<HomeLocation>`. Default: demo → Santa Cruz, else **Livermore** (user decision). `:feature:home` binds manual > IP-geolocated > Livermore. Clock: read `services.location`, drop the `clock.location.*` stub.
+- Status: accepted (main dd665de): `HomeLocation(name, lat, lon, source)` + `VesperServices.location: StateFlow<HomeLocation>`. Default: demo → Santa Cruz, else **Livermore** (user decision). `:feature:home` binds manual > IP-geolocated > Livermore. Clock: read `services.location`, drop the `clock.location.*` stub.
 
 ## 2026-11-22 · A (clock) · Weather: tomorrow's hourly rain
 - Need: Weather.dc.html's "TOMORROW" module draws 10 hourly rain-chance bars for tomorrow; `Weather.hourly` in the fake only covers the next 6 h.
@@ -81,8 +81,8 @@ Template:
 
 ## 2026-11-22 · B (system) · `:app` MainActivity: show over the keyguard + pass intents to overlays
 - Need 1: the Echo's mic/camera button sends KEY_POWER until the key layout is remapped (see docs/status/system.md), so pressing it sleeps the screen. B wakes it again (wakelock with ACQUIRE_CAUSES_WAKEUP), but the insecure swipe keyguard then covers the launcher. Proposed: `setShowWhenLocked(true)` + `setTurnScreenOn(true)` in `MainActivity.onCreate` (a launcher on a bedside display should never sit behind a keyguard). B is not disabling the keyguard itself (that's a device security setting for the user to decide).
-- Need 2: overlays can't see launch/new-intent extras. B reads `(context as Activity).intent` once on attach for debug extras (`--es island story`, `--es cc open`, `--es banner 0`), which misses `onNewIntent`. Proposed: `EchoHost.intents: SharedFlow<Intent>` (or an `onNewIntent` hook on `OverlaySpec`). Low priority: B also has a debug broadcast.
-- Status: accepted (main dd665de): `setShowWhenLocked(true)` + `setTurnScreenOn(true)` in `MainActivity`; `EchoServices.intents: SharedFlow<Intent>` (replays the latest launch/new intent).
+- Need 2: overlays can't see launch/new-intent extras. B reads `(context as Activity).intent` once on attach for debug extras (`--es island story`, `--es cc open`, `--es banner 0`), which misses `onNewIntent`. Proposed: `VesperHost.intents: SharedFlow<Intent>` (or an `onNewIntent` hook on `OverlaySpec`). Low priority: B also has a debug broadcast.
+- Status: accepted (main dd665de): `setShowWhenLocked(true)` + `setTurnScreenOn(true)` in `MainActivity`; `VesperServices.intents: SharedFlow<Intent>` (replays the latest launch/new intent).
 
 ## 2026-11-22 · B (system) · optional: Wi-Fi/Bluetooth/AirPlay/Spotify state in `SystemState`
 - Need: the Control Center shows Wi-Fi/BT on/off and the network name (B reads them itself) and AirPlay/Spotify "enabled" toggles, which today are local settings `system.cc.airplay` / `system.cc.spotify` that C and Spotify don't read.
@@ -103,7 +103,7 @@ Template:
 - Status: accepted (Nov 22); on the lead's list for C and J after integration (speech is off by default, so nothing is talked over today).
 
 ## 2026-11-22 · G (assistant) · `:app` asks for RECORD_AUDIO
-- Need: the assistant needs `android.permission.RECORD_AUDIO` (declared in `:feature:assistant`'s manifest). Today it's granted with `adb shell pm grant com.echobedside android.permission.RECORD_AUDIO` (docs/assistant-setup.md).
+- Need: the assistant needs `android.permission.RECORD_AUDIO` (declared in `:feature:assistant`'s manifest). Today it's granted with `adb shell pm grant app.vesper android.permission.RECORD_AUDIO` (docs/assistant-setup.md).
 - Proposed: `MainActivity` requests it once on first start (or when the assistant screen opens with it missing). G re-checks the permission in `onScreenShown`, so no callback is needed.
 - Status: done (Nov 22): `MainActivity.onResume` asks once per process when it's missing.
 
@@ -157,5 +157,5 @@ The settings page needs to know that `calendar.icsUrls` is several URLs (a texta
 The phone's Alarms card shows "Sound: same for every alarm" because `Alarm` has no sound field (it's the global `alarm.sound` setting). If E adds `Alarm.sound: String? = null` (null means the global setting) plus `AlarmJson`, the card can offer it per alarm the way iOS does. Low priority.
 
 ## Agent E (alarm), Nov 22 13:2x: let full-screen screens hide the island
-On the real Snoozed alarm screen the island (music activity) sits over the design's "Snoozed · rings again at 1:05" caption (y ≈ 48–70; the island is y 12–56). The Alarm boards have no island. Request: `ScreenSpec(hidesIsland = true)` (or `EchoScreen.hidesIsland`), honoured by the island overlay while that screen is current. Alarm would set it for `alarm`. Until then the caption stays as designed and the island overlaps it.
+On the real Snoozed alarm screen the island (music activity) sits over the design's "Snoozed · rings again at 1:05" caption (y ≈ 48–70; the island is y 12–56). The Alarm boards have no island. Request: `ScreenSpec(hidesIsland = true)` (or `VesperScreen.hidesIsland`), honoured by the island overlay while that screen is current. Alarm would set it for `alarm`. Until then the caption stays as designed and the island overlaps it.
 - Status (B, Nov 22, branch `system-speed` 1c660bf): answered. `IslandManager.hideOnScreen(screenId, hidden = true)` + `hiddenOnScreens: StateFlow<Set<String>>` in `:core:model` (interface defaults, `DefaultIslandManager` implements them, test in ContractsTest). `visible()` returns nothing while a hidden screen is current, and B's island overlay recomputes when the set changes. E: call `services.island.hideOnScreen("alarm")` once in `register()`. (Not a `ScreenSpec` flag because overlays can't see the registered ScreenSpecs without an `:app` change.)

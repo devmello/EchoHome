@@ -3,7 +3,7 @@
 The Echo serves a settings page on the home Wi-Fi. Open it in Safari on an iPhone or Mac, tap **Pair**, type the 6-digit code the Echo shows, and every change applies on the Echo right away.
 
 ## For the user: how to use it
-1. On the Echo, open **Control Center › Settings** (or `adb shell am start -n com.echobedside/.MainActivity --es screen settings-pair`). A sheet shows a QR code and the address, e.g. `192.168.10.136:8080`.
+1. On the Echo, open **Control Center › Settings** (or `adb shell am start -n app.vesper/.MainActivity --es screen settings-pair`). A sheet shows a QR code and the address, e.g. `192.168.10.136:8080`.
 2. Scan the QR code with the iPhone camera, or type the address into Safari on any phone or Mac on the same Wi-Fi.
 3. Tap **Pair**. A 6-digit code appears on the Echo for 2 minutes. Type it on the page.
 4. Optional: in Safari, **Share › Add to Home Screen** for an app icon. On older iOS versions the home-screen app keeps its own cookies, so it may ask you to pair once more.

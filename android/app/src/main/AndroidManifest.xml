@@ -3,12 +3,12 @@
 
     <application
         android:usesNonSdkApi="true"
-        android:name=".EchoApp"
+        android:name=".VesperApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.EchoBedside">
+        android:theme="@style/Theme.Vesper">
 
         <!-- The HOME launcher: boots straight into the clock. Launcher3 stays installed as a fallback. -->
         <activity

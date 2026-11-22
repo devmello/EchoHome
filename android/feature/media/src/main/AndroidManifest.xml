@@ -14,9 +14,9 @@
     <application>
         <!-- Media sessions of other apps (MediaSessionManager.getActiveSessions needs an enabled
              listener). Media only; banners have their own listener in :feature:system.
-             Grant: adb shell cmd notification allow_listener com.echobedside/com.echobedside.feature.media.MediaListenerService -->
+             Grant: adb shell cmd notification allow_listener app.vesper/app.vesper.feature.media.MediaListenerService -->
         <service
-            android:name="com.echobedside.feature.media.MediaListenerService"
+            android:name="app.vesper.feature.media.MediaListenerService"
             android:label="Vesper media"
             android:exported="true"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">

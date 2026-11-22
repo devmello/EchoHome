@@ -4,12 +4,12 @@
 SHOTS=$(cd "$(dirname "$0")" && pwd)
 A="$ADB -s $SERIAL"
 $A logcat -c
-$A shell am start -n com.echobedside/.MainActivity --es screen phone-pairing --es phone_demo ams >/dev/null
+$A shell am start -n app.vesper/.MainActivity --es screen phone-pairing --es phone_demo ams >/dev/null
 sleep 6
 $A exec-out screencap -p > "$SHOTS/ams-nowplaying.png"
-$A logcat -d | grep -E "EchoPhone|AndroidRuntime" | tail -8
-$A shell am start -n com.echobedside/.MainActivity --es screen phone-pairing --es phone_demo ams-podcast >/dev/null
+$A logcat -d | grep -E "VesperPhone|AndroidRuntime" | tail -8
+$A shell am start -n app.vesper/.MainActivity --es screen phone-pairing --es phone_demo ams-podcast >/dev/null
 sleep 6
 $A exec-out screencap -p > "$SHOTS/ams-podcast.png"
-$A logcat -d | grep -E "EchoPhone|AndroidRuntime" | tail -4
-$A shell dumpsys meminfo com.echobedside | grep -E "TOTAL PSS|TOTAL:" | head -2
+$A logcat -d | grep -E "VesperPhone|AndroidRuntime" | tail -4
+$A shell dumpsys meminfo app.vesper | grep -E "TOTAL PSS|TOTAL:" | head -2

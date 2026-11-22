@@ -1,5 +1,5 @@
 #!/bin/bash
-# Rebuilds libecho_airplay.so (armeabi-v7a only) into ../src/main/jniLibs.
+# Rebuilds libvesper_airplay.so (armeabi-v7a only) into ../src/main/jniLibs.
 # Needs: rustup target armv7-linux-androideabi, cargo-ndk, an NDK (ANDROID_NDK_HOME or $ANDROID_HOME/ndk/<ver>).
 set -euo pipefail
 cd "$(dirname "$0")"

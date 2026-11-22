@@ -99,7 +99,7 @@ Design renders came from `NowPlaying.dc.html` with its template values filled in
 
 ## Device setup
 
-- `adb shell cmd notification allow_listener com.echobedside/com.echobedside.feature.media.MediaListenerService` (done on the Echo, Nov 22). Without it the app logs one line and the rest still works. **Note:** Android drops the grant whenever a build *without* this service is installed (every other agent's build until this branch is merged), so re-run it after merging; `app-session.sh` does.
+- `adb shell cmd notification allow_listener app.vesper/app.vesper.feature.media.MediaListenerService` (done on the Echo, Nov 22). Without it the app logs one line and the rest still works. **Note:** Android drops the grant whenever a build *without* this service is installed (every other agent's build until this branch is merged), so re-run it after merging; `app-session.sh` does.
 - For the other-apps test only: `/sdcard/Music/testtone.mp3` (a generated sine tone with gradient cover art, made with ffmpeg) and `pm grant org.lineageos.eleven android.permission.READ_EXTERNAL_STORAGE`.
 
 ## Debug

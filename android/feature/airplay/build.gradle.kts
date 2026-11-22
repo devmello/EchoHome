@@ -1,14 +1,14 @@
 plugins {
     alias(libs.plugins.android.library)
 }
-apply(from = rootProject.file("gradle/echo-library.gradle"))
+apply(from = rootProject.file("gradle/vesper-library.gradle"))
 
 android {
-    namespace = "com.echobedside.feature.airplay"
+    namespace = "app.vesper.feature.airplay"
     defaultConfig {
         consumerProguardFiles("consumer-rules.pro")
     }
-    // libecho_airplay.so (armeabi-v7a) is prebuilt from rust/ by rust/build.sh and committed under
+    // libvesper_airplay.so (armeabi-v7a) is prebuilt from rust/ by rust/build.sh and committed under
     // src/main/jniLibs, so building the app needs no Rust toolchain or NDK.
 }
 

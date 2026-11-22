@@ -1,6 +1,6 @@
 # Vesper — app architecture (for every agent)
 
-Project name: **Vesper** (decided Nov 22, 2026; code still uses `com.echobedside` until the post-integration rename). The device shows on the network as **"Echo Show"** (`DeviceName`, setting `device.name`).
+Project name: **Vesper** (decided Nov 22, 2026; code still uses `app.vesper` until the post-integration rename). The device shows on the network as **"Echo Show"** (`DeviceName`, setting `device.name`).
 
 Read this after `CLAUDE.md` and `NOTES.md`. The Android project is in `android/`.
 
@@ -8,9 +8,9 @@ Read this after `CLAUDE.md` and `NOTES.md`. The Android project is in `android/`
 
 | Module | Owner | What |
 |---|---|---|
-| `:app` | lead | HOME activity (`MainActivity`), `EchoApp` (builds `EchoServices`, installs features), `ScreenPager`, navigator, debug `bench` screen |
-| `:core:model` | lead | Contracts: `EchoFeature`/`FeatureHost`, `EchoServices`, `LiveActivity`/`IslandManager`, `MediaHub`/`MediaState`/`MediaControls`, `SystemState`/`SystemControls`, `AlarmStore`/`TimerStore`, `Profile`/`ProfileManager`, `NotificationFeed`/`Banner`, `FaceSpec`/`FaceRegistry`, `WeatherProvider`/`CalendarProvider`, `HomeAssistant`, `SettingsStore`. Fakes in `core.model.fake`. `observeWhileAttached` helper. |
-| `:core:design` | lead | `Fonts` (Inter variable), `SpecText` (CSS text layout 1:1), tokens (`EchoColors`, `Night`, `Motion`, `GlassTokens`), `PreBlur` + `Backdrop`, `GlassPainter`, `GlassLayout`, `GlassSlider`, `GlassTracker` |
+| `:app` | lead | HOME activity (`MainActivity`), `VesperApp` (builds `VesperServices`, installs features), `ScreenPager`, navigator, debug `bench` screen |
+| `:core:model` | lead | Contracts: `VesperFeature`/`FeatureHost`, `VesperServices`, `LiveActivity`/`IslandManager`, `MediaHub`/`MediaState`/`MediaControls`, `SystemState`/`SystemControls`, `AlarmStore`/`TimerStore`, `Profile`/`ProfileManager`, `NotificationFeed`/`Banner`, `FaceSpec`/`FaceRegistry`, `WeatherProvider`/`CalendarProvider`, `HomeAssistant`, `SettingsStore`. Fakes in `core.model.fake`. `observeWhileAttached` helper. |
+| `:core:design` | lead | `Fonts` (Inter variable), `SpecText` (CSS text layout 1:1), tokens (`VesperColors`, `Night`, `Motion`, `GlassTokens`), `PreBlur` + `Backdrop`, `GlassPainter`, `GlassLayout`, `GlassSlider`, `GlassTracker` |
 | `:core:data` | lead | `PrefsSettingsStore`, `loadSecrets()`, and the optional `HomeAssistantClient` (OkHttp WebSocket + REST) |
 | `:feature:clock` | A | faces, edit mode, Night mode |
 | `:feature:system` | B | volume/mic/shutter, HUDs, Control Center, banners, island renderer |
@@ -24,11 +24,11 @@ Read this after `CLAUDE.md` and `NOTES.md`. The Android project is in `android/`
 | `:feature:photos` | I | Immich photo frame |
 | `:feature:settings` | K | web settings page served by the Echo (phone/Mac browser), built from `services.settingsSchema` |
 
-Feature modules depend on `:core:model` and `:core:design` only (add `:core:data` if you need it). **Never on each other** — talk through the contracts in `EchoServices`.
+Feature modules depend on `:core:model` and `:core:design` only (add `:core:data` if you need it). **Never on each other** — talk through the contracts in `VesperServices`.
 
 ## How a feature plugs in (no `:app` edits)
 
-Each module has `object XxxFeature : EchoFeature`. `:app` calls `install(host)` once per process, in order system, phone, airplay, media, alarm, home, assistant, camera, photos, clock. In `install`:
+Each module has `object XxxFeature : VesperFeature`. `:app` calls `install(host)` once per process, in order system, phone, airplay, media, alarm, home, assistant, camera, photos, clock. In `install`:
 
 - `host.registerScreen(ScreenSpec(id, order, inPager) { ctx -> MyScreenView(ctx, host.services) })`. Pager order: StandBy is 0; pick 10, 20, … for yours. `inPager = false` = only opened by `services.navigator.show(id)` (e.g. alarm ringing, Control Center-style full screens).
 - `host.registerOverlay(OverlaySpec(id, z) { ... })` for layers above every screen (island 300, banners 400, HUDs 500, Control Center 600). **Overlays are full-screen views: empty areas must not consume touches** (return false), so the screens below still get them.
@@ -38,7 +38,7 @@ Each module has `object XxxFeature : EchoFeature`. `:app` calls `install(host)` 
 - Bind the services you own: `host.services.alarms = MyAlarmStore(...)` (see the slot list in `Services.kt`). Read other slots lazily — in factories / on attach — never during `install`.
 - Manifest entries (permissions, services, receivers) go in **your module's** `AndroidManifest.xml`; they merge into the app.
 
-Screens and overlays may implement `EchoScreen` to get `onScreenShown(args)` / `onScreenHidden()`. **Stop animations, sensors and the camera in `onScreenHidden`** — nothing may draw frames off screen.
+Screens and overlays may implement `VesperScreen` to get `onScreenShown(args)` / `onScreenHidden()`. **Stop animations, sensors and the camera in `onScreenHidden`** — nothing may draw frames off screen.
 
 ## Rules that keep it fast (1 GB RAM, Mali-T720)
 

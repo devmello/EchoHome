@@ -376,11 +376,11 @@ fn throw(env: &mut JNIEnv, msg: &str) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// JNI entry points: com.echobedside.feature.airplay.NativeBridge (a Kotlin object)
+// JNI entry points: app.vesper.feature.airplay.NativeBridge (a Kotlin object)
 // ---------------------------------------------------------------------------------------------
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeStart<'a>(
+pub extern "system" fn Java_app_vesper_feature_airplay_NativeBridge_nativeStart<'a>(
     mut env: JNIEnv<'a>,
     _this: JObject<'a>,
     name: JString<'a>,
@@ -412,7 +412,7 @@ pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeS
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeServiceInfo<'a>(
+pub extern "system" fn Java_app_vesper_feature_airplay_NativeBridge_nativeServiceInfo<'a>(
     env: JNIEnv<'a>,
     _this: JObject<'a>,
     handle: jlong,
@@ -422,7 +422,7 @@ pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeS
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeStop<'a>(
+pub extern "system" fn Java_app_vesper_feature_airplay_NativeBridge_nativeStop<'a>(
     _env: JNIEnv<'a>,
     _this: JObject<'a>,
     handle: jlong,
@@ -447,7 +447,7 @@ pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeS
 /// Blocks up to `timeout_ms` for PCM. Returns the number of samples copied into `buf`,
 /// 0 on timeout (paused / waiting), -1 when the audio session ended and the ring is empty.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeReadPcm<'a>(
+pub extern "system" fn Java_app_vesper_feature_airplay_NativeBridge_nativeReadPcm<'a>(
     env: JNIEnv<'a>,
     _this: JObject<'a>,
     handle: jlong,
@@ -483,7 +483,7 @@ pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeR
 
 /// Wakes a reader blocked in `nativeReadPcm` (it returns 0), so the player thread can stop at once.
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeWakeReader<'a>(
+pub extern "system" fn Java_app_vesper_feature_airplay_NativeBridge_nativeWakeReader<'a>(
     _env: JNIEnv<'a>,
     _this: JObject<'a>,
     handle: jlong,
@@ -497,7 +497,7 @@ pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeW
 
 /// Samples dropped because the AudioTrack fell behind (diagnostics).
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeDroppedSamples<'a>(
+pub extern "system" fn Java_app_vesper_feature_airplay_NativeBridge_nativeDroppedSamples<'a>(
     _env: JNIEnv<'a>,
     _this: JObject<'a>,
     handle: jlong,
@@ -508,7 +508,7 @@ pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeD
 /// DACP command back to the sender (AirPlay 1 only). Blocking (up to ~2 s): call off the main thread.
 /// cmd: 0 play/pause toggle, 1 next, 2 previous, 3 stop, 4 volume (arg 0..100).
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeRemote<'a>(
+pub extern "system" fn Java_app_vesper_feature_airplay_NativeBridge_nativeRemote<'a>(
     _env: JNIEnv<'a>,
     _this: JObject<'a>,
     handle: jlong,
@@ -538,7 +538,7 @@ pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeR
 
 /// Forget the sender's DACP remote (it disconnected).
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeClearRemote<'a>(
+pub extern "system" fn Java_app_vesper_feature_airplay_NativeBridge_nativeClearRemote<'a>(
     _env: JNIEnv<'a>,
     _this: JObject<'a>,
     handle: jlong,

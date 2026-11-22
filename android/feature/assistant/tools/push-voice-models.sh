@@ -1,6 +1,6 @@
 #!/bin/bash
 # Pushes the voice models fetched by fetch-voice.sh to the app's external files dir on the Echo:
-#   /sdcard/Android/data/com.echobedside/files/voice/{kws,stt,tts}
+#   /sdcard/Android/data/app.vesper/files/voice/{kws,stt,tts}
 # (readable by the app without any permission; no root, no /system). Holds the device lock.
 # The app must have been installed once (so the directory exists and belongs to it).
 set -euo pipefail

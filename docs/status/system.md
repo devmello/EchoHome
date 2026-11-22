@@ -12,14 +12,14 @@ Branch `worktree-agent-a105af019691ec581` (merged a405a84), then `system-speed` 
 - **Banners** (Banners.dc.html): `BannerListenerService` → `services.notifications`; glass banner (recorded once into a RenderNode, the spring drop animates only transform/alpha) with the previous one tucked behind; tap → StandBy-size view over the blurred screen with one tinted primary + Dismiss (`dismiss(id, byUser = true)`); swipe up hides; DND hides non-critical (`system.dnd.critical`). Reply actions → "Reply by voice" (assistant). iPhone banners show `sourceDevice` ("Phone · Maya’s iPhone · now") and use `appColor` + `glyph`; glyphs for J's keys: message, call, mail, video, music, news, heart, location, bell, calendar, alarm, home, doorbell, camera.
 - **Echo Island** (Island.dc.html): hidden / compact / split (bead) / expanded; Motion.ISLAND spring on width/height/radius, content crossfade with the 0.15 s delay, grows out of a 44 px dot, glass or black (`system.island.look`), Night red. Timer, music, assistant, doorbell, call, AirPlay / Bluetooth connected. Checked against the merged `:feature:phone`: ANCS calls ("Answer on iPhone", Decline only, or no buttons when the notification has no negative action) and `BLUETOOTH_CONNECTED` (compact while fresh; after `staleAfterElapsed` only the CC Bluetooth cell shows the phone).
 - **Settings page** (`host.registerSettings`, all live): Display (Night mode Auto/On/Off, island look), Notifications (show banners, time on screen, apps on the Echo, doorbell/alarms/calls in DND), Indicators (HUD time, mic/camera badges).
-- **Debug** (debug builds; broadcast `com.echobedside.system.DEBUG`, or the same extras on a launch/new intent via `services.intents`): `--es island story|timer|music+timer|assistant|doorbell|call|iphonecall|bluetooth|nowplaying|off`, `--es look glass|black`, `--es cc open|close`, `--es banner 0..5` (1 doorbell and 5 iPhone call are critical), `--es hud volume|brightness|micoff|micon|camoff`. Slow draws log to `EchoPerf` (debug only).
+- **Debug** (debug builds; broadcast `app.vesper.system.DEBUG`, or the same extras on a launch/new intent via `services.intents`): `--es island story|timer|music+timer|assistant|doorbell|call|iphonecall|bluetooth|nowplaying|off`, `--es look glass|black`, `--es cc open|close`, `--es banner 0..5` (1 doorbell and 5 iPhone call are critical), `--es hud volume|brightness|micoff|micon|camoff`. Slow draws log to `VesperPerf` (debug only).
 - Unit tests: SVG path parser, HUD queue, island model, banner queue: 29 tests, all pass (+ `screenCanHideTheWholeIsland` in `:core:model`).
 - **Speed pass (`system-speed`)**:
   - Control Center: every glass tile is 3 RenderNodes (shadow, backdrop, surface) + 1 for its content, each re-recorded only when its key changes (Night, values, pressed sub-button, backdrop). The sliders' fill/icon draw live over the recorded glass. Tiles are prewarmed 4 s after attach and at the edge pull's touch-down. Closed, the panel stays VISIBLE above the screen at alpha 0 (GONE dropped it from the render tree and HWUI freed all tile nodes, so each open re-recorded ~40 ms). While it slides or fades the panel is a hardware layer. The background toggles INVISIBLE, not GONE (GONE ↔ VISIBLE relaid out the whole window on the first reveal frame). The radios refresh at open runs off the UI thread. A panel draw is now 1–3 ms, with 0 re-records on a typical open (11 cheap backdrop re-records when the new snapshot lands).
   - Expanded banner: recorded once into a RenderNode with a compositing layer; the 0.4 s fade is the node's alpha. That's group opacity like CSS, where it used to multiply each element's alpha, so mid-fade overlaps blend slightly differently.
   - `:core:design` `GlassPainter` shadow: rendered once per shape size (the same `setShadowLayer`, into an immutable bitmap with the shape erased) and drawn as a 9-slice. No per-frame blur and no clip. Same look: bench screen, max 1/255 difference around the static slider (glass-shadow-before/after). architecture.md's glass rule now says to leave shadows on.
   - `IslandManager.hideOnScreen(id)` / `hiddenOnScreens` (E's request): the island shows nothing while such a screen is current.
-  - `HardwareMonitor` logs the raw gating latch on every change (`EchoSystem`: `gating …/state=N → micMutedHardware=…`), for the polarity check.
+  - `HardwareMonitor` logs the raw gating latch on every change (`VesperSystem`: `gating …/state=N → micMutedHardware=…`), for the polarity check.
 
 ## Left
 
@@ -80,7 +80,7 @@ Improvements made from these runs: island crash fix (it never drew in the first 
 
 ## Open questions
 
-1. **Gating polarity**: `amazon-gating/state` reads `0` with the mics on (rechecked 13:25). B assumes `1` = mics cut (`GATING_MUTED_VALUE`). B can't press the physical button, and injecting the key wouldn't move the hardware latch. One press by the user with the red LED seen confirms it: `logcat -s EchoSystem | grep gating` shows the raw value.
+1. **Gating polarity**: `amazon-gating/state` reads `0` with the mics on (rechecked 13:25). B assumes `1` = mics cut (`GATING_MUTED_VALUE`). B can't press the physical button, and injecting the key wouldn't move the hardware latch. One press by the user with the red LED seen confirms it: `logcat -s VesperSystem | grep gating` shows the raw value.
 2. **Shutter via dumpsys**: the in-process window policy dump returns nothing even with DUMP, so B reads debugfs (works, live). Fine either way.
 3. **iPhone call "Silence"**: per the lead only Decline shows. Silence could take the Accept slot as a neutral button.
 4. The 05:12 Android Settings (System page) in front of the launcher wasn't B as far as B can tell: B's runs never tap the CC settings button (only edge swipes at x 200 and BACK), B's run 4 ended 05:11:55 and run 5 started 05:12:44 with `am start` of our activity. B's runs now end with `am start` MainActivity anyway.
@@ -93,8 +93,8 @@ Improvements made from these runs: island crash fix (it never drew in the first 
 ## Device setup (one-time, done)
 
 ```
-adb shell pm grant com.echobedside android.permission.DUMP              # shutter state from dumpsys window policy
-adb shell appops set com.echobedside WRITE_SETTINGS allow               # system brightness from CC/HUD
-adb shell cmd notification allow_listener com.echobedside/com.echobedside.feature.system.banner.BannerListenerService
-adb shell cmd notification allow_dnd com.echobedside                    # lets the CC toggle DND (not used during quiet hours)
+adb shell pm grant app.vesper android.permission.DUMP              # shutter state from dumpsys window policy
+adb shell appops set app.vesper WRITE_SETTINGS allow               # system brightness from CC/HUD
+adb shell cmd notification allow_listener app.vesper/app.vesper.feature.system.banner.BannerListenerService
+adb shell cmd notification allow_dnd app.vesper                    # lets the CC toggle DND (not used during quiet hours)
 ```

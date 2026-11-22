@@ -7,15 +7,15 @@ set -e
 A() { "$ADB" -s "$SERIAL" "$@"; }
 for v in "$@"; do
   IFS=: read -r model threads xnn <<<"$v"
-  A shell am force-stop com.echobedside
+  A shell am force-stop app.vesper
   A logcat -c
-  A shell am start -n com.echobedside/.MainActivity --es screen camera-bench --es stage selftest \
+  A shell am start -n app.vesper/.MainActivity --es screen camera-bench --es stage selftest \
     --es model "$model" --es threads "${threads:-2}" --es xnnpack "${xnn:-true}" >/dev/null 2>&1
   for _ in $(seq 1 30); do
     sleep 1
-    A logcat -d -s EchoCamera:* | grep -q "selftest: done" && break
+    A logcat -d -s VesperCamera:* | grep -q "selftest: done" && break
   done
-  A logcat -d -s EchoCamera:* | grep -E "selftest: (variant|failed)" | sed 's/.*selftest: //'
+  A logcat -d -s VesperCamera:* | grep -E "selftest: (variant|failed)" | sed 's/.*selftest: //'
   A logcat -d -s tflite:* | grep -E "Replacing" | tail -1 | sed 's/.*tflite *: /  /'
 done
 A shell input keyevent KEYCODE_BACK

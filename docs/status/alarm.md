@@ -34,7 +34,7 @@ Spec: NOTES §6 "Alarms", §2.1 Alarm / Timers, `design/Alarm.dc.html`, `design/
 - **Debug**:
   - `--es screen alarm --es demo ringing|snoozed|morning` (or `alarm_demo`);
   - `--es screen timers --es timers_demo 1` (the board's Pasta/Oven/Tea);
-  - a debug-only receiver (`src/debug`, DUMP permission, so adb shell only): `am broadcast -a com.echobedside.alarm.DEBUG -n com.echobedside/com.echobedside.feature.alarm.AlarmDebugReceiver --es cmd add --es at +2 [--ei sunriseMin 1] | list | clear | snooze | stop | dismiss | timer --ei sec 30 | timers_clear`.
+  - a debug-only receiver (`src/debug`, DUMP permission, so adb shell only): `am broadcast -a app.vesper.alarm.DEBUG -n app.vesper/app.vesper.feature.alarm.AlarmDebugReceiver --es cmd add --es at +2 [--ei sunriseMin 1] | list | clear | snooze | stop | dismiss | timer --ei sec 30 | timers_clear`.
 - Tests: `./gradlew :feature:alarm:testDebugUnitTest`, 37 tests: next-trigger math (weekdays, DST gap and overlap, zone change), sunrise, snooze, auto-snooze cap, stop/skip, timeouts, missed alarms, clock set back, stale ringing/snoozed state, global settings, persistence round-trip; timers (pause/resume, add time, restart, alert timeout, process death, reboot).
 
 ## Left
@@ -44,7 +44,7 @@ Spec: NOTES §6 "Alarms", §2.1 Alarm / Timers, `design/Alarm.dc.html`, `design/
 
 ## Real ring test on the Echo (05:02–05:03, Nov 22)
 - A one-shot alarm was scheduled 1 min out with a 1-min sunrise, using the debug receiver. Android Settings was put in front to test ringing from the background.
-- `dumpsys alarm`: `RTC_WAKEUP … com.echobedside.alarm.WAKE when=05:03:00.000`, "Next wake from idle".
+- `dumpsys alarm`: `RTC_WAKEUP … app.vesper.alarm.WAKE when=05:03:00.000`, "Next wake from idle".
 - Sunrise: phase `Idle → Sunrise` at once. The warm wash showed over the Digital face (`real-sunrise.png`), and the Digital face's alarm complication showed "5:03 AM" from `services.alarms.next`.
 - **It rang on time**: `Sunrise → Ringing (alarm manager)` at 05:03:00.012.
   - `AlarmService` was in the foreground (category=alarm).
@@ -54,12 +54,12 @@ Spec: NOTES §6 "Alarms", §2.1 Alarm / Timers, `design/Alarm.dc.html`, `design/
 
 ## Real ring tests after quiet hours (12:54–13:20, Nov 22; alarm stream at 2/7, restored to 5)
 Main a8c903f plus the fixes below. The app is a /system/priv-app (updated by the debug build) with `START_ACTIVITIES_FROM_BACKGROUND: granted=true`.
-- **Full screen over another app works.** Android Settings was in front. At the ring (`Sunrise → Ringing` at 12:56:00 and again at 13:15:00), `mResumedActivity` became `com.echobedside/.MainActivity` on the alarm screen. The default alarm played (`USAGE_ALARM` player started).
+- **Full screen over another app works.** Android Settings was in front. At the ring (`Sunrise → Ringing` at 12:56:00 and again at 13:15:00), `mResumedActivity` became `app.vesper/.MainActivity` on the alarm screen. The default alarm played (`USAGE_ALARM` player started).
 - **Tap-through**: Snooze (sound stops, "Snoozed · rings again at 1:05", 8:57 countdown) → Stop Alarm → Good morning (weather, up next, lamp) → Done → `Idle`, back to the clock face. Shots: `real-ringing.png`, `real-snoozed.png`, `real-morning.png`.
 - **Bug found and fixed: user actions weren't saved.** The store compared the engine with a snapshot taken after Snooze / Stop / Done / edits had already changed it, so only evaluation-driven changes reached `alarms.json`. The file stayed `RINGING` after Done. When the process restarted (another agent's install), it loaded that state and **rang again** (`Idle → Ringing (start)` at 13:01:15; the alarm stream showed repeated starts until I deleted the file). It now compares with what's on disk. Re-test: the file goes SNOOZED → MORNING → no active state, and the deleted alarm is gone.
 - **Bug found and fixed: our heads-up covered the ringing screen.** The ringing notification (high importance, full-screen intent) showed as a heads-up over our own alarm screen. It now starts on the quiet channel and moves to the heads-up / full-screen channel only if the alarm screen isn't in front 1.5 s after the ring starts (or is left while ringing). So the fallback stays for a blocked start or a screen-off FSI. Re-test: no heads-up, notification on `alarm.quiet`.
 - **Timer**: three timers (25 s, 12 min, 25 min) on the Timers screen, with three exact `ELAPSED_REALTIME_WAKEUP` wake-ups. Tea finished at 25 s: green Done ring and Repeat button, the chime played on `USAGE_ALARM` (quiet notification, no heads-up), and clearing stopped it. Shots: `real-timers.png`, `real-timer-done.png`.
-- End state: no `com.echobedside` entries under "Pending alarm batches", `alarms.json` / `timers.json` empty, alarm volume back to 5/7, no audio focus held, app ops and DND untouched.
+- End state: no `app.vesper` entries under "Pending alarm batches", `alarms.json` / `timers.json` empty, alarm volume back to 5/7, no audio focus held, app ops and DND untouched.
 
 ## Measured on the Echo
 (debug build, AirPlay service also running)

@@ -2,7 +2,7 @@
 # Captures the Now Playing states on the Echo (run via build-install.sh --then, which holds the lock).
 # Expects $ADB, $SERIAL. Writes into docs/status/shots/media/.
 D=$(cd "$(dirname "$0")" && pwd)
-np() { $ADB -s $SERIAL shell am start -n com.echobedside/.MainActivity --es screen nowplaying --es np "$1" >/dev/null; }
+np() { $ADB -s $SERIAL shell am start -n app.vesper/.MainActivity --es screen nowplaying --es np "$1" >/dev/null; }
 shot() { $ADB -s $SERIAL exec-out screencap -p > "$D/$1.png"; echo "shot $1"; }
 # Lift-into-glass: hold the play button (a swipe that doesn't move), shoot mid-hold.
 $ADB -s $SERIAL shell input swipe 664 296 664 296 1800 & sleep 0.9; shot pressed; wait; sleep 0.5

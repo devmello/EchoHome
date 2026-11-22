@@ -7,11 +7,11 @@ set -e
 OUT=$(cd "$(dirname "$0")/../../../.." && pwd)/docs/status/shots/camera
 mkdir -p "$OUT"
 A() { "$ADB" -s "$SERIAL" "$@"; }
-start() { A shell am start -n com.echobedside/.MainActivity "$@" >/dev/null 2>&1; }
+start() { A shell am start -n app.vesper/.MainActivity "$@" >/dev/null 2>&1; }
 shot() { A exec-out screencap -p > "$OUT/$1.png"; echo "shot $OUT/$1.png"; }
-A shell pm grant com.echobedside android.permission.CAMERA
-A shell am force-stop com.echobedside
-A shell am start -W -n com.echobedside/.MainActivity >/dev/null; sleep 4
+A shell pm grant app.vesper android.permission.CAMERA
+A shell am force-stop app.vesper
+A shell am start -W -n app.vesper/.MainActivity >/dev/null; sleep 4
 for step in empty detecting recognized personalized; do
   start --es screen profiles-demo --es step "$step"; sleep 2.5
   shot "profiles-$step"

@@ -10,7 +10,7 @@ CHECKOUT=$(cd "$SCRIPT_DIR/.." && pwd)
 ECHO_ROOT=$(cd "$(git -C "$SCRIPT_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/.." 2>/dev/null && pwd)
 [ -d "$ECHO_ROOT/platform-tools" ] || ECHO_ROOT=$CHECKOUT
 ADB="$ECHO_ROOT/platform-tools/adb"
-PKG=com.echobedside
+PKG=app.vesper
 HOME_ACTIVITY=$PKG/.MainActivity
 
 export JAVA_HOME=${JAVA_HOME_17:-/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home}

@@ -11,7 +11,7 @@ set -e
 ls "$ECHO_ROOT"/backups/*/COMPLETE >/dev/null 2>&1 || { echo "No complete partition backup in backups/. Run ./scripts/echo-backup.sh first."; exit 1; }
 [ "${1:-}" = --no-build ] || (cd "$CHECKOUT/android" && ./gradlew -q :app:assembleRelease)
 APK="$CHECKOUT/android/app/build/outputs/apk/release/app-release.apk"
-XML="$ECHO_ROOT/device/privapp-permissions-com.echobedside.xml"
+XML="$ECHO_ROOT/device/privapp-permissions-app.vesper.xml"
 KL="$ECHO_ROOT/device/gating.kl"
 AAPT2=$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)/aapt2
 
@@ -31,12 +31,14 @@ adb_echo remount
 if ! adb_echo shell 'touch /system/.echo-rw && rm /system/.echo-rw'; then
   echo "ABORT: /system is still read-only after remount (it may need 'adb disable-verity' + a reboot; ask the user)."; exit 1
 fi
+# The pre-rename allow-list (package com.echobedside) goes; the APK dir name stays Vesper.
+adb_echo shell 'rm -f /system/etc/permissions/privapp-permissions-com.echobedside.xml'
 adb_echo shell 'mkdir -p /system/priv-app/Vesper && chmod 755 /system/priv-app/Vesper'
 adb_echo push "$APK" /system/priv-app/Vesper/Vesper.apk >/dev/null
-adb_echo push "$XML" /system/etc/permissions/privapp-permissions-com.echobedside.xml >/dev/null
+adb_echo push "$XML" /system/etc/permissions/privapp-permissions-app.vesper.xml >/dev/null
 adb_echo push "$KL" /system/usr/keylayout/gating.kl >/dev/null
-adb_echo shell 'chmod 644 /system/priv-app/Vesper/Vesper.apk /system/etc/permissions/privapp-permissions-com.echobedside.xml /system/usr/keylayout/gating.kl
-  restorecon -R /system/priv-app/Vesper /system/etc/permissions/privapp-permissions-com.echobedside.xml /system/usr/keylayout/gating.kl
+adb_echo shell 'chmod 644 /system/priv-app/Vesper/Vesper.apk /system/etc/permissions/privapp-permissions-app.vesper.xml /system/usr/keylayout/gating.kl
+  restorecon -R /system/priv-app/Vesper /system/etc/permissions/privapp-permissions-app.vesper.xml /system/usr/keylayout/gating.kl
   sync'
 adb_echo shell 'pm disable-user --user 0 com.android.camera2; locksettings set-disabled true'
 echo "Installed; rebooting..."
@@ -44,7 +46,7 @@ adb_echo reboot || true
 wait_boot
 adb_echo shell cmd package set-home-activity "$HOME_ACTIVITY" >/dev/null 2>&1 || true
 echo "--- verify"
-adb_echo shell "dumpsys package com.echobedside | grep -E 'codePath|pkgFlags|privateFlags' | head -6
+adb_echo shell "dumpsys package app.vesper | grep -E 'codePath|pkgFlags|privateFlags' | head -6
   dumpsys input | grep -A3 ': gating' | grep -i KeyLayoutFile
   pm list packages -d | grep camera2
   locksettings get-disabled"

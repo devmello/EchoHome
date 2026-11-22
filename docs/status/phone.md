@@ -171,7 +171,7 @@ The question: while the phone streams to the Echo, does Android 11 duck the A2DP
     - The sink's gain lives in the Bluetooth process, and no API reaches it.
     - Lowering STREAM_MUSIC would also lower the assistant's voice (USAGE_ASSISTANT plays on STREAM_MUSIC) and move the iPhone's slider (AVRCP absolute volume).
     - Design demo B says "I paused music here" anyway.
-  - On the Echo (no phone paired): the island hook fires for an assistant demo turn (`EchoPhone: assistant on: phone playing=false`, then `off`). Pausing a real stream still needs an iPhone (test script).
+  - On the Echo (no phone paired): the island hook fires for an assistant demo turn (`VesperPhone: assistant on: phone playing=false`, then `off`). Pausing a real stream still needs an iPhone (test script).
   - Not covered: other apps' duckable focus requests (e.g. a notification sound) still don't duck A2DP. That's the same framework gap.
   - If G would rather signal turns explicitly than through the island, a small core flow (e.g. `assistantActive: StateFlow<Boolean>`) would replace the island observation. Nothing else would change.
 
@@ -217,10 +217,10 @@ The question: while the phone streams to the Echo, does Android 11 duck the A2DP
 
 ## Pair your iPhone: test script
 
-Before you start: the Echo runs a build with `:feature:phone`, and the iPhone has Bluetooth on. No extra app is needed unless part C says so. Logs: `./scripts/echo-adb.sh logcat -d -s EchoPhone:*`. Quiet hours: do the audio steps only when sound is OK.
+Before you start: the Echo runs a build with `:feature:phone`, and the iPhone has Bluetooth on. No extra app is needed unless part C says so. Logs: `./scripts/echo-adb.sh logcat -d -s VesperPhone:*`. Quiet hours: do the audio steps only when sound is OK.
 
 **A. Pair from iPhone Settings (speaker first, then notifications and Now Playing)**
-1. Open the pairing screen on the Echo: `./platform-tools/adb -s "$(cat .echo-serial)" shell am start -n com.echobedside/.MainActivity --es screen phone-pairing`, or from Control Center. Tap **Allow** on "make your tablet visible… 300 seconds".
+1. Open the pairing screen on the Echo: `./platform-tools/adb -s "$(cat .echo-serial)" shell am start -n app.vesper/.MainActivity --es screen phone-pairing`, or from Control Center. Tap **Allow** on "make your tablet visible… 300 seconds".
 2. On the iPhone, go to Settings › Bluetooth and tap **Echo Show** under Other Devices. The Echo's screen shows the 6-digit code. Check it matches the iPhone, then tap **Pair** on the iPhone and on the Echo's dialog.
 3. Play music on the iPhone, open the audio output picker (Control Center › Now Playing › the AirPlay icon), and pick **Echo Show**.
 4. Expected (audio):
@@ -258,7 +258,7 @@ Before you start: the Echo runs a build with `:feature:phone`, and the iPhone ha
 1. Power-cycle the Echo (or reinstall the app) and keep the iPhone unlocked nearby. Within about 30 s the log shows `ready` again, with no re-banner of old notifications (they come in as PreExisting).
 2. Out of range: turn the iPhone's Bluetooth off in Settings (not Control Center), wait 10 s, then turn it on. It reconnects the same way.
 
-If something fails, send `./scripts/echo-adb.sh logcat -d -s EchoPhone:* BtGatt.GattService:* bt_btm:* bt_smp:*` and `./scripts/echo-adb.sh shell dumpsys bluetooth_manager`.
+If something fails, send `./scripts/echo-adb.sh logcat -d -s VesperPhone:* BtGatt.GattService:* bt_btm:* bt_smp:*` and `./scripts/echo-adb.sh shell dumpsys bluetooth_manager`.
 
 **Forget:** Settings page › iPhone › Forget iPhone, or the pairing card's "Forget This iPhone". Also remove "Echo Show" on the iPhone (Settings › Bluetooth › (i) › Forget This Device).
 

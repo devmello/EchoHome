@@ -1,10 +1,10 @@
 plugins {
     alias(libs.plugins.android.library)
 }
-apply(from = rootProject.file("gradle/echo-library.gradle"))
+apply(from = rootProject.file("gradle/vesper-library.gradle"))
 
 android {
-    namespace = "com.echobedside.feature.assistant"
+    namespace = "app.vesper.feature.assistant"
     // sherpa-onnx JNI reads its Kotlin classes, fields and callbacks by name: keep them in release.
     defaultConfig { consumerProguardFiles("consumer-rules.pro") }
 }

@@ -12,7 +12,7 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "EchoBedside"
+rootProject.name = "Vesper"
 
 include(":app")
 include(":core:design", ":core:model", ":core:data")

@@ -68,7 +68,7 @@ Per phase (framestats, frames over 17 ms):
 - **Rounded corners**: black corner masks instead of `clipToOutline`.
 - **Enter zoom**: warm, 6.6 ms median (2 / 32 janky). On the first entry after the Echo has been idle, the 26–32 zoom frames run at ~21 ms: render-thread issue ~16 ms plus ~14 ms waiting on buffers, with the GPU at its idle clock (`/proc/gpufreq`: 299 MHz, ramping to 520). That accounts for all of the remaining cold jank. I can't change the GPU governor (system setting).
 
-- Building a face on the main thread costs 25–50 ms (logcat `EchoClock: created face …`). That was the swipe jank; it's now paid once per visit on an idle moment.
+- Building a face on the main thread costs 25–50 ms (logcat `VesperClock: created face …`). That was the swipe jank; it's now paid once per visit on an idle moment.
 - Edit-mode framestats: UI thread ~1 ms per frame; the render thread's "issue draw commands" is 7.4 ms median, 16.6 ms p90, plus buffer dequeue stalls. So the cost is the render thread replaying the scaled face + four glass controls, not app code. Remaining options: give the glass controls their own layers, or snapshot the face to a bitmap for the whole edit session.
 - PSS stays under 75 MB in every test (budget 200 MB).
 - Auto Night: with `--es fakelux 0.5`, still day at 20 s and Night (red, dimmed) at 34 s; `fakelux 50` back to day at once. `dumpsys sensorservice` lists our light-sensor connection only while StandBy is shown.

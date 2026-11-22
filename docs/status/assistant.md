@@ -51,7 +51,7 @@ Setup, models, settings and privacy: [docs/assistant-setup.md](../assistant-setu
     - effort `low` on all three
   - History is kept for 60 s and dropped on a model change, or when it grows past 24 messages
     (never prefix-trimmed).
-- **Tools** (`EchoTools`), through the services:
+- **Tools** (`VesperTools`), through the services:
   - timers: set / list / cancel
   - alarms: set / list / update / delete
   - weather (`services.location` for the place), calendar (today / tomorrow)
@@ -77,14 +77,14 @@ Setup, models, settings and privacy: [docs/assistant-setup.md](../assistant-setu
   - The echo test never speaks.
 - **Demo mode** (demo data, no key): the droplet and chips play the three design scripts
   (a/b/c, with `script` + `at` args to freeze a state).
-- **Privacy.** The key, transcripts and answers are never logged; logcat (`EchoAssistant`) shows
+- **Privacy.** The key, transcripts and answers are never logged; logcat (`VesperAssistant`) shows
   phases, timings, gate levels and error types only. Audio never leaves the device.
 - **Tests:** 66 JVM tests, all passing (`:feature:assistant:testDebugUnitTest`):
   - reducer and demo timelines
   - SSE parser
   - agent end to end against MockWebServer: headers, body per model, tool_result shape,
     invalid input, refusal, max_tokens, 401 / 529 / 429, history
-  - tool schemas, EchoTools (canSkip, brightness, timers / alarms)
+  - tool schemas, VesperTools (canSkip, brightness, timers / alarms)
   - engine: tap-to-talk, mute, silence, errors, demo, wake word, sensitivity reload, runtime
     key, night quiet, speak off, follow-up, model change
   - audio gate (incl. steady room noise), keywords threshold rewrite, settings section, speech text (times, numbers, units), sentence chunking, streamed speech, system voice
@@ -212,8 +212,8 @@ with `design/Assistant.dc.html`:
 
 ### Device setup done
 
-- `pm grant com.echobedside android.permission.RECORD_AUDIO` (adb, no root).
-- Models pushed to `/sdcard/Android/data/com.echobedside/files/voice/{kws,stt,tts}` (106 MB, tts
+- `pm grant app.vesper android.permission.RECORD_AUDIO` (adb, no root).
+- Models pushed to `/sdcard/Android/data/app.vesper/files/voice/{kws,stt,tts}` (106 MB, tts
   now the fp32 voice). The test voices were removed again. `voice/bench/` holds the test WAVs
   and texts (small).
   Nothing in `/system`, nothing flashed.

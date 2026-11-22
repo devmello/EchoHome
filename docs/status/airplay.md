@@ -10,7 +10,7 @@ audio, video only behind the opt-in `video` feature. It cross-compiled for `armv
 with cargo-ndk on the first try (no C deps; needs only liblog/libc/libm/libdl). Built with
 `features = ["ap2"]` + the default `fairplay`; `video`/`hls` are off, so no mirroring code paths.
 
-- `rust/` is a small cdylib (`echo_airplay`) wrapping it over JNI. `libecho_airplay.so` is
+- `rust/` is a small cdylib (`vesper_airplay`) wrapping it over JNI. `libvesper_airplay.so` is
   **2.2 MB**, armeabi-v7a only, committed under `src/main/jniLibs/` so the app builds without
   Rust. Rebuild: `android/feature/airplay/rust/build.sh` (cargo test + cargo ndk).
 - The library's own mDNS responder is switched off (it skips registration when `CI` is set,
@@ -67,7 +67,7 @@ with cargo-ndk on the first try (no C deps; needs only liblog/libc/libm/libdl). 
   `LOSS_TRANSIENT_CAN_DUCK` (the assistant) lowers the AudioTrack to 20 % of the sender's volume;
   `LOSS_TRANSIENT` mutes and, with DACP (AirPlay 1), pauses the sender; `GAIN` restores the volume
   and plays again only if we paused it; `LOSS` pauses for good. Debug check without sound:
-  `am broadcast -a com.echobedside.airplay.DEBUG --es focus media|duck|transient|release|end`
+  `am broadcast -a app.vesper.airplay.DEBUG --es focus media|duck|transient|release|end`
   (logs `audio focus … → ducked to 20% / muted / restored`). Partial wake lock + `WIFI_MODE_FULL_HIGH_PERF` lock only while a
   stream is set up; a multicast lock only while a sender is connected (DACP discovery). Wi-Fi
   coming back re-announces mDNS.
@@ -75,9 +75,9 @@ with cargo-ndk on the first try (no C deps; needs only liblog/libc/libm/libdl). 
   RTP progress incl. u32 wrap, metadata/artwork/progress ordering across track changes, pause
   freezes position, local pause, multi-connection senders, MediaState mapping, TXT parsing,
   host-name prettifying. Rust: `cargo test` (ring buffer, pairing store).
-- Debug hook (debug builds): `adb shell am broadcast -a com.echobedside.airplay.DEBUG` with
+- Debug hook (debug builds): `adb shell am broadcast -a app.vesper.airplay.DEBUG` with
   `--es mode ap1|ap2`, `--es mdns nsd|lib`, `--es name …`, `--es cmd play|pause|next|previous`,
-  `--ef volume 0.5`, `--ez dump true` (logs state + hub to `EchoAirPlay`).
+  `--ef volume 0.5`, `--ez dump true` (logs state + hub to `VesperAirPlay`).
 
 ## Measured on the Echo (debug build, Nov 22 2026)
 
@@ -114,7 +114,7 @@ Debug build, per thread (`/proc/<pid>/task/*/stat` over 15 s while streaming):
   within ~1 s of the service starting (`dns-sd -B`); pyatv's scan finds it in 1.0 s.
 - Connect → first PCM: ~0.45 s (pair-setup ~0.3 s). Receiver start: 7–23 ms.
 - Metadata, artwork (600×600) and duration reached MediaHub (`hub:` lines in logcat, tag
-  `EchoAirPlay`), track change A → B swapped text + art correctly, 0 samples dropped. Example:
+  `VesperAirPlay`), track change A → B swapped text + art correctly, 0 samples dropped. Example:
   `hub: "Test Tone A" / "Echo Agent C" / "Bedside Sessions" art=600x600 pos=0/120000 playing=true from="<the Mac's name>" vol=0.33`
 - AirPlay 1 mode also streams with metadata + artwork (pyatv needs a test-only shim: shairplay
   answers SETUP with `Session: DEADBEEF`, which iOS accepts and pyatv doesn't). The sender's
@@ -175,12 +175,12 @@ Debug build, per thread (`/proc/<pid>/task/*/stat` over 15 s while streaming):
 - Test-only, in the session scratchpad (not in the repo): Python venv with `pyatv` 0.18 (MIT) and
   `srptools` 1.0.1 (BSD-3; pyatv 0.18 breaks with srptools 2.0).
 
-## Licences (everything linked into libecho_airplay.so)
+## Licences (everything linked into libvesper_airplay.so)
 
 | Crate | Licence |
 |---|---|
 | shairplay 0.13.0 | LGPL-3.0-or-later |
-| echo_airplay (ours, links shairplay statically) | LGPL-3.0-or-later |
+| vesper_airplay (ours, links shairplay statically) | LGPL-3.0-or-later |
 | symphonia 0.6 (AAC decode, AP2) | MPL-2.0 |
 | curve25519-dalek, ed25519-dalek, x25519-dalek, subtle | BSD-3-Clause |
 | jni 0.21, tokio, tracing, tracing-subscriber, rsa, aes, sha2, chacha20poly1305, rubato, plist, mdns-sd, rand, … (~120 crates) | MIT and/or Apache-2.0 |

@@ -4,7 +4,7 @@
 # Usage: island-perf.sh SHOT_PREFIX   (writes SHOT_PREFIX-timers.png)
 A="$ADB -s $SERIAL"
 P="$(cd "$(dirname "$0")" && pwd)/../../../../scripts/echo-perf.sh"
-go() { $A shell am start -n com.echobedside/.MainActivity "$@" >/dev/null 2>&1; }
+go() { $A shell am start -n app.vesper/.MainActivity "$@" >/dev/null 2>&1; }
 go --ez demo true; sleep 7          # demo flag restarts the process
 go --es screen timers; sleep 5
 [ -n "$1" ] && $A exec-out screencap -p > "$1-timers.png"

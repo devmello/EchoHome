@@ -75,7 +75,7 @@ Two things to know about these files:
 - **sherpa-onnx v2 has no espeak-ng.** Piper voices need the `lexicon-en-us.txt` word list
   instead of `espeak-ng-data`, which v2 ignores. Without it the voice produces no audio.
 
-The models live in `/sdcard/Android/data/com.echobedside/files/voice/{kws,stt,tts}`. That's the
+The models live in `/sdcard/Android/data/app.vesper/files/voice/{kws,stt,tts}`. That's the
 app's own external files dir: no permission or root is needed, and nothing goes in `/system`. The
 push script holds the device lock and replaces each folder.
 
@@ -131,7 +131,7 @@ setting after the app restarts. Amy is the flat `voice/tts/` folder.
 The app asks for the microphone once (`:app`). Without a touch on the Echo, grant it over adb:
 
 ```sh
-./platform-tools/adb -s "$(cat .echo-serial)" shell pm grant com.echobedside android.permission.RECORD_AUDIO
+./platform-tools/adb -s "$(cat .echo-serial)" shell pm grant app.vesper android.permission.RECORD_AUDIO
 ```
 
 ## 4. Using it
@@ -221,7 +221,7 @@ these:
 | `mictest 1` | Captures the mic without models |
 | `wake 1` | Turns the wake word on for this run |
 
-While the wake word runs, logcat (tag `EchoAssistant`) shows every 10 s how much audio the gate
+While the wake word runs, logcat (tag `VesperAssistant`) shows every 10 s how much audio the gate
 let through to the model.
 
 ## 5. Privacy
