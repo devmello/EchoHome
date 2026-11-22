@@ -53,6 +53,10 @@ data class SettingSpec(
     val step: Float? = null,
     /** Shown only with the page's "Advanced" switch on. */
     val advanced: Boolean = false,
+    /** TEXT / SECRET: grey example text in the empty field (e.g. "sk-ant-…"). */
+    val placeholder: String? = null,
+    /** TEXT / SECRET: a several-line box; each non-empty line is one value, stored comma-joined. */
+    val multiline: Boolean = false,
     /** ACTION only (e.g. "Forget iPhone", "Restart"). Return a short result message for the page, or null. */
     val onAction: (() -> String?)? = null,
 )

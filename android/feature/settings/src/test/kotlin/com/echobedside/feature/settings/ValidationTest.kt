@@ -102,7 +102,7 @@ class ValidationTest {
         assertEquals(listOf(Write.Secret("k", null)), ok(s, JSONObject.NULL))
         assertEquals(listOf(Write.Secret("k", null)), ok(s, "  "))
         bad(s, "a\nb"); bad(s, 12); bad(s, "x".repeat(9000))
-        val list = SettingSpec("k", "Calendars", SettingType.SECRET, options = listOf("multiline" to "https://…"))
+        val list = SettingSpec("k", "Calendars", SettingType.SECRET, multiline = true, placeholder = "https://…")
         assertEquals(listOf(Write.Secret("k", "https://a/x.ics,webcal://b/y.ics")), ok(list, "https://a/x.ics\n\n webcal://b/y.ics \n"))
     }
 

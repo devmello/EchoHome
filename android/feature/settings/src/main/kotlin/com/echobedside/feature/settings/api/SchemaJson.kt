@@ -48,6 +48,7 @@ object SchemaJson {
             SettingType.ACTION -> {}
             else -> {
                 o.put("default", spec.default)
+                spec.placeholder?.let { o.put("placeholder", it) }
                 if (spec.type == SettingType.CHOICE) {
                     o.put("options", JSONArray().apply { for ((v, l) in spec.options) put(JSONArray().put(v).put(l)) })
                 }
@@ -75,13 +76,13 @@ object SchemaJson {
         else -> false
     }
 
-    /**
-     * Rendering hints for a SECRET, carried in [SettingSpec.options] until the contract has fields
-     * for them (contract request K-1): ("multiline" to placeholder), ("placeholder" to text).
-     */
-    fun hints(spec: SettingSpec): Map<String, String> =
-        if (spec.type != SettingType.SECRET) emptyMap()
-        else spec.options.filter { it.first == "multiline" || it.first == "placeholder" }.toMap()
+    /** Rendering hints for a SECRET, from [SettingSpec.multiline] / [SettingSpec.placeholder]: ("multiline" to placeholder) or ("placeholder" to text). */
+    fun hints(spec: SettingSpec): Map<String, String> = when {
+        spec.type != SettingType.SECRET -> emptyMap()
+        spec.multiline -> mapOf("multiline" to (spec.placeholder ?: ""))
+        spec.placeholder != null -> mapOf("placeholder" to spec.placeholder!!)
+        else -> emptyMap()
+    }
 
     /** One SSE "change" event body for [key] (a LOCATION's ".place" maps to its spec). */
     fun change(specFor: (String) -> SettingSpec?, key: String, settings: SettingsStore, secrets: SecretStore, effective: Secrets): JSONObject? {

@@ -299,7 +299,7 @@ const RENDER = {
   },
 
   TEXT(spec, ctx) {
-    const f = h('input', { class: 'field', type: 'text', 'aria-labelledby': ctx.titleId, autocomplete: 'off', placeholder: spec.default || '',
+    const f = h('input', { class: 'field', type: 'text', 'aria-labelledby': ctx.titleId, autocomplete: 'off', placeholder: spec.placeholder || spec.default || '',
       onkeydown: (e) => { if (e.key === 'Enter') f.blur(); },
       onchange: () => ctx.save(f.value) });
     const set = (v) => { f.value = v ?? ''; };

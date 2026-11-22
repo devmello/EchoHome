@@ -151,6 +151,7 @@ Template:
 
 ## 2026-11-22 · K (settings) · Hints for SECRET fields (multiline, placeholder)
 The settings page needs to know that `calendar.icsUrls` is several URLs (a textarea, split on new lines) and what placeholder to show in a SECRET field. Today `:feature:settings` carries these as fake entries in `SettingSpec.options` (`"multiline" to ""`, `"placeholder" to "…"`), which only works because the options list isn't used for SECRET. Proposal: `SettingSpec.placeholder: String? = null` and `SettingSpec.multiline: Boolean = false` (or a `SECRET_LIST` type). Nothing breaks meanwhile; when it lands, K switches `SchemaJson.hints()` over in one line.
+- Status: done by the lead (Nov 22): `SettingSpec.placeholder` + `SettingSpec.multiline` in `:core:model`; `SchemaJson.hints()` reads them, the accounts section uses them, and TEXT fields send `placeholder` to the page too.
 
 ## 2026-11-22 · K (settings) · Optional: a sound per alarm
 The phone's Alarms card shows "Sound: same for every alarm" because `Alarm` has no sound field (it's the global `alarm.sound` setting). If E adds `Alarm.sound: String? = null` (null means the global setting) plus `AlarmJson`, the card can offer it per alarm the way iOS does. Low priority.
