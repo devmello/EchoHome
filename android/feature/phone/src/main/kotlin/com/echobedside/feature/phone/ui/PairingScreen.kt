@@ -141,6 +141,8 @@ open class PairingScreen(context: Context, private val services: EchoServices, p
     }
 
     private fun drawCard(c: Canvas, white: Int) {
+        // Without a phone the card only holds two short lines: keep it compact.
+        card.bottom = if (s.phones.isEmpty()) card.top + 128f else 352f
         cardGlass.draw(c, card.left, card.top, card.right, card.bottom, 32f)
         val x = card.left + 24f
         val phone: PhoneInfo? = s.phones.firstOrNull()
