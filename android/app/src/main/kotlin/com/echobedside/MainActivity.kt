@@ -1,78 +1,196 @@
 package com.echobedside
 
 import android.app.Activity
-import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.Process
 import android.provider.Settings
-import android.view.HapticFeedbackConstants
+import android.util.Log
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
-import com.echobedside.clock.DigitalClockView
-import com.echobedside.clock.Fonts
+import android.widget.FrameLayout
+import com.echobedside.core.model.EchoScreen
+import com.echobedside.core.model.ScreenSpec
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
- * The HOME activity. For now it shows the Digital StandBy face full screen.
- * Plain platform Views (no AndroidX / Compose) to keep RAM and GPU cost low on the Echo.
+ * The HOME activity and launcher shell: a horizontal pager of the registered screens, screens
+ * that open on top (not in the pager), then the overlays (island, banners, HUDs, Control Center).
+ * Plain platform Views, no AndroidX, to keep RAM and GPU cost low on the Echo.
+ *
+ * Launch extras (adb): `--es screen <id>` open a screen (other extras go to it as args),
+ * `--es face <id>` pick the StandBy face, `--ez demo true|false` toggle sample data (restarts).
  */
 class MainActivity : Activity() {
 
-    private lateinit var clock: DigitalClockView
-
-    private val timeReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) = clock.refresh()
-    }
+    private val app get() = application as EchoApp
+    private lateinit var root: FrameLayout
+    private lateinit var pager: ScreenPager
+    private lateinit var pagerScreens: List<ScreenSpec>
+    private lateinit var topLayer: FrameLayout
+    private var topScreen: Pair<String, View>? = null
+    private val offPagerViews = HashMap<String, View>()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var shownId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // A bedside clock stays on while it's in front. (Night mode will dim it, not turn it off.)
+        // A bedside clock stays on while it's in front. (Night mode dims it; it doesn't turn it off.)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.setDecorFitsSystemWindows(false)
 
-        Fonts.init(this)
-        clock = DigitalClockView(this)
-        // Temporary escape hatch until edit mode (long-press) exists: open Android Settings.
-        clock.isHapticFeedbackEnabled = true
-        clock.setOnLongClickListener {
-            it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-            startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            true
+        pagerScreens = app.screens.filter { it.inPager }
+        root = FrameLayout(this)
+        pager = ScreenPager(this, pagerScreens.size.coerceAtLeast(1)) { i ->
+            pagerScreens.getOrNull(i)?.factory?.invoke(this) ?: View(this)
         }
-        setContentView(clock)
+        pager.onPageSelected = { i -> onShown(pagerScreens[i].id, null) }
+        root.addView(pager, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        topLayer = FrameLayout(this)
+        root.addView(topLayer, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        for (o in app.overlays) {
+            try {
+                root.addView(o.factory(this), FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+            } catch (e: Exception) {
+                Log.e(EchoApp.TAG, "Overlay ${o.id} failed", e)
+            }
+        }
+        setContentView(root)
+
+        scope.launch { app.navigator.requests.collect { (id, args) -> show(id, args) } }
+        handleIntent(intent, initial = true)
     }
+
+    // --- navigation ---
+
+    private fun show(id: String, args: Bundle?) {
+        val pagerIndex = pagerScreens.indexOfFirst { it.id == id }
+        if (pagerIndex >= 0) {
+            closeTopScreen()
+            val changed = pagerIndex != pager.currentPage
+            pager.scrollToPage(pagerIndex, animate = !changed || shownId != null)
+            if (!changed) onShown(id, args) else (pager.page(pagerIndex) as? EchoScreen)?.onScreenShown(args)
+            if (changed) { shownId = id; app.navigator.setCurrent(id) }
+            return
+        }
+        val spec = app.screens.firstOrNull { it.id == id } ?: run { Log.w(EchoApp.TAG, "No screen '$id'"); return }
+        closeTopScreen()
+        val v = offPagerViews.getOrPut(id) { spec.factory(this) }
+        topLayer.addView(v, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        topScreen = id to v
+        currentScreenView()?.let { if (it !== v) (it as? EchoScreen)?.onScreenHidden() }
+        (v as? EchoScreen)?.onScreenShown(args)
+        shownId = id
+        app.navigator.setCurrent(id)
+    }
+
+    private fun closeTopScreen() {
+        val (_, v) = topScreen ?: return
+        (v as? EchoScreen)?.onScreenHidden()
+        topLayer.removeView(v)
+        topScreen = null
+        (pager.page(pager.currentPage) as? EchoScreen)?.onScreenShown(null)
+        pagerScreens.getOrNull(pager.currentPage)?.let { shownId = it.id; app.navigator.setCurrent(it.id) }
+    }
+
+    private fun onShown(id: String, args: Bundle?) {
+        if (shownId != null && shownId != id) screenView(shownId!!)?.let { (it as? EchoScreen)?.onScreenHidden() }
+        shownId = id
+        app.navigator.setCurrent(id)
+        (screenView(id) as? EchoScreen)?.onScreenShown(args)
+    }
+
+    private fun screenView(id: String): View? {
+        topScreen?.let { if (it.first == id) return it.second }
+        val i = pagerScreens.indexOfFirst { it.id == id }
+        return if (i >= 0) pager.page(i) else null
+    }
+
+    private fun currentScreenView(): View? = shownId?.let { screenView(it) }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent, initial = false)
+    }
+
+    private fun handleIntent(intent: Intent, initial: Boolean) {
+        val extras = intent.extras
+        if (extras?.containsKey("demo") == true) {
+            val demo = extras.getBoolean("demo")
+            if (demo != app.services.config.demoData) {
+                app.services.settings.putBoolean(EchoApp.KEY_DEMO, demo)
+                // Fakes read the flag at startup: restart the process (the system relaunches HOME).
+                Handler(Looper.getMainLooper()).postDelayed({ finishAffinity(); Process.killProcess(Process.myPid()) }, 300)
+                return
+            }
+        }
+        val screen = extras?.getString("screen")
+            ?: if (extras?.getString("face") != null) EchoApp.HOME_SCREEN else null
+        when {
+            screen != null -> show(screen, extras)
+            initial -> show(EchoApp.HOME_SCREEN, null)
+            // HOME pressed while we're in front: back to StandBy
+            intent.hasCategory(Intent.CATEGORY_HOME) -> app.navigator.home()
+        }
+    }
+
+    // --- system UI, keys, lifecycle ---
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) hideSystemBars()
-    }
-
-    private fun hideSystemBars() {
-        window.insetsController?.let {
+        if (hasFocus) window.insetsController?.let {
             it.hide(WindowInsets.Type.systemBars())
             it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        registerReceiver(timeReceiver, IntentFilter().apply {
-            addAction(Intent.ACTION_TIME_TICK)
-            addAction(Intent.ACTION_TIME_CHANGED)
-            addAction(Intent.ACTION_TIMEZONE_CHANGED)
-            addAction(Intent.ACTION_DATE_CHANGED)
-        })
-        clock.refresh()
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        for (h in app.keyHandlers) if (h.onKey(event)) return true
+        return super.dispatchKeyEvent(event)
     }
 
-    override fun onStop() {
-        unregisterReceiver(timeReceiver)
-        super.onStop()
+    private val escapeHatch = Runnable {
+        startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+    private val handler = Handler(Looper.getMainLooper())
+
+    /** Two fingers held still for 2 s opens Android Settings (dev escape hatch, any screen). */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_POINTER_DOWN -> if (ev.pointerCount == 2) handler.postDelayed(escapeHatch, 2000) else handler.removeCallbacks(escapeHatch)
+            MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> handler.removeCallbacks(escapeHatch)
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
-    /** We're the launcher: Back has nowhere to go. */
+    override fun onResume() {
+        super.onResume()
+        (currentScreenView() as? EchoScreen)?.onScreenShown(null)
+    }
+
+    override fun onPause() {
+        (currentScreenView() as? EchoScreen)?.onScreenHidden()
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
+    }
+
+    /** We're the launcher: Back closes a top screen, or goes to StandBy. */
     @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {}
+    override fun onBackPressed() {
+        if (topScreen != null) closeTopScreen() else app.navigator.home()
+    }
 }

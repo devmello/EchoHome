@@ -1,5 +1,5 @@
 plugins {
-    id("com.android.application")
+    alias(libs.plugins.android.application)
 }
 
 android {
@@ -13,15 +13,17 @@ android {
         targetSdk = 30
         versionCode = 1
         versionName = "0.1.0"
-        // 32-bit only device. No native code yet; this keeps future .so files armv7-only.
+        // 32-bit only device. Native libraries (AirPlay) are built for armeabi-v7a only.
         ndk { abiFilters += "armeabi-v7a" }
     }
+
+    buildFeatures { buildConfig = true }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Sideloaded to one device: sign release with the debug key.
             signingConfig = signingConfigs.getByName("debug")
         }
@@ -40,4 +42,12 @@ android {
         disable += "ExpiredTargetSdkVersion"
         disable += "OldTargetApi"
     }
+}
+
+dependencies {
+    implementation(project(":core:model"))
+    implementation(project(":core:design"))
+    implementation(project(":core:data"))
+    listOf("clock", "system", "airplay", "media", "alarm", "home", "assistant", "camera", "photos")
+        .forEach { implementation(project(":feature:$it")) }
 }

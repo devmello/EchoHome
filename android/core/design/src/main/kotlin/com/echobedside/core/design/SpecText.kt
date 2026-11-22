@@ -1,4 +1,4 @@
-package com.echobedside.clock
+package com.echobedside.core.design
 
 import android.content.Context
 import android.graphics.Canvas

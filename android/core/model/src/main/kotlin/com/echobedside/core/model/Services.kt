@@ -1,0 +1,88 @@
+package com.echobedside.core.model
+
+import com.echobedside.core.model.fake.FakeAlarmStore
+import com.echobedside.core.model.fake.FakeCalendarProvider
+import com.echobedside.core.model.fake.FakeProfileManager
+import com.echobedside.core.model.fake.FakeTimerStore
+import com.echobedside.core.model.fake.FakeWeatherProvider
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.SharedFlow
+
+/**
+ * Every shared service, one instance per process (created by `:app`).
+ *
+ * Slots start as in-memory defaults or fakes (core.model.fake) so each feature runs alone.
+ * The feature that owns a contract replaces its slot in [EchoFeature.install]:
+ *   system → systemControls · alarm → alarms, timers · home → weather, calendar ·
+ *   camera → profiles (face switching) · `:app` → homeAssistant, settings, config.
+ * Read slots lazily (in view factories / on attach), never cache them during install.
+ */
+class EchoServices(
+    var config: EchoConfig,
+    var settings: SettingsStore,
+) {
+    /** App-wide scope on the main thread. Use Dispatchers.IO / Default inside for blocking work. */
+    val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    lateinit var navigator: Navigator
+
+    val island: IslandManager = DefaultIslandManager()
+    val media: MediaHub = DefaultMediaHub()
+    val system: SystemStateStore = DefaultSystemStateStore()
+    val notifications: NotificationFeed = DefaultNotificationFeed()
+    val faces: FaceRegistry = DefaultFaceRegistry()
+
+    var systemControls: SystemControls = StateOnlySystemControls(system)
+    var alarms: AlarmStore = FakeAlarmStore(config.demoData)
+    var timers: TimerStore = FakeTimerStore(island)
+    var profiles: ProfileManager = FakeProfileManager()
+    var weather: WeatherProvider = FakeWeatherProvider(config.demoData)
+    var calendar: CalendarProvider = FakeCalendarProvider(config.demoData)
+    var homeAssistant: HomeAssistant = NotConfiguredHomeAssistant
+}
+
+/**
+ * @param demoData show the designs' sample data where no real source is configured.
+ *   On by default in debug builds; toggle with `--ez demo true|false` on the launch intent.
+ */
+data class EchoConfig(
+    val debug: Boolean,
+    val demoData: Boolean,
+    val secrets: Secrets,
+)
+
+/** From android/secrets.properties via `:core:data`. [toString] never prints values. */
+class Secrets(
+    val haUrl: String = "",
+    val haToken: String = "",
+    val immichUrl: String = "",
+    val immichApiKey: String = "",
+    val anthropicApiKey: String = "",
+    val stocksApiKey: String = "",
+) {
+    val haConfigured get() = haUrl.isNotBlank() && haToken.isNotBlank()
+    val immichConfigured get() = immichUrl.isNotBlank() && immichApiKey.isNotBlank()
+    val stocksConfigured get() = stocksApiKey.isNotBlank()
+    override fun toString() =
+        "Secrets(ha=${haConfigured}, immich=${immichConfigured}, anthropic=${anthropicApiKey.isNotBlank()}, stocks=${stocksConfigured})"
+}
+
+/**
+ * Persistent key-value settings (SharedPreferences in `:core:data`).
+ * Namespace keys by feature: "clock.face", "clock.color.digital", "system.island.look", ...
+ */
+interface SettingsStore {
+    fun getString(key: String, default: String): String
+    fun putString(key: String, value: String)
+    fun getInt(key: String, default: Int): Int
+    fun putInt(key: String, value: Int)
+    fun getFloat(key: String, default: Float): Float
+    fun putFloat(key: String, value: Float)
+    fun getBoolean(key: String, default: Boolean): Boolean
+    fun putBoolean(key: String, value: Boolean)
+    fun remove(key: String)
+    /** Emits the key of every change. */
+    val changes: SharedFlow<String>
+}

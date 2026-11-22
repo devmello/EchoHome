@@ -1,0 +1,74 @@
+package com.echobedside.core.model
+
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+
+/** A household member (NOTES §6.6). "shared" is the default profile when nobody is recognised. */
+data class Profile(
+    val id: String,
+    val name: String,
+    /** Accent / face colour, ARGB. */
+    val color: Int,
+    /** Preferred StandBy face id (see [FaceRegistry]). */
+    val faceId: String = "digital",
+    /** Home Assistant calendar entity, e.g. "calendar.maya". */
+    val calendarEntity: String? = null,
+    /** Face-recognition templates are stored by `:feature:camera`, never here. */
+    val enrolled: Boolean = false,
+) {
+    companion object {
+        const val SHARED_ID = "shared"
+        val SHARED = Profile(SHARED_ID, "Everyone", 0xFFFFFFFF.toInt())
+    }
+}
+
+enum class SwitchReason { MANUAL, FACE, TIMEOUT }
+
+interface ProfileManager {
+    val profiles: StateFlow<List<Profile>>
+    val active: StateFlow<Profile>
+    /** Control Center's "Auto by face". */
+    val autoByFace: StateFlow<Boolean>
+
+    fun switchTo(profileId: String, reason: SwitchReason)
+    fun setAutoByFace(enabled: Boolean)
+    /** "Not me": go back to shared and block [profileId] from face matching for a few minutes. */
+    fun reject(profileId: String)
+    fun upsert(profile: Profile)
+    fun delete(profileId: String)
+}
+
+/** Notification banner (Banners.dc.html). */
+data class Banner(
+    val id: String,
+    val appName: String,
+    /** Tile colour for the app icon, ARGB. */
+    val appColor: Int,
+    /** Optional glyph key the renderer maps to an icon ("message", "doorbell", "calendar", ...). */
+    val glyph: String? = null,
+    val title: String,
+    val body: String,
+    val postedAtMillis: Long = System.currentTimeMillis(),
+    /** Shown even in Do Not Disturb: doorbell, alarm, calls. */
+    val critical: Boolean = false,
+    /** The one tinted action in the expanded view ("Reply by voice", "Show camera", "Join call"). */
+    val primaryAction: IslandAction? = null,
+    /** Package of the Android notification, if it came from one. */
+    val sourcePackage: String? = null,
+)
+
+interface NotificationFeed {
+    /** Newest last. */
+    val banners: StateFlow<List<Banner>>
+    fun post(banner: Banner)
+    fun dismiss(id: String)
+}
+
+class DefaultNotificationFeed : NotificationFeed {
+    private val _banners = MutableStateFlow<List<Banner>>(emptyList())
+    override val banners: StateFlow<List<Banner>> = _banners.asStateFlow()
+    override fun post(banner: Banner) = _banners.update { l -> l.filterNot { it.id == banner.id } + banner }
+    override fun dismiss(id: String) = _banners.update { l -> l.filterNot { it.id == id } }
+}

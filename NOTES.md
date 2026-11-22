@@ -295,7 +295,7 @@ Design rule: **the expensive step runs at most once per person arriving, never c
 - [ ] Does pressing the mic button currently put the screen to sleep? Does it cut the mics in hardware?
 - [ ] Does `adb connect 192.168.10.136:5555` work, and does it survive a reboot?
 - [ ] CPU/RAM headroom with the AirPlay receiver + our launcher + mic streaming running together.
-- [ ] Compose vs Views performance on Mali-T720 at 60 fps.
+- [x] Compose vs Views: **Views** chosen; Views + pre-blurred glass hold 59 fps with 7 ms frames (§8.1).
 - [ ] Back up partitions (TWRP) into `backups/` before installing anything as a system app.
 - [x] Wireless adb pairing from the Mac works (Nov 22, 2026). IP 192.168.10.136. Give it a DHCP reservation.
 - [ ] Profile pipeline: measure presence-check and face-detection cost (CPU %, ms per frame) on the device before building the full flow.
@@ -319,23 +319,16 @@ Profile and measure on the device after every milestone. Keep RAM under ~200 MB 
 
 ### 8.1 Status
 
-- **Milestone 0 done (Nov 22, 2026).** Toolchain on the Mac: Homebrew `openjdk@17` (the system default is JDK 27, too new for the build, so the scripts set `JAVA_HOME`), Android command-line tools at `/opt/homebrew/share/android-commandlinetools` (platform android-35, build-tools 35), Gradle 9.9.2 wrapper, AGP 9.5.2 with built-in Kotlin. Project in `android/` (package `com.echobedside`, minSdk/targetSdk 30, armeabi-v7a, release build minified and signed with the debug key).
-  - `./scripts/echo-deploy.sh [debug|release]`: connects, builds, installs, runs `cmd package set-home-activity com.echobedside/.MainActivity` and opens HOME.
-  - `./scripts/echo-restore-launcher.sh`: makes Launcher3 HOME again.
-- **Milestone 1, first step done:** the Digital face (`DigitalClockView`) is the HOME screen on the Echo. It uses plain platform Views with Canvas drawing and no AndroidX/Compose. `SpecText` reproduces CSS letter-spacing, tabular numerals and line boxes so design px map 1:1. It redraws only on `TIME_TICK` / time / zone / date changes. Measured: **~15 MB PSS**, 0% CPU at rest. Weather and next alarm are still the design's sample values. Font is the system Roboto until Inter is bundled (`Fonts.sans`). Long-press opens Android Settings as a temporary escape hatch until edit mode exists.
-  - Next: the other faces, edit mode (long-press), Night mode from the light sensor.
+- **Milestone 0 done (Nov 22, 2026).** Toolchain on the Mac: Homebrew `openjdk@17` (the system default is JDK 27, too new for the build; `scripts/lib.sh` sets `JAVA_HOME`), Android command-line tools at `/opt/homebrew/share/android-commandlinetools` (platform android-35, build-tools 35), Gradle 9.9.2 wrapper, AGP 9.5.2 with built-in Kotlin. Package `com.echobedside`, minSdk/targetSdk 30, armeabi-v7a. OkHttp is pinned to 4.12 because 5.x needs compileSdk 37.
+- **Milestone 1, Digital face done:** it's the HOME screen on the Echo, with the Inter v4.1 variable font bundled (OFL; opsz follows px size like CSS `font-optical-sizing: auto`). Long-press is reserved for edit mode. The dev escape hatch is **two fingers held for 2 s → Android Settings**.
+- **UI toolkit decision: plain platform Views + Canvas, no Compose, no AndroidX** (coroutines/StateFlow only). Measured on the Echo, Nov 22, 2026:
+  - Digital face, release build: **17 MB PSS**, 0% CPU idle, one frame per minute.
+  - Same in a debug build: 28 MB PSS.
+  - Debug `bench` screen (`--es screen bench`): full-screen wallpaper, pre-blurred backdrop, three moving glass components and 252 px text redrawn every frame. **59 fps: frame time p50/p90/p99 = 7/8/9 ms, 0.16% janky**, 42% of one core (debug build), 80 MB PSS (two 960×480 bitmaps plus GPU textures).
+  - So Views + pre-blurred glass hold the panel rate with headroom. Compose wasn't measured; it would add ~10–20 MB and startup cost for nothing we need.
+- **Phase 0 of PARALLEL_BUILD_PROMPT.md done:** git repo, multi-module project (`:app`, `:core:design|model|data`, nine `:feature:*` modules), contracts + fakes, device scripts. Read `docs/architecture.md` for the module map and rules.
+  - `./scripts/build-install.sh`: build + lock + install + HOME + launch + shot/perf.
+  - `./scripts/echo-perf.sh`, `echo-shot.sh`, `echo-lock.sh`, `echo-adb.sh`.
+  - `./scripts/echo-deploy.sh`: release build.
+  - `./scripts/echo-restore-launcher.sh`: Launcher3 as HOME again.
   - Launcher3 keeps running in the background (~140 MB RSS) because it's the system recents provider. Look at this when RAM gets tight.
-
----
-
-## 9. Sources
-
-- Hardware: postmarketOS wiki, Amazon Echo Show 5 (amazon-checkers); iFixit Echo Show 5; Android Authority, "Echo Show 5 jailbreak LineageOS".
-- Apple design: WWDC25 "Meet Liquid Glass" (developer.apple.com/videos/play/wwdc2025/219); Apple Liquid Glass technology overview.
-- StandBy reference: MacRumors and Cult of Mac StandBy guides (faces Digital, Analog, World, Solar, Float; Night mode red tint; alarm Snooze/Stop); 9to5Mac/MacRumors on iOS 27.3 StandBy faces (Nov 2026).
-- HomeView: MacRumors HomeView roundup; TechCrunch launch coverage (Oct 13, 2026).
-- Voice: Home Assistant voice docs (Assist pipelines, openWakeWord, voice chapters 9 and 11); HA community "Atom Echo with Claude".
-- AirPlay (audio only): docs.rs/crate/shairplay; github.com/jqssun/android-airplay-server; github.com/mikebrady/shairport-sync.
-- Camera: github.com/jxlarrea/lineageos-echo-show-camera.
-- Alt firmware: github.com/HuskerMinion/techo5.
-- Android volume UI: AOSP SystemUI plugin hooks (PLUGIN_VOLUME); third-party volume panel apps.

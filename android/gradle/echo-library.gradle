@@ -1,0 +1,17 @@
+// Common config for every Echo Bedside library module (:core:*, :feature:*).
+// Applied with `apply(from = rootProject.file("gradle/echo-library.gradle"))`.
+android {
+    compileSdk = 35
+    defaultConfig {
+        minSdk = 30
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    testOptions { unitTests.returnDefaultValues = true }
+    lint {
+        disable += "ExpiredTargetSdkVersion"
+        disable += "OldTargetApi"
+    }
+}
