@@ -17,18 +17,33 @@ Immich photo frame, `Photos.dc.html`. Screen `photos`, pager order 70.
 - **Night mode** (`SystemState.nightActive`): photo drawn as red monochrome (#BE180E) at 0.42 via a `ColorMatrixColorFilter` (no extra pass), text red and dimmed, glass becomes the red outline. A tap brings it to full (red) brightness for 6 s.
 - **Off screen**: `onScreenHidden` stops the clock tick, slideshow timer, prefetch, fade, zoom and hides the controls. As a pager neighbour it loads and shows the first photo still, so swiping in doesn't show black.
 - **Demo mode** (`services.config.demoData`, no Immich configured): procedural stand-ins, Canvas ports of the design's CSS illustrations (coast at golden hour, granite valley, night-market lanterns) plus mirrored / hue-shifted / reseeded variants, in three sample albums (Family 4, Trips 5, Night walks 3). One is dated three years ago today to show the memory caption. No real or copyrighted photos.
-- **Tests** (30, JVM): Immich client against MockWebServer (auth header, parsing, filtering, search fallback + paging, preview download, HTTP errors without the key, URL normalisation, dates), cache eviction / LRU / restart / temp cleanup, metadata round trip, slideshow order / wrap / refresh / pause / timing / prefetch skipping failed and uncached, captions, decode math.
+- **Settings card** "Photo frame" (`PhotoSettings.kt`, `host.registerSettings`, order 70): Album (CHOICE of the listed albums with counts once Immich or demo answers; TEXT album name until then), Seconds per photo (INT 3–600, default 8), Shuffle (default on), Show after idle (minutes, INT 0–240, default 0 = off), Never at night (default on). Interval, shuffle and album apply live. Values are read tolerantly (string or typed prefs) so a type mismatch from the web page can't crash the screen.
+- **Live source** (`PhotoLibrary.kt`): watches `services.configFlow` for `secrets.immichUrl` / `immichApiKey` / `demoData` and rebuilds the repository when they change (Immich when both are set, else demo, else nothing). The screen resets and restarts on the new source; the album list in the settings card is refreshed.
+- **Show after idle** (`IdleWatcher.kt`, an invisible overlay + key handler): after N idle minutes on StandBy it opens the frame; with "Never at night" it won't open during Night mode and returns to the clock when night starts if it had opened the frame itself. Draws nothing, one Handler timer re-armed on input.
+- **Legible glyphs on bright photos**: the capsule and sheet sample the pre-blurred backdrop under them (8×3 pixels, once per photo/show); above 0.68 relative luminance the glyphs switch from white to #1C1C1E. Found on the Lake Tahoe stand-in, where the saturated/brightened glass over snow is near white and white glyphs vanished. My own call; the design only shows dark photos under the capsule.
+- **Tests** (34, JVM): Immich client against MockWebServer (auth header, parsing, filtering, search fallback + paging, preview download, HTTP errors without the key, URL normalisation, dates), cache eviction / LRU / restart / temp cleanup, metadata round trip, slideshow order / wrap / refresh / pause / timing / prefetch skipping failed and uncached, captions, decode math, settings section shape and show-after-idle rule.
 - Debug args: `--es screen photos [--es album NAME] [--es seconds N] [--es controls 1] [--es sheet 1] [--es paused 1] [--es night 1|0]`.
 
 ## Left
 
 - Not run against a real Immich server (none available yet). Everything server-side is tested against MockWebServer with Immich's documented response shapes; check on a real server: shared albums appear in `GET /api/albums`, and the preview format (JPEG or WebP, both decode).
 - Album sheet has no artboard; worth a design pass.
-- No setting UI for the interval besides `photos.seconds` (and the album, via the sheet).
+- Show-after-idle checked by unit test only, not left idle on the device for N minutes.
+- Per-surface glass recipe overrides (requested in contract-requests.md, deferred by the lead).
 
 ## Measured on the Echo
 
-PLACEHOLDER_PERF
+Debug build, demo album Family, 8 s interval (zoom always running), `build-install.sh --perf 20`:
+
+| | |
+|---|---|
+| PSS | **50.0 MB** (Java 7.1, Native 14.6, Graphics 8.8); device MemAvailable 297 MB |
+| CPU | 18.7 % of one core during crossfade + zoom |
+| Frames | 1207 in 20 s (≈ 60 fps); gfxinfo p50 / p90 / p99 16 / 17 / 18 ms |
+| Framestats medians | total CPU side 3.1 ms (UI 0.9, issue 1.2, dequeue 0.5); GPU completes ~16 ms after swap (pipelined) |
+| Idle (paused, controls hidden) | **0 frames in 6 s, 0 CPU ticks in 10 s** |
+
+gfxinfo calls 50 % "janky" because the GPU finishes a frame just inside the next vsync; frames are still delivered at 60 fps (1207/20 s) and nothing is dropped visibly. Ideas if it matters: longer interval (zoom ends, frame rests), or a 30 fps zoom.
 
 ## Screenshots (`docs/status/shots/photos/`)
 
@@ -38,18 +53,21 @@ Compared on screen with `Photos.dc.html` rendered at 960×480 in Chrome (same st
 - `photo-valley.png`, `photo-lanterns.png` — photos 2 and 3 after crossfades.
 - `controls.png` — glass capsule shown on tap (paused, so the play icon shows). Matches the design's capsule (size, album pill, icons); glass uses the NOTES §3.2 recipe with the design's .12 fill.
 - `album-sheet.png` — album picker grown out of the album button.
-- PLACEHOLDER_SHOTS
+- `controls-hidden.png` — controls settled away after 4 s.
+- `album-switched.png` — Trips album (Lake Tahoe stand-in) with the capsule over snow: dark glyphs on the bright glass.
+- `night.png`, `night-wake.png` — Night mode: red monochrome photo, red text; after a tap, brighter with the red-outline capsule.
 
 ## Open questions
 
-- Interval: the design's default is 8 s, so the zoom (9 s) never finishes and the frame draws continuously. A longer default (e.g. 30 s) would let it go idle after each zoom. Kept 8 s for fidelity; `photos.seconds` changes it.
+- Interval: the design's default is 8 s, so the zoom (9 s) never finishes and the frame draws continuously. A longer default (e.g. 30 s) would let it go idle after each zoom. Kept 8 s for fidelity; "Seconds per photo" in the settings card changes it.
 - Shuffle vs. album order for Immich albums: shuffles now (one pass, then reshuffle). Demo plays in the design's order.
+- Dark glyphs over bright glass (above) are my addition; a design call is welcome.
 - Should the frame prefer Immich "memories" (on this day) when there are some? Not built; the caption already marks anniversaries.
 
 ## Needs from the user
 
-- Immich URL and API key in `android/secrets.properties` (`immich.url`, `immich.apiKey`); a key with read access to albums and assets is enough. Then turn demo off (`--ez demo false`) or just set the secrets (Immich wins over demo when configured).
-- Which album to show by default (else "Family", else the largest).
+- Immich URL and API key: on the settings page under Accounts (`immich.url`, `immich.apiKey`, SECRETs declared by agent K), or at build time in `android/secrets.properties`. A key with read access to albums and assets is enough. They apply live; Immich wins over demo when both are set.
+- Then pick the album in the "Photo frame" card (default "Family", else the largest).
 
 ## Device setup
 
