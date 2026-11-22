@@ -116,7 +116,12 @@ class SysGlassPainter(var spec: GlassSpec) {
      * Draws glass in [l,t,r,b] with corner [radius] (-1 = fully round). [windowX]/[windowY] = where the
      * canvas origin is in the window (to line the backdrop up).
      */
-    fun draw(canvas: Canvas, l: Float, t: Float, r: Float, b: Float, radius: Float = -1f, windowX: Float = 0f, windowY: Float = 0f) {
+    /**
+     * [parts]: [SHADOW], [BACKDROP], [SURFACE] (fill, specular, rims, border) or [ALL]. Drawing the parts
+     * one after the other into separate RenderNodes looks the same as [ALL] and lets a new backdrop
+     * re-record only the backdrop part (Control Center).
+     */
+    fun draw(canvas: Canvas, l: Float, t: Float, r: Float, b: Float, radius: Float = -1f, windowX: Float = 0f, windowY: Float = 0f, parts: Int = ALL) {
         val w = r - l
         val h = b - t
         if (w <= 0.5f || h <= 0.5f || alpha <= 0.004f) return
@@ -125,6 +130,7 @@ class SysGlassPainter(var spec: GlassSpec) {
         val s = spec
         rect.set(l, t, r, b)
         if (night) {
+            if (parts and SURFACE == 0) return
             fillPaint.color = withAlpha(Color.BLACK, a)
             canvas.drawRoundRect(rect, rad, rad, fillPaint)
             borderPaint.color = withAlpha(Night.COLOR, 0.55f * a)
@@ -134,10 +140,10 @@ class SysGlassPainter(var spec: GlassSpec) {
             borderPaint.strokeWidth = 0.5f
             return
         }
-        if (shadow && s.shadowAlpha > 0f) ShadowSlice.draw(canvas, rect, rad, s.shadowDy, s.shadowBlur, s.shadowAlpha * a)
+        if (parts and SHADOW != 0 && shadow && s.shadowAlpha > 0f) ShadowSlice.draw(canvas, rect, rad, s.shadowDy, s.shadowBlur, s.shadowAlpha * a)
 
         val bd = backdrop
-        if (bd != null && !bd.bitmap.isRecycled) {
+        if (parts and BACKDROP != 0 && bd != null && !bd.bitmap.isRecycled) {
             if (shaderFor !== bd.bitmap) {
                 backdropPaint.shader = BitmapShader(bd.bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
                 shaderFor = bd.bitmap
@@ -148,6 +154,7 @@ class SysGlassPainter(var spec: GlassSpec) {
             backdropPaint.alpha = (255 * a).roundToInt()
             canvas.drawRoundRect(rect, rad, rad, backdropPaint)
         }
+        if (parts and SURFACE == 0) return
 
         val fill = fillOverride ?: s.fill
         fillPaint.color = withAlpha(fill, Color.alpha(fill) / 255f * a)
@@ -175,6 +182,13 @@ class SysGlassPainter(var spec: GlassSpec) {
         rect.set(0.25f, 0.25f, w - 0.25f, h - 0.25f)
         canvas.drawRoundRect(rect, rad, rad, borderPaint)
         canvas.restore()
+    }
+
+    companion object {
+        const val SHADOW = 1
+        const val BACKDROP = 2
+        const val SURFACE = 4
+        const val ALL = 7
     }
 }
 

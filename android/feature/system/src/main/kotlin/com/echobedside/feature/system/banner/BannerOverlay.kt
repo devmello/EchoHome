@@ -246,6 +246,7 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
                 if (!node.hasDisplayList() || expNodeFor !== eb || expNodeNight != night || expNodeBg !== expandedBg || expNodeBd !== btnGlass.backdrop) {
                     expNodeFor = eb; expNodeNight = night; expNodeBg = expandedBg; expNodeBd = btnGlass.backdrop
                     node.setPosition(0, 0, 960, 480)
+                    node.setUseCompositingLayer(true, null) // the fade composites one cached layer
                     val rc = node.beginRecording(960, 480)
                     try { drawExpanded(rc, eb, 1f) } finally { node.endRecording() }
                 }

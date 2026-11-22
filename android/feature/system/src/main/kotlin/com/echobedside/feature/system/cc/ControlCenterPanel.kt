@@ -139,7 +139,7 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
 
     fun onOpening() {
         shown = true
-        ui.connectivity.refresh()
+        ui.connectivity.refreshAsync()
         brightFill.snap(state.brightness); volFill.snap(state.volume)
         handler.removeCallbacks(minuteTick); handler.post(minuteTick)
         invalidate()
@@ -270,10 +270,8 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         // settings 44 round glass button (right 24, top 14)
         val sr = hits[Hit.SETTINGS]!!
         c.save(); pressScale(c, Hit.SETTINGS, sr)
-        rec(c, "settings", listOf(n, roundBtn.backdrop)) { rc ->
-            roundBtn.draw(rc, sr.left, sr.top, sr.right, sr.bottom, -1f)
-            Icons.gear.drawCentered(rc, sr.centerX(), sr.centerY(), 22f, ink(Color.WHITE), paint)
-        }
+        glass(c, roundBtn, "settings", sr.left, sr.top, sr.right, sr.bottom, -1f)
+        rec(c, "settings", n) { rc -> Icons.gear.drawCentered(rc, sr.centerX(), sr.centerY(), 22f, ink(Color.WHITE), paint) }
         c.restore()
         if (state.micMuted) rec(c, "chip", n) { rc ->
             val tw = tChip.width("Mic off")
@@ -286,13 +284,20 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         }
     }
 
-    /** A glass tile's node: its look only changes with Night mode, the backdrop and a fill tint. */
+    /** A glass tile: three nodes in paint order (shadow, backdrop, surface), so a new backdrop re-records one draw. */
     private fun glassTile(c: Canvas, name: String, l: Float, t: Float, r: Float, b: Float, radius: Float, fill: Int? = null) =
-        rec(c, name, listOf(night, tile.backdrop, fill)) { rc ->
-            tile.fillOverride = fill
-            tile.draw(rc, l, t, r, b, radius)
-            tile.fillOverride = null
+        glass(c, tile, name, l, t, r, b, radius, fill)
+
+    private fun glass(c: Canvas, p: SysGlassPainter, name: String, l: Float, t: Float, r: Float, b: Float, radius: Float, fill: Int? = null) {
+        val n = night
+        rec(c, "$name-shadow", n) { rc -> p.draw(rc, l, t, r, b, radius, parts = SysGlassPainter.SHADOW) }
+        rec(c, "$name-backdrop", listOf(n, p.backdrop)) { rc -> p.draw(rc, l, t, r, b, radius, parts = SysGlassPainter.BACKDROP) }
+        rec(c, "$name-surface", listOf(n, fill)) { rc ->
+            p.fillOverride = fill
+            p.draw(rc, l, t, r, b, radius, parts = SysGlassPainter.SURFACE)
+            p.fillOverride = null
         }
+    }
 
     /** [pressed] when it's one of [these] (sub-buttons that scale inside a tile's content). */
     private fun pressedIn(vararg these: Hit): Hit? = pressed?.takeIf { dragSlider == null && it in these }
@@ -439,7 +444,7 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         val t = timers.firstOrNull { it.state != EchoTimer.State.DONE } ?: timers.firstOrNull()
         val tState = if (t == null) "Start" else (t.label.ifBlank { "Timer" } + " · " + mmss(t.remainingMs()))
         square(c, Hit.TIMER, "Timer", tState, Icons.timer, false, ORANGE, iconBgAlways = ORANGE)
-        if (t != null && t.state == EchoTimer.State.RUNNING) postInvalidateDelayed(1000 - (t.remainingMs() % 1000) + 10)
+        if (shown && t != null && t.state == EchoTimer.State.RUNNING) postInvalidateDelayed(1000 - (t.remainingMs() % 1000) + 10)
     }
 
     private fun square(c: Canvas, h: Hit, name: String, st: String, icon: Icon, off: Boolean, color: Int, iconBgAlways: Int? = null) {

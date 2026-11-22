@@ -137,11 +137,11 @@ class GlassPainter {
 
 /**
  * The lift shadow, `setShadowLayer(SHADOW_BLUR * .8, 0, SHADOW_DY, black SHADOW_ALPHA)` outside the
- * shape only, rendered once per shape size into a small alpha bitmap and drawn as a 9-slice
+ * shape only, rendered once per shape size into a small bitmap and drawn as a 9-slice
  * (straight edges stretched from a 1 px row/column). Drawing the shadow layer directly made HWUI
  * re-blur every glass shape on the CPU every frame.
  * Shapes longer than their corners + blur reach share one bitmap for all lengths; shorter ones
- * (capsule heights) get their own. LRU of [MAX] bitmaps, each a few tens of KB (ALPHA_8).
+ * (capsule heights) get their own. LRU of [MAX] bitmaps, each ~100–250 KB.
  */
 internal object GlassShadow {
     private const val RADIUS = GlassTokens.SHADOW_BLUR * 0.8f
@@ -150,7 +150,7 @@ internal object GlassShadow {
     private val reach = ceil(3 * SIGMA).toInt() + 1
     private val pad = reach + 1
     private val dyc = ceil(GlassTokens.SHADOW_DY).toInt()
-    private const val MAX = 24
+    private const val MAX = 16
 
     private data class Key(val sw: Float, val sh: Float, val rad: Float)
     private val cache = object : LinkedHashMap<Key, Bitmap>(16, 0.75f, true) {
@@ -164,7 +164,7 @@ internal object GlassShadow {
     private val ys = FloatArray(12)
 
     private fun render(k: Key): Bitmap {
-        val bmp = Bitmap.createBitmap(ceil(k.sw).toInt() + 2 * pad, ceil(k.sh).toInt() + 2 * pad + dyc, Bitmap.Config.ALPHA_8)
+        val bmp = Bitmap.createBitmap(ceil(k.sw).toInt() + 2 * pad, ceil(k.sh).toInt() + 2 * pad + dyc, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val shape = RectF(pad.toFloat(), pad.toFloat(), pad + k.sw, pad + k.sh)
         val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -175,7 +175,8 @@ internal object GlassShadow {
         // outside the shape only (it was a clipOutPath): erase the shape, anti-aliased
         val clear = Paint(Paint.ANTI_ALIAS_FLAG).apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR) }
         c.drawRoundRect(shape, k.rad, k.rad, clear)
-        return bmp
+        // an immutable copy, so HWUI uploads it once and never re-checks it for changes
+        return bmp.copy(Bitmap.Config.ARGB_8888, false).also { bmp.recycle() }
     }
 
     /** Fills [out] with one axis' segments; returns how many (1 or 3). */
