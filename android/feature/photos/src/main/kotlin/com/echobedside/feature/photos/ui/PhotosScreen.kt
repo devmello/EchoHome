@@ -33,6 +33,8 @@ import com.echobedside.core.design.withAlpha
 import com.echobedside.core.model.EchoScreen
 import com.echobedside.core.model.EchoServices
 import com.echobedside.core.model.observeWhileAttached
+import com.echobedside.feature.photos.PhotoLibrary
+import com.echobedside.feature.photos.PhotoSettings
 import com.echobedside.feature.photos.data.Album
 import com.echobedside.feature.photos.data.BadImageException
 import com.echobedside.feature.photos.data.Captions
@@ -73,9 +75,13 @@ import kotlinx.coroutines.withContext
  * (show and keep the controls), `sheet 1` (open the album picker), `paused 1`, `night 1|0`.
  */
 @SuppressLint("ViewConstructor")
-class PhotosScreen(context: Context, private val services: EchoServices) : FrameLayout(context), EchoScreen {
+class PhotosScreen internal constructor(
+    context: Context,
+    private val services: EchoServices,
+    private val library: PhotoLibrary,
+) : FrameLayout(context), EchoScreen {
 
-    private val repo: PhotoRepository? = createRepository(context, services)
+    private var repo: PhotoRepository? = library.repo.value
     private val settings get() = services.settings
     private val handler = Handler(Looper.getMainLooper())
     private var scope: CoroutineScope? = null
@@ -175,12 +181,63 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
         })
         albumList.onPick = { pick(it) }
 
-        show.seconds = settings.getInt(KEY_SECONDS, Slideshow.DEFAULT_SECONDS).coerceIn(3, 600)
-        bar.albumName = settings.getString(KEY_ALBUM_NAME, if (repo is DemoRepository) "Family" else "Album")
+        show.seconds = PhotoSettings.seconds(settings)
+        bar.albumName = settings.getString(PhotoSettings.ALBUM_NAME, if (repo is DemoRepository) "Family" else "Album")
         updateClock()
         updateCaption()
         // Collected only while attached (the helper restarts it on re-attach).
         observeWhileAttached(services.system.state.map { it.nightActive }.distinctUntilChanged()) { setNight(it) }
+        // The source changes live when the Immich URL / key are set from the settings page.
+        observeWhileAttached(library.repo) { setRepository(it) }
+        observeWhileAttached(library.ready) { updateCaption() }
+        observeWhileAttached(settings.changes) { onSettingChanged(it) }
+    }
+
+    /** Switches to a new source: drops everything from the old one and starts over. */
+    private fun setRepository(r: PhotoRepository?) {
+        if (r === repo) return
+        loadJob?.cancel(); loadJob = null
+        prefetchJob?.cancel(); prefetchJob = null
+        handler.removeCallbacks(retryRunnable); retry = null; retryMs = RETRY_MIN_MS
+        handler.removeCallbacks(advance)
+        fade?.end(); fade = null
+        zoom?.cancel(); zoom = null
+        if (sheetOpen) closeSheet()
+        top.bitmap = null; bottom.bitmap = null; top.alpha = 0f; bottom.alpha = 0f
+        val old = listOfNotNull(current, outgoing, prepared)
+        current = null; outgoing = null; prepared = null
+        updateGlassBackdrop()
+        handler.postDelayed({ old.forEach { it.recycle() } }, 300)
+        show.clear(); show.playable = { true }
+        albums = emptyList(); album = null; offline = false; status = null
+        started = false
+        repo = r
+        bar.albumName = settings.getString(PhotoSettings.ALBUM_NAME, "Album")
+        updateCaption()
+        if (isAttachedToWindow) start()
+    }
+
+    /** Settings page edits apply at once (SettingSpec contract). */
+    private fun onSettingChanged(key: String) {
+        when (key) {
+            PhotoSettings.SECONDS -> { show.seconds = PhotoSettings.seconds(settings); scheduleAdvance() }
+            PhotoSettings.SHUFFLE -> if (current != null) { lastRefresh = 0; refreshAssets() }
+            PhotoSettings.ALBUM_ID -> {
+                val id = settings.getString(PhotoSettings.ALBUM_ID, "")
+                albums.firstOrNull { it.id == id }?.takeIf { it.id != album?.id }?.let { pick(it) }
+            }
+            PhotoSettings.ALBUM_NAME -> {
+                val name = settings.getString(PhotoSettings.ALBUM_NAME, "").trim()
+                if (name.isEmpty() || name.equals(album?.name, ignoreCase = true)) return
+                val a = albums.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                if (a != null) pick(a) else {
+                    // Not in the list we have (typed before albums could be listed): reload by name.
+                    settings.remove(PhotoSettings.ALBUM_ID)
+                    started = false
+                    start()
+                }
+            }
+        }
     }
 
     // --- lifecycle ---------------------------------------------------------------------------
@@ -255,7 +312,7 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
         args.getString("album")?.let { name ->
             val a = albums.firstOrNull { it.name.equals(name, ignoreCase = true) }
             if (a != null && a.id != album?.id) pick(a)
-            else if (a == null) settings.putString(KEY_ALBUM_NAME, name).also { settings.remove(KEY_ALBUM_ID) }
+            else if (a == null) settings.putString(PhotoSettings.ALBUM_NAME, name).also { settings.remove(PhotoSettings.ALBUM_ID) }
         }
         if (args.getString("controls") == "1") { keepControls = true; wake() }
         if (args.getString("sheet") == "1") { keepControls = true; wake(); if (albums.isNotEmpty()) openSheet() else openSheetWhenLoaded = true }
@@ -275,6 +332,7 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
                 albums = res.value
                 albumsOffline = res.offline
                 albumList.albums = albums
+                library.onAlbums(r, albums)
                 val a = chooseAlbum(albums)
                 if (a == null) { setStatus("No albums on ${r.sourceName}"); return@launch }
                 setAlbum(a)
@@ -292,8 +350,8 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
     }
 
     private fun chooseAlbum(list: List<Album>): Album? {
-        val id = settings.getString(KEY_ALBUM_ID, "")
-        val name = settings.getString(KEY_ALBUM_NAME, "")
+        val id = settings.getString(PhotoSettings.ALBUM_ID, "")
+        val name = settings.getString(PhotoSettings.ALBUM_NAME, "")
         return list.firstOrNull { it.id == id }
             ?: list.firstOrNull { name.isNotEmpty() && it.name.equals(name, ignoreCase = true) }
             ?: list.firstOrNull { it.name.equals("Family", ignoreCase = true) }
@@ -311,7 +369,7 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
         val res = r.assets(a)
         lastRefresh = SystemClock.elapsedRealtime()
         setOffline(res.offline)
-        show.setAssets(res.value, shuffle = r.shuffle)
+        show.setAssets(res.value, shuffle = r.shuffle && PhotoSettings.shuffle(settings))
         retry = null; retryMs = RETRY_MIN_MS
         when {
             res.value.isEmpty() -> setStatus("No photos in ${a.name}")
@@ -346,13 +404,14 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
     }
 
     private fun pick(a: Album) {
-        settings.putString(KEY_ALBUM_ID, a.id)
-        settings.putString(KEY_ALBUM_NAME, a.name)
         if (sheetOpen) closeSheet()
-        if (a.id == album?.id) return
-        val r = repo ?: return
-        val s = scope ?: return
-        setAlbum(a)
+        val same = a.id == album?.id
+        val r = repo
+        val s = scope
+        if (!same && r != null && s != null) setAlbum(a) // before saving, so the change echo is a no-op
+        settings.putString(PhotoSettings.ALBUM_ID, a.id)
+        settings.putString(PhotoSettings.ALBUM_NAME, a.name)
+        if (same || r == null || s == null) return
         prefetchJob?.cancel(); prefetchJob = null
         prepared?.recycle(); prepared = null
         show.clear()
@@ -572,9 +631,13 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
         val cur = current
         val a = album
         when {
+            r == null && !library.ready.value -> {
+                caption.captionTitle = ""
+                caption.captionSubtitle = ""
+            }
             r == null -> {
                 caption.captionTitle = "Photo frame"
-                caption.captionSubtitle = "Add an Immich server and API key to show your albums"
+                caption.captionSubtitle = "Add an Immich server and API key in Settings to show your albums"
             }
             cur != null && a != null -> {
                 val c = Captions.caption(cur.asset, a.name, LocalDate.now(), r.sourceName, offline)
@@ -673,6 +736,7 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
             try {
                 val res = r.albums()
                 albums = res.value; albumsOffline = res.offline
+                library.onAlbums(r, albums)
                 if (sheetOpen) {
                     albumList.albums = albums
                     albumList.status = if (res.offline) "Offline · saved album list" else null
@@ -802,9 +866,6 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
 
     companion object {
         private const val TAG = "EchoPhotos"
-        const val KEY_ALBUM_ID = "photos.album.id"
-        const val KEY_ALBUM_NAME = "photos.album.name"
-        const val KEY_SECONDS = "photos.seconds"
 
         /** Design: opacity 1.4s ease, transform 9s linear, active scale 1.08. */
         private const val FADE_MS = 1400L
@@ -819,14 +880,5 @@ class PhotosScreen(context: Context, private val services: EchoServices) : Frame
 
         private val TIME_12 = DateTimeFormatter.ofPattern("h:mm")
         private val TIME_24 = DateTimeFormatter.ofPattern("H:mm")
-
-        fun createRepository(context: Context, services: EchoServices): PhotoRepository? {
-            val s = services.config.secrets
-            return when {
-                s.immichConfigured -> ImmichRepository.create(s.immichUrl, s.immichApiKey, context.cacheDir)
-                services.config.demoData -> DemoRepository()
-                else -> null
-            }
-        }
     }
 }
