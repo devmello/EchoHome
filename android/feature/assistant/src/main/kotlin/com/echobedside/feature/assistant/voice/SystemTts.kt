@@ -98,7 +98,7 @@ class SystemTtsSpeaker(private val context: Context, private val engine: String?
  * [base] (sherpa-onnx) plus the voice "system" when an Android TTS engine is installed. Choosing it
  * speaks through that engine; every other voice is a sherpa-onnx voice.
  */
-class VoiceWithSystemTts(private val base: VoiceStack, private val system: SystemTtsSpeaker?) : VoiceStack by base {
+class VoiceWithSystemTts(private val base: VoiceStack, private val system: Speaker?) : VoiceStack by base {
     @Volatile private var useSystem = false
 
     override val ttsAvailable get() = if (useSystem) system != null else base.ttsAvailable
