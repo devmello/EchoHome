@@ -34,6 +34,7 @@ All checks used curl from the Mac to `http://192.168.10.136:8080` (scripts in th
 - **Every section renders and saves** (18 sections from all merged features). For one setting per section I changed the value, read it back and restored it, and all passed: general, system.display, clock (TIME night keys present), system.notifications, airplay, media, weather (LOCATION `weather.location`), calendar (COLOR), system.indicators, phone, alarm, commute, stocks, home-assistant, assistant, camera, photos. Every type showed up and was exercised: ACTION, BOOLEAN, CHOICE, COLOR, FLOAT, INT, LOCATION, SECRET, TEXT, TEXT_LIST, TIME. A bad value of each type → 422. An unknown key → 400. `system.night.mode` is no longer in the schema, and writing it → 400.
 - **Secrets:** all 7 were `unset`. For `anthropic.apiKey`, `calendar.icsUrls` (2 URLs, multiline), `immich.url`, `immich.apiKey` and `stocks.apiKey`, I wrote a dummy value (state `set`) and cleared it again (state `unset`). The value never appeared in the PUT reply, the schema or the SSE stream.
 - **Alarms:** I created a disabled 11:30 weekend alarm, which got an id. A bad time → 422 and an unknown field → 422. Editing the label worked. Deleting it → 200, and the list was back to 0. Nothing could ring.
+- **Restart app** (`POST /api/action/settings.restartApp`): the app was back about 2 s later with a new pid, the server answered, and the browser was still paired. Silent.
 - Assets come gzipped from the Echo: `/` 1.2 KB, `app.js` 9.9 KB, `app.css` 4.7 KB.
 - Found and fixed on the device: (1) the launcher crashed on start because `NsdServiceInfo().apply { port = port }` used the info's own port (0); (2) `calendar.color.*` could never go back to "default palette" once set (COLOR now accepts empty); (3) the code sheet was see-through over the pair sheet (it now has an almost opaque base).
 
@@ -52,7 +53,6 @@ The page uses plain HTTP on the LAN, because a local device can't get a certific
 
 ## Open questions
 - **No .local name of our own:** Android's mDNS daemon advertises the service at host **`Android.local`** (shared by every Android device on the network, and not settable without /system changes). So the QR code and the screen show the IP address. A DHCP reservation for the Echo keeps that address stable.
-- Restart app: `AlarmManager` relaunch 1.5 s after `killProcess`. Its device check is below.
 
 ## Left
 - Night-mode screenshot of the pair sheet (it renders red with no glass, untested on the device).
