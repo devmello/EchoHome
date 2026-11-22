@@ -65,18 +65,46 @@ with cargo-ndk on the first try (no C deps; needs only liblog/libc/libm/libdl). 
 Sender: pyatv 0.18 on the Mac (same Wi-Fi), `stream_file` of 44.1 kHz MP3s with tags + 600×600
 cover. pyatv negotiates **AirPlay 2 realtime (type 96, ALAC over ChaCha20, transient pairing)**.
 
+**Release build** (`build-install.sh --release --perf 20`, then `echo-perf.sh` while streaming), only
+this branch's features (StandBy digital face on screen):
+
+```
+### Perf 2026-11-22 04:46 (20 s, 0.1.0, release)        ← idle, receiver advertised
+- PSS total: 21.5 MB (Java 1.5 MB, Native 5.8 MB, Graphics 2.3 MB)
+- Device MemAvailable: 308 MB
+- CPU: 0.1% of one core (avg over 20s)
+### Perf 2026-11-22 04:46 (30 s, 0.1.0, release)        ← streaming (pyatv, AP2 realtime ALAC)
+- PSS total: 25.4 MB (Java 3.7 MB, Native 6.7 MB, Graphics 2.5 MB)
+- CPU: 3.2% of one core (avg over 30s)
+### Perf after stream (15 s)                            ← sender gone
+- PSS total: 25.3 MB, CPU: 0.0% of one core
+```
+
+Debug build, per thread (`/proc/<pid>/task/*/stat` over 15 s while streaming):
+
 | | Whole app CPU | Receiver threads | audioserver | PSS (whole app) |
 |---|---|---|---|---|
-| Idle, receiver advertised | **0 ticks in 20 s (0 %)** | — (2 tokio workers parked) | — | 33.2 MB |
-| Streaming AP2 realtime ALAC | **3.9 % of one core** | tokio worker 2.5 %, `airplay-audio` 1.2 % | 4.1 % (44.1→48 kHz mixer) | 37.0 MB (+3.8) |
+| Idle, receiver advertised | **0 ticks in 20 s (0 %)** | — (2 tokio workers parked in epoll) | — | 33.2 MB |
+| Streaming, AP2 realtime ALAC | **3.9 %** of one core | tokio worker 2.5 % (decrypt + ALAC), `airplay-audio` 1.2 % | 4.1 % (44.1 → 48 kHz mixer) | 37.0 MB (+3.8) |
+| Streaming, AP1 (`--es mode ap1`) | **1.9 %** | tokio worker 1.1 % | 3.0 % | 36.1 MB (+3.4) |
 
-- Native heap 6 MB idle → 7.5 MB streaming. The `.so` adds 2.2 MB to the APK.
+- So the receiver costs ~3–4 % of one A53 core plus ~3–4 % in audioserver (four cores = 400 %),
+  ~4 MB PSS while streaming, nothing while idle. Native heap 6 MB idle → 7.5 MB streaming.
+  The `.so` adds 2.2 MB to the APK.
 - Advertising: the Mac sees `76A341AF9034@Echo Bedside._raop._tcp` and `Echo Bedside._airplay._tcp`
   within ~1 s of the service starting (`dns-sd -B`); pyatv's scan finds it in 1.0 s.
 - Connect → first PCM: ~0.45 s (pair-setup ~0.3 s). Receiver start: 7–23 ms.
 - Metadata, artwork (600×600) and duration reached MediaHub (`hub:` lines in logcat, tag
-  `EchoAirPlay`), track change A → B swapped text + art correctly, 0 samples dropped.
-- AirPlay 1 mode: see below.
+  `EchoAirPlay`), track change A → B swapped text + art correctly, 0 samples dropped. Example:
+  `hub: "Test Tone A" / "Echo Agent C" / "Bedside Sessions" art=600x600 pos=0/120000 playing=true from="<the Mac's name>" vol=0.33`
+- AirPlay 1 mode also streams with metadata + artwork (pyatv needs a test-only shim: shairplay
+  answers SETUP with `Session: DEADBEEF`, which iOS accepts and pyatv doesn't). The sender's
+  DACP-ID arrives ("DACP remote control available"), but pyatv runs no DACP server, so commands
+  aren't verified; the library also spends 2 s browsing for `_dacp._tcp` during SETUP when the
+  sender doesn't advertise one (iOS / Music do).
+- The release build (R8) works: the consumer ProGuard rules keep the JNI names.
+- pyatv closes the connection between tracks, so the hub clears and the island ends between them;
+  iOS / macOS keep the session open across tracks.
 
 ### Latency / sync notes
 - Playback is "as soon as decoded": the library has no PTP/NTP-anchored playout yet (its
