@@ -1,6 +1,6 @@
 # System layer (agent B) — `:feature:system`
 
-Branch `worktree-agent-a105af019691ec581`. Overlays: island z300, banners z400, HUDs z500, Control Center z600 (the camera overlay owns z250 and the camera-in-use dot). Plain Views, no AndroidX/Compose, no live blur: glass refracts pre-blurred 1/4-scale snapshots, and every full-window blur runs on a background thread.
+Branch `worktree-agent-a105af019691ec581` (merged a405a84), then `system-speed` (from a8c903f). Overlays: island z300, banners z400, HUDs z500, Control Center z600 (the camera overlay owns z250 and the camera-in-use dot). Plain Views, no AndroidX/Compose, no live blur: glass refracts pre-blurred 1/4-scale snapshots, and every full-window blur runs on a background thread.
 
 ## Done
 
@@ -13,16 +13,33 @@ Branch `worktree-agent-a105af019691ec581`. Overlays: island z300, banners z400, 
 - **Echo Island** (Island.dc.html): hidden / compact / split (bead) / expanded; Motion.ISLAND spring on width/height/radius, content crossfade with the 0.15 s delay, grows out of a 44 px dot, glass or black (`system.island.look`), Night red. Timer, music, assistant, doorbell, call, AirPlay / Bluetooth connected. Checked against the merged `:feature:phone`: ANCS calls ("Answer on iPhone", Decline only, or no buttons when the notification has no negative action) and `BLUETOOTH_CONNECTED` (compact while fresh; after `staleAfterElapsed` only the CC Bluetooth cell shows the phone).
 - **Settings page** (`host.registerSettings`, all live): Display (Night mode Auto/On/Off, island look), Notifications (show banners, time on screen, apps on the Echo, doorbell/alarms/calls in DND), Indicators (HUD time, mic/camera badges).
 - **Debug** (debug builds; broadcast `com.echobedside.system.DEBUG`, or the same extras on a launch/new intent via `services.intents`): `--es island story|timer|music+timer|assistant|doorbell|call|iphonecall|bluetooth|nowplaying|off`, `--es look glass|black`, `--es cc open|close`, `--es banner 0..5` (1 doorbell and 5 iPhone call are critical), `--es hud volume|brightness|micoff|micon|camoff`. Slow draws log to `EchoPerf` (debug only).
-- Unit tests: SVG path parser, HUD queue, island model, banner queue: 29 tests, all pass.
+- Unit tests: SVG path parser, HUD queue, island model, banner queue: 29 tests, all pass (+ `screenCanHideTheWholeIsland` in `:core:model`).
+- **Speed pass (`system-speed`)**:
+  - Control Center: every glass tile is 3 RenderNodes (shadow, backdrop, surface) + 1 for its content, each re-recorded only when its key changes (Night, values, pressed sub-button, backdrop). The sliders' fill/icon draw live over the recorded glass. Tiles are prewarmed 4 s after attach and at the edge pull's touch-down. Closed, the panel stays VISIBLE above the screen at alpha 0 (GONE dropped it from the render tree and HWUI freed all tile nodes, so each open re-recorded ~40 ms). While it slides or fades the panel is a hardware layer. The background toggles INVISIBLE, not GONE (GONE ↔ VISIBLE relaid out the whole window on the first reveal frame). The radios refresh at open runs off the UI thread. A panel draw is now 1–3 ms, with 0 re-records on a typical open (11 cheap backdrop re-records when the new snapshot lands).
+  - Expanded banner: recorded once into a RenderNode with a compositing layer; the 0.4 s fade is the node's alpha. That's group opacity like CSS, where it used to multiply each element's alpha, so mid-fade overlaps blend slightly differently.
+  - `:core:design` `GlassPainter` shadow: rendered once per shape size (the same `setShadowLayer`, into an immutable bitmap with the shape erased) and drawn as a 9-slice. No per-frame blur and no clip. Same look: bench screen, max 1/255 difference around the static slider (glass-shadow-before/after). architecture.md's glass rule now says to leave shadows on.
+  - `IslandManager.hideOnScreen(id)` / `hiddenOnScreens` (E's request): the island shows nothing while such a screen is current.
+  - `HardwareMonitor` logs the raw gating latch on every change (`EchoSystem`: `gating …/state=N → micMutedHardware=…`), for the polarity check.
 
 ## Left
 
-- **Control Center draw cost**: each full panel draw takes ~40 ms on the Echo (`EchoPerf` breakdown: ~4–6 ms per glass tile, spread evenly, so it's per-tile glass + text, not one hot spot), and an open causes 3–4 of them (reveal, backdrop, radios refresh, minute tick). That's the 15 % janky frames / p99 93 ms below. Next step: record each tile into its own RenderNode and re-record only tiles whose values change.
-- Expanded banner fade redraws the full-screen view each frame (13 ms): record it once into a RenderNode like the compact banner.
+- Control Center still has ~6 % janky frames (target < 5 %), p99 36 ms (target < 33 ms), in a debug build with the music island animating. What's left is (a) the first 2–3 reveal frames (UI draw 12–25 ms; this is likely cold, JIT-less debug code, since the panel itself logs < 8 ms) and (b) GPU time of ~25–30 ms on frames that redraw the whole window while CC moves (screen + blurred background + panel layer). Ideas: measure a release build; stop drawing the screen underneath once the background is opaque; drop the ShadowSlice clipOutPath like core's shadow.
 - Confirm with one real mic-button press: gating polarity, the HUD, and that the screen stays on (needs the user, after quiet hours).
 - Volume / DND / mic tests with sound are on hold for quiet hours. The Wi-Fi toggle is untested on purpose (turning Wi-Fi off would also drop wireless adb).
 
 ## Measured on the Echo
+
+**Speed pass (13:06–13:23, debug build, digital face, music island animating, raw touch events via `echo-touch.sh`, no `input` JVM):**
+
+| Scenario | Before (a8c903f) | After (`system-speed`) |
+|---|---|---|
+| CC open/close ×3 (16 s) | 18.1 % janky, p50/p90/p99 11 / 20 / 109 ms, CPU 43 % | **6.3 % janky, 5 / 12 / 36 ms**, CPU 31 % |
+| CC panel draw per open | 3–4 draws × 30–50 ms | prewarm 2–5 ms (0–1 re-records), draws 1–3 ms, backdrop arrival 11 cheap re-records |
+| Banner expand + close | 19.7 % janky, p90 42 / p99 53 ms (expanded fade 20 ms per frame) | 10.9–12 % janky, p90 17 ms (one 38 ms record, then the fade composites a layer); p99 28–81 ms varies run to run |
+| Bench, moving core glass with shadows, back-to-back framestats | 85 % janky, p50 20 / p99 34 ms, GPU p50 23 ms, UI 6.5 ms | 55 % janky, p50 18 / p99 27 ms, GPU p50 15 ms, UI 3.4 ms (another run: 0.2 % janky, p50 7 / p99 11 ms) |
+| Idle (digital face) | 0.7 % janky, 5 ms | 0 %, 5 ms; PSS 62 → 66 MB |
+
+Before the speed pass:
 
 Release-like conditions not yet measured; all numbers are the debug build with every merged feature installed (whole-app PSS), 05:40, after the system install, DND on, analog face on screen (it renders ~26 fps by itself, which is the idle frame count).
 
@@ -58,10 +75,12 @@ Improvements made from these runs: island crash fix (it never drew in the first 
 | banner-04-iphone, banner-08-critical-async-glass | Banners + `sourceDevice` | 08: glass from the PixelCopy backdrop over the analog face |
 | banner-06-dnd-hides-message | DND | a non-critical banner doesn't show |
 | cc-01-open, cc-02-bluetooth-phone | ControlCenter.dc.html | DND "On until 7:00 AM" wraps like the design |
+| cc-03-tile-nodes | ControlCenter.dc.html | after the RenderNode change: same as before |
+| glass-shadow-before, glass-shadow-after | core glass (bench screen) | shadow layer vs cached 9-slice: ≤ 1/255 around the slider |
 
 ## Open questions
 
-1. **Gating polarity**: `amazon-gating/state` reads `0` with the mics on. B assumes `1` = mics cut (`GATING_MUTED_VALUE`). One press with the red LED seen confirms it (logcat `EchoSystem`).
+1. **Gating polarity**: `amazon-gating/state` reads `0` with the mics on (rechecked 13:25). B assumes `1` = mics cut (`GATING_MUTED_VALUE`). B can't press the physical button, and injecting the key wouldn't move the hardware latch. One press by the user with the red LED seen confirms it: `logcat -s EchoSystem | grep gating` shows the raw value.
 2. **Shutter via dumpsys**: the in-process window policy dump returns nothing even with DUMP, so B reads debugfs (works, live). Fine either way.
 3. **iPhone call "Silence"**: per the lead only Decline shows. Silence could take the Accept slot as a neutral button.
 4. The 05:12 Android Settings (System page) in front of the launcher wasn't B as far as B can tell: B's runs never tap the CC settings button (only edge swipes at x 200 and BACK), B's run 4 ended 05:11:55 and run 5 started 05:12:44 with `am start` of our activity. B's runs now end with `am start` MainActivity anyway.
