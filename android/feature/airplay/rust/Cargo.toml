@@ -1,0 +1,28 @@
+[package]
+name = "echo_airplay"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+publish = false
+description = "JNI bridge from Echo Bedside's :feature:airplay to the shairplay AirPlay receiver (audio only)"
+license = "LGPL-3.0-or-later"
+
+[lib]
+name = "echo_airplay"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Audio only: `ap2` (AirPlay 2 buffered AAC + pairing) plus the default `fairplay`.
+# Never `video` / `hls` (no mirroring, NOTES §6).
+shairplay = { version = "=0.13.0", features = ["ap2"] }
+jni = "0.21"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std", "registry"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+debug = false
