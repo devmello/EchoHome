@@ -47,7 +47,7 @@ object AssistantFeature : EchoFeature {
             api = ClaudeClient({ services.config.secrets.anthropicApiKey }),
             tools = EchoTools({ services }),
             name = { services.settings.getString(AssistantEngine.KEY_NAME, "Nova") },
-            location = { services.weather.weather.value?.location.orEmpty() },
+            location = { services.location.value.name.ifBlank { services.weather.weather.value?.location.orEmpty() } },
         )
         val engine = AssistantEngine(
             scope = services.scope,

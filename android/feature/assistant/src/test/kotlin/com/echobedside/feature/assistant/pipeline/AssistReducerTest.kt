@@ -79,6 +79,8 @@ class AssistReducerTest {
         assertEquals("Music", ToolLabels.label("now_playing"))
         assertEquals("Music", ToolLabels.label("media_control"))
         assertEquals("Volume", ToolLabels.label("set_volume"))
+        assertEquals("Brightness", ToolLabels.label("set_brightness"))
+        assertEquals("Display", ToolLabels.label("get_display"))
         assertEquals("Home", ToolLabels.label("home_control"))
         assertEquals("AirPlay", ToolLabels.label("AirPlay"))
         assertEquals("Do thing", ToolLabels.label("do_thing"))

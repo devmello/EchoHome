@@ -52,6 +52,10 @@ class EchoTools(
             "now_playing" -> nowPlaying(s)
             "media_control" -> mediaControl(s, input)
             "set_volume" -> setVolume(s, input)
+            "set_brightness" -> setBrightness(s, input)
+            "get_display" -> s.system.state.value.let { st ->
+                ToolOutcome(JSONObject().put("brightness_percent", (st.brightness * 100).toInt()).put("volume_percent", (st.volume * 100).toInt()))
+            }
             "home_list" -> if (s.config.secrets.haConfigured) homeList(s, input) else notAvailable()
             "home_control" -> if (s.config.secrets.haConfigured) homeControl(s, input) else notAvailable()
             else -> ToolOutcome.error("UNKNOWN_TOOL", "No tool named $name")
@@ -155,7 +159,7 @@ class EchoTools(
                 .put("condition", it.condition.name.lowercase()).put("precip_chance", it.precipChance)
         })
         val out = JSONObject()
-            .put("location", w.location).put("unit", w.unit)
+            .put("location", w.location.ifBlank { s.location.value.name }).put("unit", w.unit)
             .put("now", JSONObject().put("temp", w.temperature).put("condition", w.condition.name.lowercase()).put("night", w.isNight))
             .put("today", JSONObject().put("high", w.high).put("low", w.low))
             .put("tomorrow_summary", w.tomorrowSummary ?: JSONObject.NULL)
@@ -191,7 +195,8 @@ class EchoTools(
         val st = m.state
         return ToolOutcome(JSONObject().put("loaded", true).put("playing", st.playing)
             .put("title", st.title).put("artist", st.artist).put("album", st.album)
-            .put("source", st.sourceLabel.ifEmpty { st.source.name.lowercase() }),
+            .put("source", st.sourceLabel.ifEmpty { st.source.name.lowercase() })
+            .put("can_skip", m.controls.canSkip).put("can_pause", m.controls.canPause),
             card = ResultCard.Media(st.title, listOf(st.artist, st.sourceLabel).filter { it.isNotBlank() }.joinToString(" · ")))
     }
 
@@ -199,6 +204,11 @@ class EchoTools(
         val m = s.media.current.value ?: return ToolOutcome.error("NOTHING_LOADED", "Nothing is playing on this display. It can't search for music; start something with AirPlay or Spotify first.")
         val c = m.controls
         val action = input.getString("action")
+        val src = m.state.sourceLabel.ifBlank { "This source" }
+        if ((action == "next" || action == "previous") && !c.canSkip)
+            return ToolOutcome.error("CANT_SKIP", "$src doesn't let the display skip tracks; skip on the phone.")
+        if (action == "pause" && !c.canPause)
+            return ToolOutcome.error("CANT_PAUSE", "$src can't be paused from the display.")
         when (action) {
             "play" -> c.play()
             "pause" -> c.pause()
@@ -216,6 +226,13 @@ class EchoTools(
         val ok = s.systemControls.setVolume(pct / 100f, showHud = true)
         return if (ok) ToolOutcome(JSONObject().put("volume_percent", pct), card = ResultCard.Action("Volume", "$pct%", Icon.PLAY))
         else ToolOutcome.error("FAILED", "Couldn't change the volume.")
+    }
+
+    private fun setBrightness(s: EchoServices, input: JSONObject): ToolOutcome {
+        val pct = input.getInt("percent")
+        val ok = s.systemControls.setBrightness(pct / 100f, showHud = true)
+        return if (ok) ToolOutcome(JSONObject().put("brightness_percent", pct), card = ResultCard.Action("Brightness", "$pct%", Icon.BRIGHTNESS))
+        else ToolOutcome.error("FAILED", "Couldn't change the brightness.")
     }
 
     // ---- Home Assistant (optional) ----
@@ -301,10 +318,13 @@ class EchoTools(
             ToolSpec("get_calendar", "The user's calendar events for today or tomorrow.",
                 props("day" to str("Which day.", listOf("today", "tomorrow"))), listOf("day")),
             ToolSpec("now_playing", "What's playing on this display (AirPlay, Spotify or another app)."),
-            ToolSpec("media_control", "Control what's already playing on this display. It can't search for or start new music.",
+            ToolSpec("media_control", "Control what's already playing on this display. It can't search for or start new music, and some sources (e.g. AirPlay) can't skip or pause: now_playing says.",
                 props("action" to str("What to do.", listOf("play", "pause", "next", "previous"))), listOf("action")),
             ToolSpec("set_volume", "Set this display's speaker volume.",
                 props("percent" to int("0-100", 0, 100)), listOf("percent")),
+            ToolSpec("get_display", "This display's current screen brightness and volume, in percent."),
+            ToolSpec("set_brightness", "Set this display's screen brightness. For \"brighter\" or \"dimmer\", read get_display and move about 20 points.",
+                props("percent" to int("1-100", 1, 100)), listOf("percent")),
         )
 
         val HOME = listOf(

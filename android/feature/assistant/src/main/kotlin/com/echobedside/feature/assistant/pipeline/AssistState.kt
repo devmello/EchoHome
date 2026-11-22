@@ -103,6 +103,8 @@ object ToolLabels {
         "traffic" to "Traffic",
         "commute" to "Traffic",
         "airplay" to "AirPlay",
+        "display" to "Display", // before "play"
+        "bright" to "Brightness",
         "media" to "Music",
         "music" to "Music",
         "play" to "Music",
