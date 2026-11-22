@@ -42,7 +42,7 @@ What's in this folder:
 - `amonet/`: the amonet-checkers v2.0.2 jailbreak (bootrom exploit, TWRP, fastboot images) and an extracted copy.
 - `rom/lineage-18.1-20261101-UNOFFICIAL-checkers.zip`: the ROM that's installed.
 - `platform-tools/` (+ zip): adb / fastboot for macOS.
-- `backups/`: empty right now. Back up partitions here before any risky flash.
+- `backups/`: `20261122-052747/` is the full verified backup (all 14 partitions except userdata and cache, gzip images + `SHA256SUMS`, taken after the system-app install, so `system` includes Vesper's three files). Make one with `./scripts/echo-backup.sh` before any risky change.
 - `design/`: the design source for every screen (see §2).
 
 **The 1 GB of RAM is the main constraint.** The Echo should be a thin client: screen, mics and speaker. Heavy work (wake word, speech-to-text, the LLM, face recognition) runs on a server.
@@ -306,7 +306,7 @@ Design rule: **the expensive step runs at most once per person arriving, never c
 - [x] Ambient light sensor: yes.
 - [x] Build type: **userdebug** (adb root, remount, SystemUI plugins possible). No `su`. **`adb root` needs LineageOS's "Rooted debugging" toggle** (Developer options); it's off, and it's a security setting for the user to switch on. Without it `adb root` only restarts adbd (the wireless port changes).
 - [x] System setup approved by the user (Nov 22, 2026): Camera app disabled (`pm disable-user com.android.camera2`) and lock screen disabled (`locksettings set-disabled true`): **done**. Priv-app install + mic key layout: **done Nov 22, 05:25** (`scripts/echo-system-install.sh`; user turned on Rooted debugging). Verified after the reboot: `/system/priv-app/Vesper` with PRIVILEGED (adb installs become UPDATED_SYSTEM_APP updates and keep it), BLUETOOTH_PRIVILEGED + START_ACTIVITIES_FROM_BACKGROUND granted, `KeyLayoutFile: /system/usr/keylayout/gating.kl`, HOME still ours. Undo: `scripts/echo-system-undo.sh`.
-  - **Incident:** the backup before the install was incomplete (a script bug copied only `kb`, yet marked it complete), so the install ran without a full backup. The install only *added* three files (APK dir, allow-list XML, gating.kl), which the undo script removes. Earlier verified copies of recovery, swdl and kb exist in `backups/INCOMPLETE-20261122-051325`. Fixed the script (`5e8064a`) and took a full verified backup afterwards.
+  - **Incident:** the backup before the install was incomplete (a script bug copied only `kb`, yet marked it complete), so the install ran without a full backup. The install only *added* three files (APK dir, allow-list XML, gating.kl), which the undo script removes. Earlier verified copies of recovery, swdl and kb exist in `backups/INCOMPLETE-20261122-051325`. Fixed the script (`5e8064a`) and took a full verified backup afterwards: `backups/20261122-052747` (14 partitions, each checked against an on-device sha256).
   - After this reboot the Echo offered plain adb on `:5555` instead of wireless debugging; `scripts/echo-connect.sh` falls back to it.
 - [ ] Camera: detected by both camera APIs. Test a real preview/capture. Apply the camera patch only if capture fails.
 - [ ] Slide the camera shutter during `getevent -l` and record the `SW_CAMERA_LENS_COVER` values.
@@ -314,7 +314,7 @@ Design rule: **the expensive step runs at most once per person arriving, never c
 - [ ] Does `adb connect 192.168.10.136:5555` work, and does it survive a reboot?
 - [ ] CPU/RAM headroom with the AirPlay receiver + our launcher + mic streaming running together.
 - [x] Compose vs Views: **Views** chosen; Views + pre-blurred glass hold 59 fps with 7 ms frames (§8.1).
-- [ ] Back up partitions (TWRP) into `backups/` before installing anything as a system app.
+- [x] Back up partitions into `backups/` (`20261122-052747`, after the system-app install; see the incident above).
 - [x] Wireless adb pairing from the Mac works (Nov 22, 2026). IP 192.168.10.136. Give it a DHCP reservation.
 - [ ] Profile pipeline: measure presence-check and face-detection cost (CPU %, ms per frame) on the device before building the full flow.
 - [ ] Overlay window (island over other apps) behaviour and performance on Android 11.
