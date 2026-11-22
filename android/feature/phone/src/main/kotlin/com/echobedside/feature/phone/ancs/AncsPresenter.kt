@@ -33,6 +33,8 @@ class AncsPresenter(
     private val perform: (uid: Long, actionId: Int) -> Unit,
     var showSilent: Boolean = false,
     var clearOnDismiss: Boolean = true,
+    /** Lower-case bundle ids or app names whose notifications don't banner (calls always show). */
+    var hiddenApps: Set<String> = emptySet(),
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     /** Banners we posted and believe are still in the feed, by uid. */
@@ -57,6 +59,7 @@ class AncsPresenter(
             return
         }
         if (n.silent && !showSilent) return
+        if (hidden(n)) return
         posted[n.uid] = n
         feed.post(banner(n))
     }
@@ -129,7 +132,16 @@ class AncsPresenter(
         )
     }
 
+    private fun hidden(n: AncsNotification): Boolean {
+        if (hiddenApps.isEmpty()) return false
+        val name = n.appName ?: AppCatalog.lookup(n.appId)?.name
+        return n.appId.lowercase() in hiddenApps || (name != null && name.lowercase() in hiddenApps)
+    }
+
     companion object {
+        /** The "phone.hiddenApps" setting: comma-separated bundle ids or app names. */
+        fun parseAppList(s: String): Set<String> = s.split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+
         /** NegativeAction labels that mean "clear this notification" (iOS uses "Clear"), lower case. */
         private val CLEAR_LABELS = setOf("clear", "dismiss", "close", "löschen", "entfernen", "effacer", "borrar",
             "eliminar", "cancella", "rimuovi", "wissen", "rensa", "fjern", "tyhjennä", "limpar", "очистить", "清除", "クリア", "지우기")

@@ -3,7 +3,7 @@ package com.echobedside.feature.phone
 /** What the pairing screen shows. */
 data class PhoneState(
     val bluetoothOn: Boolean = false,
-    val echoName: String = "Echo Show 5",
+    val echoName: String = "Echo Show",
     /** LE advertising is running (the iPhone can find / reconnect to the Echo). */
     val advertising: Boolean = false,
     /** The gate: LE advertising works on this controller; null until probed. */
@@ -20,7 +20,8 @@ data class PhoneState(
     val status: String = "",
 )
 
-data class PairingPrompt(val deviceName: String, val address: String, val passkey: String?, val variant: Int)
+/** [canConfirm]: the Echo can answer it itself (BLUETOOTH_PRIVILEGED); otherwise the system dialog has the buttons. */
+data class PairingPrompt(val deviceName: String, val address: String, val passkey: String?, val variant: Int, val canConfirm: Boolean = false)
 
 data class PhoneInfo(
     val address: String,

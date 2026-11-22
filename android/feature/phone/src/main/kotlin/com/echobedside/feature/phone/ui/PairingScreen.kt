@@ -73,6 +73,8 @@ open class PairingScreen(context: Context, private val services: EchoServices, p
     private val forgetRect = RectF()
     private val doneRect = RectF()
     private val primaryRect = RectF()
+    private val pairRect = RectF()
+    private val cancelRect = RectF()
 
     private var notifKnob = 1f
     private var audioKnob = 1f
@@ -207,6 +209,18 @@ open class PairingScreen(context: Context, private val services: EchoServices, p
 
     private fun drawButtons(c: Canvas, white: Int) {
         val top = 480f - 34f - 72f
+        if (s.pairing?.canConfirm == true) {
+            // The Echo answers the pairing itself: Pair (the one tinted action) + Cancel, in place of Done.
+            pairRect.set(736f, top, 896f, top + 72f)
+            cancelRect.set(pairRect.left - 14f - 160f, top, pairRect.left - 14f, top + 72f)
+            doneGlass.draw(c, cancelRect.left, cancelRect.top, cancelRect.right, cancelRect.bottom, 36f)
+            centered(c, tButton, "Cancel", cancelRect, white)
+            primaryGlass.draw(c, pairRect.left, pairRect.top, pairRect.right, pairRect.bottom, 36f)
+            centered(c, tButton, "Pair", pairRect, white)
+            doneRect.setEmpty(); primaryRect.setEmpty()
+            return
+        }
+        pairRect.setEmpty(); cancelRect.setEmpty()
         doneRect.set(736f, top, 896f, top + 72f)
         doneGlass.draw(c, doneRect.left, doneRect.top, doneRect.right, doneRect.bottom, 36f)
         centered(c, tButton, "Done", doneRect, white)
@@ -280,6 +294,8 @@ open class PairingScreen(context: Context, private val services: EchoServices, p
         fun hit(rr: RectF) = !rr.isEmpty && x >= rr.left - pad && x <= rr.right + pad && y >= rr.top - pad && y <= rr.bottom + pad
         val phone = s.phones.firstOrNull()
         when {
+            hit(pairRect) -> if (demoState != null) demoState = s.copy(pairing = null) else controller?.confirmPairing(true)
+            hit(cancelRect) -> if (demoState != null) demoState = s.copy(pairing = null) else controller?.confirmPairing(false)
             hit(doneRect) -> services.navigator.home()
             hit(primaryRect) -> runCatching { @Suppress("DEPRECATION") BluetoothAdapter.getDefaultAdapter()?.enable() }
             hit(notifSwitch) -> if (demoState != null) demoState = s.copy(notificationsEnabled = !s.notificationsEnabled) else controller?.let { it.notificationsEnabled = !it.notificationsEnabled }

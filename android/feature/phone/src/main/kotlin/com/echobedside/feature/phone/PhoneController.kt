@@ -10,10 +10,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.SystemClock
 import android.util.Log
 import com.echobedside.core.model.ActivityKind
+import com.echobedside.core.model.DeviceName
 import com.echobedside.core.model.EchoServices
 import com.echobedside.core.model.LiveActivity
 import com.echobedside.core.model.LiveContent
@@ -77,11 +79,39 @@ class PhoneController(private val context: Context, private val services: EchoSe
 
     var notificationsEnabled: Boolean
         get() = settings.getBoolean(KEY_NOTIFICATIONS, true)
-        set(v) { settings.putBoolean(KEY_NOTIFICATIONS, v); if (!v) dropAncs() ; updateMode(); publishState() }
+        set(v) { settings.putBoolean(KEY_NOTIFICATIONS, v); applySetting(KEY_NOTIFICATIONS) }
 
     var audioEnabled: Boolean
         get() = settings.getBoolean(KEY_AUDIO, true)
-        set(v) { settings.putBoolean(KEY_AUDIO, v); media.enabled = v; publishState() }
+        set(v) { settings.putBoolean(KEY_AUDIO, v); applySetting(KEY_AUDIO) }
+
+    /** Settings apply live (from the pairing screen, or the web settings page via SettingsStore.changes). */
+    private fun applySetting(key: String) {
+        when (key) {
+            KEY_NOTIFICATIONS -> { if (!notificationsEnabled) dropAncs(); updateMode() }
+            KEY_AUDIO -> { media.enabled = audioEnabled; applyAudioPolicy() }
+            KEY_SHOW_SILENT -> presenter?.showSilent = settings.getBoolean(KEY_SHOW_SILENT, false)
+            KEY_CLEAR_ON_DISMISS -> presenter?.clearOnDismiss = settings.getBoolean(KEY_CLEAR_ON_DISMISS, true)
+            KEY_HIDDEN_APPS -> presenter?.hiddenApps = hiddenApps()
+            DeviceName.KEY -> applyName()
+            else -> return
+        }
+        publishState()
+    }
+
+    private fun hiddenApps(): Set<String> = AncsPresenter.parseAppList(settings.getString(KEY_HIDDEN_APPS, ""))
+
+    /** The Bluetooth name is the Echo's name everywhere ([DeviceName], setting "device.name"). */
+    private fun applyName() {
+        val a = adapter ?: return
+        if (!a.isEnabled) return
+        val want = DeviceName.get(settings)
+        val have = runCatching { a.name }.getOrNull()
+        if (have != want) Log.i(TAG, "Bluetooth name '$have' -> '$want': ${runCatching { a.setName(want) }.getOrDefault(false)}")
+    }
+
+    /** With BLUETOOTH_PRIVILEGED (priv-app install), the Echo can confirm pairing itself and refuse audio when it's off. */
+    val privileged: Boolean get() = context.checkSelfPermission(PERMISSION_BLUETOOTH_PRIVILEGED) == PackageManager.PERMISSION_GRANTED
 
     private fun savedAddress() = settings.getString(KEY_ADDRESS, "")
     private fun savedName() = settings.getString(KEY_NAME, "iPhone")
@@ -104,6 +134,7 @@ class PhoneController(private val context: Context, private val services: EchoSe
         }
         context.registerReceiver(receiver, f, null, handler)
         media.enabled = audioEnabled
+        services.scope.launch { settings.changes.collect { applySetting(it) } }
         services.scope.launch { services.notifications.banners.collect { presenter?.onFeedChanged() } }
         val g = peripheral.probeGate()
         Log.i(TAG, "LE gate: $g")
@@ -113,6 +144,7 @@ class PhoneController(private val context: Context, private val services: EchoSe
     }
 
     private fun onBluetoothOn() {
+        applyName()
         media.start()
         findConnectedAudio()
         peripheral.onAdapterOn()
@@ -204,6 +236,7 @@ class PhoneController(private val context: Context, private val services: EchoSe
             settings.putString(KEY_NAME, nameOf(d))
             val p = AncsPresenter(services.notifications, services.island, d.address, { nameOf(d) }, ::performAction,
                 showSilent = settings.getBoolean(KEY_SHOW_SILENT, false), clearOnDismiss = settings.getBoolean(KEY_CLEAR_ON_DISMISS, true))
+            p.hiddenApps = hiddenApps()
             presenter = p
             session = AncsSession(client, p::onNotification)
             updateMode()
@@ -307,7 +340,43 @@ class PhoneController(private val context: Context, private val services: EchoSe
         publishState()
     }
 
+    // --- pairing confirmation (privileged) ---
+
+    private var pairingDevice: BluetoothDevice? = null
+
+    /** Pair / Cancel on our own screen; needs BLUETOOTH_PRIVILEGED, otherwise the system dialog does it. */
+    fun confirmPairing(accept: Boolean) {
+        val d = pairingDevice ?: return
+        val ok = runCatching { d.setPairingConfirmation(accept) }.onFailure { Log.w(TAG, "setPairingConfirmation", it) }.getOrDefault(false)
+        Log.i(TAG, "pairing ${if (accept) "confirmed" else "rejected"} for ${d.address}: $ok")
+        if (!accept) _state.update { it.copy(pairing = null) }
+    }
+
+    /**
+     * Audio off: with BLUETOOTH_PRIVILEGED, forbid the A2DP sink connection for the paired phone
+     * (it can't stream to the Echo at all); without it, the stream still plays but isn't shown.
+     */
+    private fun applyAudioPolicy() {
+        val p = a2dpSink ?: return
+        if (!privileged) return
+        val policy = if (audioEnabled) 100 else 0 // CONNECTION_POLICY_ALLOWED / FORBIDDEN
+        val targets = listOfNotNull(audioDevice) + (adapter?.bondedDevices?.filter { it.address == savedAddress() } ?: emptyList())
+        for (d in targets.distinctBy { it.address }) {
+            val ok = runCatching { p.javaClass.getMethod("setConnectionPolicy", BluetoothDevice::class.java, Int::class.javaPrimitiveType).invoke(p, d, policy) }
+            Log.i(TAG, "A2DP sink policy $policy for ${d.address}: ${ok.getOrNull() ?: ok.exceptionOrNull()}")
+        }
+        if (!audioEnabled) disconnectAudio()
+    }
+
     // --- forget ---
+
+    /** The settings page's "Forget iPhone": the paired phone (ANCS) and any phone streaming audio. */
+    fun forgetSaved(): String {
+        val targets = listOfNotNull(savedAddress().ifEmpty { null }, audioDevice?.address).distinct()
+        if (targets.isEmpty()) return "No iPhone is paired"
+        targets.forEach(::forget)
+        return "Forgot ${targets.size} device${if (targets.size > 1) "s" else ""}"
+    }
 
     fun forget(address: String) {
         if (client?.device?.address == address) dropAncs()
@@ -364,7 +433,7 @@ class PhoneController(private val context: Context, private val services: EchoSe
         _state.update {
             it.copy(
                 bluetoothOn = on,
-                echoName = runCatching { a?.name }.getOrNull() ?: it.echoName,
+                echoName = DeviceName.get(settings),
                 discoverable = a?.scanMode == BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE,
                 phones = phones,
                 notificationsEnabled = notificationsEnabled,
@@ -403,7 +472,8 @@ class PhoneController(private val context: Context, private val services: EchoSe
                     val key = i.getIntExtra(BluetoothDevice.EXTRA_PAIRING_KEY, Int.MIN_VALUE)
                     val passkey = if (key == Int.MIN_VALUE) null else if (variant == VARIANT_DISPLAY_PIN) key.toString() else "%06d".format(key)
                     Log.i(TAG, "pairing request from ${d.address} variant=$variant")
-                    _state.update { it.copy(pairing = PairingPrompt(nameOf(d), d.address, passkey, variant)) }
+                    pairingDevice = d
+                    _state.update { it.copy(pairing = PairingPrompt(nameOf(d), d.address, passkey, variant, canConfirm = privileged && variant in CONFIRM_VARIANTS)) }
                     // Show the code on our screen too (the system dialog has the buttons).
                     if (services.navigator.current.value != PhoneFeature.SCREEN_ID) services.navigator.show(PhoneFeature.SCREEN_ID)
                 }
@@ -440,6 +510,8 @@ class PhoneController(private val context: Context, private val services: EchoSe
         const val KEY_NAME = "phone.device.name"
         const val KEY_SHOW_SILENT = "phone.showSilent"
         const val KEY_CLEAR_ON_DISMISS = "phone.clearOnDismiss"
+        const val KEY_HIDDEN_APPS = "phone.hiddenApps"
+        const val PERMISSION_BLUETOOTH_PRIVILEGED = "android.permission.BLUETOOTH_PRIVILEGED"
 
         /** Hidden in API 30: BluetoothProfile.A2DP_SINK and its connection-state broadcast. */
         const val A2DP_SINK = 11
@@ -447,5 +519,7 @@ class PhoneController(private val context: Context, private val services: EchoSe
         /** Hidden BluetoothDevice.EXTRA_TRANSPORT on ACTION_ACL_CONNECTED. */
         const val EXTRA_TRANSPORT = "android.bluetooth.device.extra.TRANSPORT"
         const val VARIANT_DISPLAY_PIN = 5
+        /** PAIRING_VARIANT_PASSKEY_CONFIRMATION, PAIRING_VARIANT_CONSENT: answered with setPairingConfirmation. */
+        val CONFIRM_VARIANTS = setOf(2, 3)
     }
 }

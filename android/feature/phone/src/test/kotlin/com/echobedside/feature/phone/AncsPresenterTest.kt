@@ -165,4 +165,15 @@ class AncsPresenterTest {
         p.clearAll()
         assertEquals(listOf("android:x"), feed.banners.value.map { it.id })
     }
+
+    @Test fun hiddenAppsDontBannerButCallsStillShow() {
+        p.hiddenApps = AncsPresenter.parseAppList(" Messages , com.apple.mobilephone,")
+        assertEquals(setOf("messages", "com.apple.mobilephone"), p.hiddenApps)
+        p.onNotification(msg(), Change.POSTED)
+        assertTrue(feed.banners.value.isEmpty())
+        p.onNotification(AncsNotification(3, AncsCategory.INCOMING_CALL, 0, appId = "com.apple.mobilephone", title = "Maya"), Change.POSTED)
+        assertEquals(1, island.activities.value.size)
+        p.onNotification(msg(uid = 8).copy(appId = "net.whatsapp.WhatsApp", appName = null), Change.POSTED)
+        assertEquals("WhatsApp", feed.banners.value.single().appName)
+    }
 }

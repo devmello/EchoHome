@@ -7,6 +7,9 @@ import android.util.Log
 import com.echobedside.core.model.EchoFeature
 import com.echobedside.core.model.FeatureHost
 import com.echobedside.core.model.ScreenSpec
+import com.echobedside.core.model.SettingSpec
+import com.echobedside.core.model.SettingType
+import com.echobedside.core.model.SettingsSection
 import com.echobedside.feature.phone.ui.PairingScreen
 
 /**
@@ -36,6 +39,8 @@ object PhoneFeature : EchoFeature {
         // Start after every feature is installed (no work during install).
         handler.post { try { c.start() } catch (e: Exception) { Log.e(PhoneController.TAG, "phone start failed", e) } }
 
+        host.registerSettings(settingsSection(c))
+
         val demo = if (services.config.debug) PhoneDemo(services, handler) else null
         host.registerScreen(ScreenSpec(SCREEN_ID, order = 90, inPager = false) { ctx ->
             object : PairingScreen(ctx, services, c) {
@@ -50,6 +55,7 @@ object PhoneFeature : EchoFeature {
                     if (demo == null || kind == null) { demoState = null; super.onScreenShown(args); return }
                     when (kind) {
                         "pairing" -> demoState = PhoneDemo.pairingState(withPrompt = true)
+                        "pairing-privileged" -> demoState = PhoneDemo.pairingState(withPrompt = true, canConfirm = true)
                         "paired" -> demoState = PhoneDemo.pairingState(withPrompt = false)
                         else -> {
                             // Banners and the island show over StandBy.
@@ -61,4 +67,24 @@ object PhoneFeature : EchoFeature {
             }
         })
     }
+
+    /** The "iPhone" card on the web settings page; every value applies live (PhoneController.applySetting). */
+    private fun settingsSection(c: PhoneController) = SettingsSection(
+        id = "phone", title = "iPhone", order = 40,
+        help = "Notifications come over Bluetooth LE (ANCS); calls are answered on the iPhone. Pair from the Echo's Bluetooth screen.",
+        settings = listOf(
+            SettingSpec(PhoneController.KEY_NOTIFICATIONS, "Show iPhone notifications", SettingType.BOOLEAN, "true",
+                help = "Banners for the iPhone's notifications and incoming calls."),
+            SettingSpec(PhoneController.KEY_AUDIO, "Bluetooth audio", SettingType.BOOLEAN, "true",
+                help = "Show the iPhone's music in Now Playing when it plays to the Echo over Bluetooth."),
+            SettingSpec(PhoneController.KEY_HIDDEN_APPS, "Hide notifications from", SettingType.TEXT_LIST, "",
+                help = "App names or bundle ids, e.g. Mail, com.burbn.instagram. Calls always show."),
+            SettingSpec(PhoneController.KEY_CLEAR_ON_DISMISS, "Dismiss on the Echo clears the iPhone", SettingType.BOOLEAN, "true",
+                help = "Uses the notification's Clear action. Never declines calls or deletes messages."),
+            SettingSpec(PhoneController.KEY_SHOW_SILENT, "Show notifications delivered quietly", SettingType.BOOLEAN, "false", advanced = true),
+            SettingSpec("phone.forget", "Forget iPhone", SettingType.ACTION,
+                help = "Unpairs the iPhone from the Echo. Also remove “Echo Show” in the iPhone's Settings › Bluetooth.",
+                onAction = { c.forgetSaved() }),
+        ),
+    )
 }

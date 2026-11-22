@@ -92,9 +92,9 @@ class PhoneDemo(private val services: EchoServices, private val handler: Handler
     }
 
     companion object {
-        fun pairingState(withPrompt: Boolean) = PhoneState(
+        fun pairingState(withPrompt: Boolean, canConfirm: Boolean = false) = PhoneState(
             bluetoothOn = true, advertising = true, advertiseOk = true, discoverable = true, pairingMode = true,
-            pairing = if (withPrompt) PairingPrompt("Maya’s iPhone", "demo", "482913", 2) else null,
+            pairing = if (withPrompt) PairingPrompt("Maya’s iPhone", "demo", "482913", 2, canConfirm) else null,
             phones = listOf(PhoneInfo("demo", "Maya’s iPhone", true, notificationsConnected = !withPrompt, audioConnected = !withPrompt)),
             status = if (withPrompt) "Confirm the code on your iPhone" else "Connected to Maya’s iPhone",
         )
