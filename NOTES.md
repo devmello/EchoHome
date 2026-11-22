@@ -1,6 +1,6 @@
 # Vesper (was "Echo Bedside"): project notes
 
-**Names (decided Nov 22, 2026):** the project is **Vesper** (the evening star: a bedside display that lives in the evening and the night). The device shows on the network as **"Echo Show"** (AirPlay, Bluetooth, the settings page; setting `device.name`). The code package `com.echobedside` and the module and script names get renamed in one commit after the agents' branches merge.
+**Names (decided Nov 22, 2026):** the project is **Vesper** (the evening star: a bedside display that lives in the evening and the night). The device shows on the network as **"Echo Show"** (AirPlay, Bluetooth, the settings page; setting `device.name`). The code was renamed on Nov 22, 2026: package and applicationId `app.vesper`, `Echo*` classes and log tags are `Vesper*` (`VesperApp`, `VesperServices`, `VesperScreen`, log tag `VesperSystem`…), `libvesper_airplay.so`. The `echo-*` scripts keep their names because they talk to the Echo hardware.
 
 A replacement for the stock Echo Show 5 software. The jailbroken Echo runs LineageOS, and we build our own Apple-style ("Liquid Glass") smart-display UI on top: StandBy clock faces, Night mode, alarm, an audio-only AirPlay receiver with Now Playing, home controls, an AI assistant that replaces Alexa, timers and weather. The goal is a real alternative to Apple's HomeView hub (Oct 2026, $299).
 
@@ -322,7 +322,7 @@ Design rule: **the expensive step runs at most once per person arriving, never c
 ### 7.1 Hands-on tests (need someone at the Echo; deferred Nov 22, 2026, user away)
 
 Run these the next time the user is next to the Echo. Each needs a physical action or a phone.
-- [ ] **Mic button polarity:** press the mic button once. Does the red LED come on? Read `./scripts/echo-adb.sh logcat -d -s EchoSystem | grep gating` before and after. With mics on it reads 0 today; the code assumes `GATING_MUTED_VALUE = 1` (`:feature:system`). If the LED is on and the value is still 0, flip the constant.
+- [ ] **Mic button polarity:** press the mic button once. Does the red LED come on? Read `./scripts/echo-adb.sh logcat -d -s VesperSystem | grep gating` before and after. With mics on it reads 0 today; the code assumes `GATING_MUTED_VALUE = 1` (`:feature:system`). If the LED is on and the value is still 0, flip the constant.
 - [ ] **Camera shutter:** slide it closed and open; the camera status chip and presence should follow (`SW_CAMERA_LENS_COVER`).
 - [ ] **Alarm after a reboot:** set an alarm 3 minutes out, reboot, check it rings (wireless adb may need `./scripts/echo-connect.sh` again).
 - [ ] **iPhone pairing:** Settings › Bluetooth on the iPhone first (nRF Connect only as a fallback), then a notification banner (ANCS), a call, and Now Playing from any app (AMS, with iTunes artwork). See `docs/status/phone.md`.
@@ -348,7 +348,7 @@ Profile and measure on the device after every milestone. Keep RAM under ~200 MB 
 
 ### 8.1 Status
 
-- **Milestone 0 done (Nov 22, 2026).** Toolchain on the Mac: Homebrew `openjdk@17` (the system default is JDK 27, too new for the build; `scripts/lib.sh` sets `JAVA_HOME`), Android command-line tools at `/opt/homebrew/share/android-commandlinetools` (platform android-35, build-tools 35), Gradle 9.9.2 wrapper, AGP 9.5.2 with built-in Kotlin. Package `com.echobedside`, minSdk/targetSdk 30, armeabi-v7a. OkHttp is pinned to 4.12 because 5.x needs compileSdk 37.
+- **Milestone 0 done (Nov 22, 2026).** Toolchain on the Mac: Homebrew `openjdk@17` (the system default is JDK 27, too new for the build; `scripts/lib.sh` sets `JAVA_HOME`), Android command-line tools at `/opt/homebrew/share/android-commandlinetools` (platform android-35, build-tools 35), Gradle 9.9.2 wrapper, AGP 9.5.2 with built-in Kotlin. Package `com.echobedside` (renamed `app.vesper` later), minSdk/targetSdk 30, armeabi-v7a. OkHttp is pinned to 4.12 because 5.x needs compileSdk 37.
 - **Milestone 1, Digital face done:** it's the HOME screen on the Echo, with the Inter v4.1 variable font bundled (OFL; opsz follows px size like CSS `font-optical-sizing: auto`). Long-press is reserved for edit mode. The dev escape hatch is **two fingers held for 2 s → Android Settings**.
 - **UI toolkit decision: plain platform Views + Canvas, no Compose, no AndroidX** (coroutines/StateFlow only). Measured on the Echo, Nov 22, 2026:
   - Digital face, release build: **17 MB PSS**, 0% CPU idle, one frame per minute.
@@ -361,3 +361,4 @@ Profile and measure on the device after every milestone. Keep RAM under ~200 MB 
   - `./scripts/echo-deploy.sh`: release build.
   - `./scripts/echo-restore-launcher.sh`: Launcher3 as HOME again.
   - Launcher3 keeps running in the background (~140 MB RSS) because it's the system recents provider. Look at this when RAM gets tight.
+- **Rename done (Nov 22, 2026, 15:40–15:50):** `com.echobedside` → `app.vesper` (1299279). On the Echo: the old update was removed (`pm uninstall com.echobedside`), `scripts/echo-system-install.sh` put the new APK in `/system/priv-app/Vesper` with `privapp-permissions-app.vesper.xml` (the old allow-list deleted), reboot. Settings, the AirPlay identity (same `76A341AF9034@Echo Show`), alarms/timers and the 106 MB of voice models were carried over; CAMERA and RECORD_AUDIO re-granted. Not carried over (none were set): secrets and face templates, which are keystore-bound to the old package. Verified: PRIVILEGED system app, HOME, AirPlay on :7000, settings page on :8080, voice models found, gating.kl loaded, no crash, 40 MB PSS / 3 % CPU on StandBy.

@@ -1,6 +1,6 @@
 # Vesper — app architecture (for every agent)
 
-Project name: **Vesper** (decided Nov 22, 2026; code still uses `app.vesper` until the post-integration rename). The device shows on the network as **"Echo Show"** (`DeviceName`, setting `device.name`).
+Project name: **Vesper** (decided Nov 22, 2026). Package `app.vesper` (renamed from `com.echobedside` after integration). Note: a local named `app` shadows the package root, so import `app.vesper.…` classes instead of writing the full path inline. The device shows on the network as **"Echo Show"** (`DeviceName`, setting `device.name`).
 
 Read this after `CLAUDE.md` and `NOTES.md`. The Android project is in `android/`.
 
