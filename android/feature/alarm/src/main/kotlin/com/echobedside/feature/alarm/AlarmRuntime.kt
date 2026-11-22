@@ -33,6 +33,10 @@ internal object AlarmRuntime {
     /** For the service: sound settings. */
     var settings: SettingsStore? = null
 
+    /** The alarm screen is on screen (attached, window visible). The ringing notification stays
+     *  quiet while it is, so no heads-up covers the screen. */
+    val alarmScreenShown = MutableStateFlow(false)
+
     private val _sound = MutableStateFlow(SoundRequest())
     val sound: StateFlow<SoundRequest> = _sound.asStateFlow()
 

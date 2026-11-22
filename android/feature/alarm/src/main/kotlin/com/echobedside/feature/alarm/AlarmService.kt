@@ -50,6 +50,11 @@ class AlarmService : Service() {
     private var wake: PowerManager.WakeLock? = null
     private var restoreAlarmVolume: Int? = null
     private var current = SoundRequest()
+    /** The ringing notification is on the high-importance channel (heads-up / full-screen intent).
+     *  Only when the alarm screen didn't come up within [PROMOTE_DELAY_MS] or was left while ringing:
+     *  normally our activity opens itself (priv-app START_ACTIVITIES_FROM_BACKGROUND, or we're HOME). */
+    private var promoted = false
+    private val promote = Runnable { setPromoted(current.alarm && !AlarmRuntime.alarmScreenShown.value) }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -58,6 +63,12 @@ class AlarmService : Service() {
         createChannels(this)
         startForeground(NOTIFICATION_ID, notification(AlarmRuntime.sound.value))
         scope.launch { AlarmRuntime.sound.collect { apply(it) } }
+        scope.launch {
+            AlarmRuntime.alarmScreenShown.collect { shown ->
+                if (shown) { handler.removeCallbacks(promote); setPromoted(false) }
+                else if (current.alarm) { handler.removeCallbacks(promote); handler.postDelayed(promote, PROMOTE_DELAY_MS) }
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -74,6 +85,14 @@ class AlarmService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return
+        }
+        if (r.alarm && !old.alarm) {
+            promoted = false
+            handler.removeCallbacks(promote)
+            if (!AlarmRuntime.alarmScreenShown.value) handler.postDelayed(promote, PROMOTE_DELAY_MS)
+        } else if (!r.alarm) {
+            handler.removeCallbacks(promote)
+            promoted = false
         }
         if (r != old) getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(r))
         if (r.alarm) startAlarm() else stopAlarm()
@@ -192,10 +211,18 @@ class AlarmService : Service() {
 
     // --- notification ---
 
+    private fun setPromoted(p: Boolean) {
+        if (p == promoted) return
+        promoted = p
+        if (current.alarm) getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(current))
+    }
+
     private fun notification(r: SoundRequest): Notification {
-        // Only a ringing alarm needs the high-importance channel (full-screen intent). Timers stay
-        // quiet: the island shows them, and a heads-up would pull SystemUI's status bar in.
-        val channel = if (r.alarm) CHANNEL_RING else CHANNEL_QUIET
+        // Only a ringing alarm whose screen isn't showing needs the high-importance channel
+        // (full-screen intent / heads-up). Otherwise quiet: the alarm screen or the island shows it,
+        // and a heads-up would cover the screen and pull SystemUI's status bar in.
+        val ring = r.alarm && promoted
+        val channel = if (ring) CHANNEL_RING else CHANNEL_QUIET
         val title = when {
             r.alarm -> r.alarmTitle
             r.timer -> r.timerTitle
@@ -207,11 +234,10 @@ class AlarmService : Service() {
             .setCategory(if (r.alarm) Notification.CATEGORY_ALARM else Notification.CATEGORY_SERVICE)
             .setOngoing(true)
             .setContentIntent(openScreen(this, if (r.timer && !r.alarm) "timers" else "alarm", 1))
+        if (ring) b.setFullScreenIntent(openScreen(this, "alarm", 2), true)
         if (r.alarm) {
-            b.setFullScreenIntent(openScreen(this, "alarm", 2), true)
-            // If another app is in front Android shows this as a heads-up instead of opening the
-            // alarm screen (background activity starts are blocked without the overlay grant):
-            // make it answerable from there.
+            // If the alarm screen couldn't open (background activity start blocked), Android shows
+            // this as a heads-up: make it answerable from there.
             b.addAction(Notification.Action.Builder(null, "Snooze", command(AlarmTriggerReceiver.ACTION_SNOOZE, 4)).build())
             b.addAction(Notification.Action.Builder(null, "Stop", command(AlarmTriggerReceiver.ACTION_STOP, 5)).build())
         }
@@ -228,6 +254,7 @@ class AlarmService : Service() {
         private const val CHANNEL_RING = "alarm.ring"
         private const val CHANNEL_QUIET = "alarm.quiet"
         const val DEFAULT_RAMP_MS = 45_000L
+        private const val PROMOTE_DELAY_MS = 1_500L
         val ALARM_ATTRS: AudioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
 

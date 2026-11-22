@@ -32,6 +32,7 @@ import com.echobedside.core.model.Weather
 import com.echobedside.core.model.WeatherCondition
 import com.echobedside.core.model.observeWhileAttached
 import com.echobedside.feature.alarm.AlarmFormat
+import com.echobedside.feature.alarm.AlarmRuntime
 import kotlin.math.sqrt
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -143,6 +144,7 @@ class AlarmScreen(context: Context, private val services: EchoServices) : AbsLay
 
     override fun onScreenShown(args: Bundle?) {
         shown = true
+        publishShown()
         if (args != null) {
             val d = args.getString("alarm_demo") ?: runCatching { args.getString("demo") }.getOrNull()
             demo = when (d) { "ringing", "ring" -> Mode.RING; "snoozed", "snooze" -> Mode.SNOOZE; "morning" -> Mode.MORNING; else -> null }
@@ -153,8 +155,24 @@ class AlarmScreen(context: Context, private val services: EchoServices) : AbsLay
 
     override fun onScreenHidden() {
         shown = false
+        publishShown()
         handler.removeCallbacks(ticker)
         sun.stopBreathing()
+    }
+
+    /** Tells the ring service whether the alarm screen is really in front (no heads-up needed). */
+    private fun publishShown() {
+        AlarmRuntime.alarmScreenShown.value = shown && isAttachedToWindow && windowVisibility == VISIBLE
+    }
+
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        publishShown()
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        AlarmRuntime.alarmScreenShown.value = false
     }
 
     private fun refresh() {
