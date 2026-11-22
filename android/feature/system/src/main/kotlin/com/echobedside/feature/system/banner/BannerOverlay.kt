@@ -241,13 +241,31 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
         }
         val b = shown
         if (b != null && opacity.value > 0.004f) {
-            canvas.save()
-            canvas.translate(0f, y.value)
-            canvas.scale(scale.value, scale.value, 480f, 14f + 44f)
-            drawCompact(canvas, b, opacity.value)
-            canvas.restore()
+            if (canvas.isHardwareAccelerated) {
+                // Recorded once per banner; the drop animates only the node's transform + alpha (CSS opacity
+                // on the whole banner), so a frame costs no re-recording.
+                val node = compactNode
+                if (nodeFor !== b || nodeNight != night || nodeBackdrop !== glass.backdrop) {
+                    nodeFor = b; nodeNight = night; nodeBackdrop = glass.backdrop
+                    node.setPosition(0, 0, 960, 140)
+                    val rc = node.beginRecording(960, 140)
+                    try { drawCompact(rc, b, 1f, windowY = 0f) } finally { node.endRecording() }
+                }
+                node.setTranslationY(y.value)
+                node.setPivotX(480f); node.setPivotY(14f + 44f)
+                node.setScaleX(scale.value); node.setScaleY(scale.value)
+                node.setAlpha(opacity.value)
+                canvas.drawRenderNode(node)
+            } else {
+                canvas.save()
+                canvas.translate(0f, y.value)
+                canvas.scale(scale.value, scale.value, 480f, 14f + 44f)
+                drawCompact(canvas, b, opacity.value, y.value)
+                canvas.restore()
+            }
         } else if (b != null && !running && opacity.target == 0f) {
             shown = null
+            compactNode.discardDisplayList(); nodeFor = null; nodeBackdrop = null
             glass.backdrop?.bitmap?.recycle(); glass.backdrop = null; backGlass.backdrop = null
         }
         if (!running && q.current == null && expandA.value <= 0f) ui.bannerShowing.value = false
@@ -257,10 +275,15 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
     private fun ink(c: Int, a: Float = 1f) = withAlpha(if (night) Night.COLOR else c, Color.alpha(c) / 255f * a)
 
     /** left 50% − 310, top 14, 620×88, r32, padding 0 22 0 16, gap 14. */
-    private fun drawCompact(c: Canvas, b: Banner, a: Float) {
+    private val compactNode = android.graphics.RenderNode("banner")
+    private var nodeFor: Banner? = null
+    private var nodeNight = false
+    private var nodeBackdrop: Any? = null
+
+    private fun drawCompact(c: Canvas, b: Banner, a: Float, windowY: Float) {
         val l = 170f; val t = 14f
         glass.alpha = a
-        glass.draw(c, l, t, l + 620f, t + 88f, 32f, 0f, y.value)
+        glass.draw(c, l, t, l + 620f, t + 88f, 32f, 0f, windowY)
         // app tile 54 r15 + 28 px glyph
         val tl = l + 16f; val tcy = t + 44f
         r.set(tl, tcy - 27f, tl + 54f, tcy + 27f)

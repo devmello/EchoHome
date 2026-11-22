@@ -188,20 +188,25 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         val t0 = System.nanoTime()
         drawPanel(canvas)
         val ms = (System.nanoTime() - t0) / 1_000_000
-        if (ms >= 8 && ui.debugBuild) android.util.Log.d("EchoPerf", "cc panel onDraw ${ms} ms")
+        if (ms >= 8 && ui.debugBuild) android.util.Log.d("EchoPerf", "cc panel onDraw ${ms} ms: $lastBreakdown")
     }
+
+    private var lastBreakdown = ""
 
     private fun drawPanel(canvas: Canvas) {
         val now = Tween.now()
         val running = brightFill.step(now) or volFill.step(now)
-        drawHeader(canvas)
-        drawConnectivity(canvas)
-        drawMedia(canvas)
+        var t = System.nanoTime(); val sb = if (ui.debugBuild) StringBuilder() else null
+        fun lap(n: String) { if (sb != null) { val x = System.nanoTime(); sb.append(n).append('=').append((x - t) / 100_000 / 10f).append(' '); t = x } }
+        drawHeader(canvas); lap("header")
+        drawConnectivity(canvas); lap("radios")
+        drawMedia(canvas); lap("media")
         drawSlider(canvas, Hit.BRIGHT, 340f, brightFill.value, Icons.sun)
-        drawSlider(canvas, Hit.VOL, 448f, volFill.value, if (volFill.value <= 0.001f) Icons.volumeMuted else Icons.volume)
-        drawWides(canvas)
-        drawSquares(canvas)
-        drawPeople(canvas)
+        drawSlider(canvas, Hit.VOL, 448f, volFill.value, if (volFill.value <= 0.001f) Icons.volumeMuted else Icons.volume); lap("sliders")
+        drawWides(canvas); lap("wides")
+        drawSquares(canvas); lap("squares")
+        drawPeople(canvas); lap("people")
+        lastBreakdown = sb?.toString() ?: ""
         // grabber: 40×5 at top 4 of a 100×22 button at the bottom centre
         paint.color = ink(withAlpha(Color.WHITE, 0.6f)); paint.style = Paint.Style.FILL; paint.shader = null
         r.set(460f, 462f, 500f, 467f); canvas.drawRoundRect(r, 3f, 3f, paint)
