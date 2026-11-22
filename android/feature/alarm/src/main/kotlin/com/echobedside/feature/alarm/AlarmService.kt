@@ -186,7 +186,9 @@ class AlarmService : Service() {
     // --- notification ---
 
     private fun notification(r: SoundRequest): Notification {
-        val channel = if (r.sounding) CHANNEL_RING else CHANNEL_QUIET
+        // Only a ringing alarm needs the high-importance channel (full-screen intent). Timers stay
+        // quiet: the island shows them, and a heads-up would pull SystemUI's status bar in.
+        val channel = if (r.alarm) CHANNEL_RING else CHANNEL_QUIET
         val title = when {
             r.alarm -> r.alarmTitle
             r.timer -> r.timerTitle
@@ -203,7 +205,7 @@ class AlarmService : Service() {
     }
 
     companion object {
-        private const val NOTIFICATION_ID = 0xA1A
+        private const val NOTIFICATION_ID = 0xE1A2A
         private const val CHANNEL_RING = "alarm.ring"
         private const val CHANNEL_QUIET = "alarm.quiet"
         const val RAMP_MS = 45_000L
@@ -220,7 +222,7 @@ class AlarmService : Service() {
                 },
             )
             if (nm.getNotificationChannel(CHANNEL_QUIET) == null) nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_QUIET, "Sunrise", NotificationManager.IMPORTANCE_MIN).apply { setSound(null, null) },
+                NotificationChannel(CHANNEL_QUIET, "Timers and sunrise", NotificationManager.IMPORTANCE_MIN).apply { setSound(null, null) },
             )
         }
 

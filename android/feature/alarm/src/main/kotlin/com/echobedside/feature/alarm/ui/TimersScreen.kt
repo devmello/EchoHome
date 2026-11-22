@@ -48,7 +48,7 @@ class TimersScreen(context: Context, private val services: EchoServices) : AbsLa
     private val title = SpecText(28f, 800, -0.025f)
     private val summary = SpecText(14f, 600)
     private val empty = SpecText(30f, 700)
-    private val hint = SpecText(15f, 600)
+    private val hint = SpecText(15f, 600).apply { paint.fontFeatureSettings = "" } // tnum widens the hyphen
     private var night = false
     private var shown = false
     private var list: List<EchoTimer> = emptyList()
@@ -68,6 +68,8 @@ class TimersScreen(context: Context, private val services: EchoServices) : AbsLa
     init {
         setWillNotDraw(false)
         setBackgroundColor(Color.BLACK)
+        clipChildren = false // card shadows draw outside the cards
+        addBtn.backdropOrigin = this
         // padding 0 18 0 14; right 28, top 22, height 44
         val w = addBtn.wrapWidth(14f, 18f)
         place(addBtn, 932f - w, 22f, w, 44)
@@ -134,7 +136,6 @@ class TimersScreen(context: Context, private val services: EchoServices) : AbsLa
         if (!shown) return
         val now = SystemClock.elapsedRealtime()
         cards.values.forEach { it.update(now) }
-        invalidate() // summary line
         if (list.any { it.state == EchoTimer.State.RUNNING }) {
             // Next whole second of the soonest-ending running timer, so digits flip on time.
             val phase = list.filter { it.state == EchoTimer.State.RUNNING }.minOf { ((it.endsAtElapsed - now) % 1000 + 1000) % 1000 }
@@ -212,7 +213,6 @@ class TimersScreen(context: Context, private val services: EchoServices) : AbsLa
         private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 9f; strokeCap = Paint.Cap.ROUND }
         private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 9f }
         private val oval = RectF()
-        private val loc = IntArray(2)
         private val main = CircleButton(context).apply { iconSize = 22f }
         private val cancel = CircleButton(context).apply { iconSize = 20f; iconStroke = 2.8f; icon = Icon.CLOSE }
         private val flash = FlashView(context)
@@ -303,8 +303,9 @@ class TimersScreen(context: Context, private val services: EchoServices) : AbsLa
         override fun invalidate() { super.invalidate(); (content as View?)?.invalidate() }
 
         override fun onDraw(c: Canvas) {
-            getLocationInWindow(loc)
-            glass.draw(c, width.toFloat(), height.toFloat(), 34f, loc[0].toFloat(), loc[1].toFloat())
+            // The backdrop covers this screen, so offset by our position in it (not the window:
+            // the pager may be mid-scroll when we draw).
+            glass.draw(c, width.toFloat(), height.toFloat(), 34f, left.toFloat(), top.toFloat())
         }
 
         /** Label, total, ring and time, above the flash layer. */
