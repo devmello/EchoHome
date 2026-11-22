@@ -77,6 +77,8 @@ class ValidationTest {
     @Test fun color() {
         val s = spec(SettingType.COLOR)
         assertEquals(listOf(Write.Str("k", "#FF375F")), ok(s, "#ff375f"))
+        assertEquals(listOf(Write.Remove("k")), ok(s, ""))
+        assertEquals(listOf(Write.Remove("k")), ok(s, JSONObject.NULL))
         bad(s, "FF375F"); bad(s, "#FFF"); bad(s, "#GG0000"); bad(s, "red")
     }
 

@@ -317,7 +317,10 @@ const RENDER = {
   COLOR(spec, ctx) {
     const custom = h('input', { type: 'color', 'aria-label': 'Custom colour' });
     const customBtn = h('span', { class: 'swatch custom', role: 'radio' }, custom);
-    const box = h('div', { class: 'swatches', role: 'radiogroup', 'aria-labelledby': ctx.titleId },
+    // A colour whose default is empty (the feature's own palette) gets an Automatic swatch.
+    const auto = !spec.default && h('button', { type: 'button', class: 'swatch auto', role: 'radio', 'data-v': '',
+      'aria-label': 'Automatic', title: 'Automatic', onclick: () => { set(''); ctx.save(null); } });
+    const box = h('div', { class: 'swatches', role: 'radiogroup', 'aria-labelledby': ctx.titleId }, auto,
       SWATCHES.map((c) => h('button', { type: 'button', class: 'swatch', role: 'radio', 'data-v': c, 'aria-label': c,
         style: `background:${c}`, onclick: () => { set(c); ctx.save(c); } })), customBtn);
     custom.addEventListener('change', () => { const v = custom.value.toUpperCase(); set(v); ctx.save(v); });

@@ -85,6 +85,8 @@ object Validator {
                 listOf(Write.Str(k, s))
             }
             SettingType.COLOR -> {
+                // Empty / null: back to the feature's default (calendar.color.<n>: "Empty: the default palette").
+                if (isNull || v == "") return listOf(Write.Remove(k))
                 val s = string(v, spec)
                 if (!COLOR.matches(s)) fail("${spec.title}: expected a colour like #FF9F0A")
                 listOf(Write.Str(k, s.uppercase()))
