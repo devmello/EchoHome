@@ -46,7 +46,15 @@ with cargo-ndk on the first try (no C deps; needs only liblog/libc/libm/libdl). 
 - **MediaControls**: AirPlay 1 → DACP (play/pause, next, previous, volume) through the library.
   AirPlay 2 → play/pause become a local mute/unmute (shown as paused), next/previous no-ops: a
   third-party AP2 receiver can't control the sender (library's AP2-STATUS.md; same for every
-  open-source receiver). `canSeek = false` (no DACP seek in the library).
+  open-source receiver). `canSeek = false` (no DACP seek in the library); `canSkip` and
+  `canPause` = DACP available (false on AirPlay 2, where pause only mutes here).
+- **Route + disconnect** (contracts round 1): `MediaState.route` = ["AirPlay 2" | "AirPlay",
+  "44.1 kHz", ("Mono"), sender name]. No codec chip: the library hands us PCM without saying
+  whether the sender chose ALAC or AAC. `disconnect()` restarts the native receiver (~10 ms),
+  which drops every sender (the library can't drop just one).
+- **On / off**: `AirPlayFeature` starts the service while both `airplay.enabled` and
+  `system.cc.airplay` (Control Center's toggle) are true (default true) and stops / restarts it
+  when either changes.
 - **Audio focus / system**: AUDIOFOCUS_GAIN requested when PCM starts, abandoned when the stream
   ends; transient loss mutes (and pauses the sender over DACP when possible, resuming on gain);
   ducking left to the system. Partial wake lock + `WIFI_MODE_FULL_HIGH_PERF` lock only while a
@@ -123,19 +131,15 @@ Debug build, per thread (`/proc/<pid>/task/*/stat` over 15 s while streaming):
 - **AirPlay 1 + DACP from a real Apple sender**: pyatv doesn't run a DACP server, so the remote
   path is untested end to end; the library also stalls SETUP ~2 s browsing `_dacp._tcp` when the
   sender has none.
-- Contract request (docs/contract-requests.md): `canSkip` / `canPause` on MediaControls so Now
-  Playing can hide buttons that do nothing for AirPlay 2; and D's `disconnect()` + `route` chips,
-  which C can fill once they land.
+- Round-1 follow-ups (canSkip/canPause, route, disconnect, `system.cc.airplay`) are unit-tested
+  and build, but weren't re-run on the Echo.
 - No Android `MediaSession` is published on purpose: `:feature:media` reads other apps' sessions
   through MediaSessionManager and would see ours as a duplicate; the hub is the one place.
 
 ## Open questions
 
-- Default mode: **AP2** (as the brief says; iOS lists it as an AirPlay 2 speaker, buffered audio
-  rides out Wi-Fi better). The trade-off is no remote control. AP1 gives DACP play/pause/skip
-  from Now Playing but iOS shows it as a classic speaker. Worth deciding after the iPhone test.
-- Should the Echo's hardware volume keys change the sender's AirPlay volume while AirPlay is the
-  current session (like a HomePod), or only the device volume? (agent B / lead)
+- Decided by the lead: AP2 stays the default; the Echo's volume keys stay the Echo's own output
+  volume (not mapped to the sender's).
 - FairPlay: the `fairplay` feature (default) has a provenance note upstream
   (`docs/fairplay-provenance.md`: earlier releases were a port of GPL code). It's needed for some
   AP2 senders. Fine for a personal device; flag if this ever ships.

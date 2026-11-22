@@ -4,6 +4,8 @@ import android.util.Log
 import com.echobedside.core.model.EchoFeature
 import com.echobedside.core.model.EchoServices
 import com.echobedside.core.model.FeatureHost
+import com.echobedside.core.model.SettingsStore
+import kotlinx.coroutines.launch
 
 /**
  * `:feature:airplay` (agent C — AirPlay audio).
@@ -14,13 +16,15 @@ import com.echobedside.core.model.FeatureHost
  * AIRPLAY_CONNECTED live activity while a sender is connected. No screens of its own: Now Playing
  * and the music island (`:feature:media`, `:feature:system`) read the hub.
  *
- * Settings (services.settings): [KEY_ENABLED], [KEY_NAME], [KEY_MODE], [KEY_MDNS]; changing one
- * restarts the receiver.
+ * Settings (services.settings): [KEY_ENABLED] and [KEY_CC_AIRPLAY] start / stop the service;
+ * [KEY_NAME], [KEY_MODE], [KEY_MDNS] restart the receiver.
  */
 object AirPlayFeature : EchoFeature {
     override val id = "airplay"
 
     const val KEY_ENABLED = "airplay.enabled"
+    /** Control Center's AirPlay toggle (written by `:feature:system`); off stops the receiver like [KEY_ENABLED]. */
+    const val KEY_CC_AIRPLAY = "system.cc.airplay"
     const val KEY_NAME = "airplay.name"
     /** [MODE_AP2] (default) or [MODE_AP1]. */
     const val KEY_MODE = "airplay.mode"
@@ -39,13 +43,29 @@ object AirPlayFeature : EchoFeature {
     @Volatile internal var services: EchoServices? = null
         private set
 
+    /** The receiver runs only while both are on: our own setting and Control Center's AirPlay toggle. */
+    internal fun enabled(settings: SettingsStore): Boolean =
+        settings.getBoolean(KEY_ENABLED, true) && settings.getBoolean(KEY_CC_AIRPLAY, true)
+
     override fun install(host: FeatureHost) {
-        services = host.services
-        if (host.services.settings.getBoolean(KEY_ENABLED, true)) {
+        val s = host.services
+        services = s
+        val context = host.context
+        fun apply(on: Boolean) {
             try {
-                AirPlayService.start(host.context)
+                if (on) AirPlayService.start(context) else AirPlayService.stop(context)
             } catch (e: Exception) {
-                Log.e("EchoAirPlay", "couldn't start the AirPlay service", e)
+                Log.e("EchoAirPlay", "couldn't ${if (on) "start" else "stop"} the AirPlay service", e)
+            }
+        }
+        var on = enabled(s.settings)
+        if (on) apply(true)
+        s.scope.launch {
+            s.settings.changes.collect { key ->
+                if (key == KEY_ENABLED || key == KEY_CC_AIRPLAY) {
+                    val now = enabled(s.settings)
+                    if (now != on) { on = now; Log.i("EchoAirPlay", "AirPlay ${if (now) "on" else "off"} ($key)"); apply(now) }
+                }
             }
         }
     }

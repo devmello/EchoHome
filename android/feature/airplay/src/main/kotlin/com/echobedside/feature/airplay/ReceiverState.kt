@@ -73,6 +73,11 @@ internal data class ReceiverState(
     val artworkAt: Long? = null,
     /** When the last progress message arrived. */
     val progressAt: Long? = null,
+    /** The receiver runs in AirPlay 2 mode (else AirPlay 1). */
+    val ap2: Boolean = true,
+    /** The current stream's format; 0 = no stream yet. */
+    val sampleRate: Int = 0,
+    val channels: Int = 0,
 ) {
     val anyConnection: Boolean get() = connections.isNotEmpty()
 
@@ -97,11 +102,29 @@ internal data class ReceiverState(
             source = MediaSourceKind.AIRPLAY,
             sourceLabel = senderName ?: DEFAULT_SENDER_LABEL,
             volume = volumeDb?.let(AirPlayMath::volumeFraction),
+            route = route(),
         )
+    }
+
+    /**
+     * Now Playing's route chips, e.g. ["AirPlay 2", "44.1 kHz", "Maya's iPhone"]. The library
+     * decodes to PCM without saying which codec the sender chose, so no codec chip.
+     */
+    fun route(): List<String> = buildList {
+        add(if (ap2) "AirPlay 2" else "AirPlay")
+        if (sampleRate > 0) add(formatRate(sampleRate))
+        if (channels == 1) add("Mono")
+        senderName?.let(::add)
     }
 
     companion object {
         const val DEFAULT_SENDER_LABEL = "AirPlay"
+
+        /** 44100 → "44.1 kHz", 48000 → "48 kHz". */
+        fun formatRate(hz: Int): String {
+            val tenths = (hz + 50) / 100
+            return if (tenths % 10 == 0) "${tenths / 10} kHz" else "${tenths / 10}.${tenths % 10} kHz"
+        }
     }
 }
 
@@ -115,7 +138,7 @@ internal object Reducer {
     fun clientDisconnected(s: ReceiverState, ip: String): ReceiverState {
         val left = (s.connections[ip] ?: 0) - 1
         val connections = if (left > 0) s.connections + (ip to left) else s.connections - ip
-        if (connections.isEmpty()) return ReceiverState(volumeDb = s.volumeDb)
+        if (connections.isEmpty()) return ReceiverState(volumeDb = s.volumeDb, ap2 = s.ap2)
         return s.copy(connections = connections, lastIp = if (s.lastIp == ip && left <= 0) connections.keys.last() else s.lastIp)
     }
 
@@ -126,8 +149,8 @@ internal object Reducer {
     fun senderName(s: ReceiverState, ip: String, name: String): ReceiverState =
         if (s.connections.containsKey(ip)) s.copy(senderName = name) else s
 
-    fun audioStart(s: ReceiverState, now: Long) =
-        s.copy(streaming = true, connected = s.anyConnection, playing = false, positionAt = now)
+    fun audioStart(s: ReceiverState, now: Long, sampleRate: Int = 44_100, channels: Int = 2) =
+        s.copy(streaming = true, connected = s.anyConnection, playing = false, positionAt = now, sampleRate = sampleRate, channels = channels)
 
     fun audioStop(s: ReceiverState, now: Long) = freeze(s, now).copy(streaming = false, playing = false, locallyPaused = false)
 
