@@ -30,17 +30,32 @@ import org.json.JSONObject
 data class Place(val lat: Double, val lon: Double, val name: String)
 
 object WeatherSettings {
+    /** Manual location, LOCATION type: "lat,lon"; its name is [LOCATION_PLACE]. */
+    const val LOCATION = "weather.location"
+    const val LOCATION_PLACE = "weather.location.place"
+    /** Older manual keys, still read for one release. */
     const val LAT = "weather.lat"
     const val LON = "weather.lon"
     const val PLACE = "weather.place"
     /** Optional "F" or "C"; default from the locale (°F in the US and a few others). */
     const val UNIT = "weather.unit"
 
+    /** The manual location: `weather.location` ("lat,lon", the settings page's LOCATION) + `.place`, else the old keys. */
     fun place(s: SettingsStore): Place? {
+        latLon(text(s, LOCATION))?.let { (lat, lon) -> return Place(lat, lon, text(s, LOCATION_PLACE).orEmpty()) }
+        // Read for one release: `weather.lat` / `weather.lon` / `weather.place` (the `home.set` era).
         val lat = number(s, LAT) ?: return null
         val lon = number(s, LON) ?: return null
         if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
         return Place(lat, lon, text(s, PLACE).orEmpty())
+    }
+
+    /** "37.68,-121.77" → (lat, lon), range-checked. */
+    fun latLon(v: String?): Pair<Double, Double>? {
+        val parts = v?.split(',')?.map { it.trim() }?.takeIf { it.size == 2 } ?: return null
+        val lat = parts[0].toDoubleOrNull() ?: return null
+        val lon = parts[1].toDoubleOrNull() ?: return null
+        return if (lat in -90.0..90.0 && lon in -180.0..180.0) lat to lon else null
     }
 
     fun fahrenheit(s: SettingsStore, locale: Locale = Locale.getDefault()): Boolean = when (text(s, UNIT)?.uppercase()) {

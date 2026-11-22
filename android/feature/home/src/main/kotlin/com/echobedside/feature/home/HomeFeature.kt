@@ -15,12 +15,15 @@ import com.echobedside.feature.home.glance.OpenMeteoWeatherProvider
 import com.echobedside.feature.home.ha.DemoHomeAssistant
 import com.echobedside.feature.home.home.HomeScreenView
 import com.echobedside.feature.home.stocks.StocksView
+import kotlinx.coroutines.flow.map
 
 /**
  * `:feature:home` (agent F — glances + optional smart home). Works with no Home Assistant (NOTES §4.1):
  *  - services.weather → Open-Meteo for the manual location, else the IP-detected one, else
  *    Livermore (works with no settings). Demo mode with no manual location: the sample weather.
- *  - services.calendar → the iCal URLs in secrets (`calendar.icsUrls`); none = the fake stays.
+ *  - services.calendar → the iCal URLs in secrets (`calendar.icsUrls`, followed live); none = the fake.
+ *  - services.location → manual > IP-detected > Livermore (demo: Santa Cruz unless manual).
+ *  - Settings sections: [HomeSettingsSchema].
  *  - Commute (order 40): Nominatim + OSRM, no key. Stocks (order 50): Yahoo chart, no key.
  *  - Home (order 20) + doorbell: only with Home Assistant configured. In demo mode without HA the
  *    Home screen still shows, driven by [DemoHomeAssistant] and labelled demo.
@@ -43,11 +46,13 @@ object HomeFeature : EchoFeature {
         s.weather = weather
         weather.start()
 
-        if (s.config.secrets.calendarConfigured) {
-            val cal = IcsCalendarProvider(s.config.secrets.calendarIcsUrls, host.context.cacheDir, s.settings, s.scope)
-            s.calendar = cal
-            cal.start()
-        }
+        // Always bound: the iCal URLs are a secret that can be set or changed live (configFlow).
+        // With none it mirrors the fake (sample calendar in demo mode, empty otherwise).
+        val cal = IcsCalendarProvider(s.configFlow.map { it.secrets.calendarIcsUrls }, host.context.cacheDir, s.settings, s.scope, fallback = s.calendar)
+        s.calendar = cal
+        cal.start()
+
+        HomeSettingsSchema.all.forEach(host::registerSettings)
 
         host.registerScreen(ScreenSpec("commute", order = 40) { ctx -> CommuteView(ctx, host.services) })
         host.registerScreen(ScreenSpec("stocks", order = 50) { ctx -> StocksView(ctx, host.services) })

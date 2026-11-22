@@ -8,6 +8,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 object StockSettings {
@@ -36,6 +37,7 @@ class StocksController(
     private var fetchedAt = 0L
     private var fetchedSymbols: List<String> = emptyList()
     private var job: Job? = null
+    private var watch: Job? = null
 
     val symbols: List<String> get() = settings.getString(StockSettings.SYMBOLS, "").split(',').map { it.trim().uppercase() }
         .filter { it.isNotEmpty() }.take(5).ifEmpty { listOf("AAPL", "NVDA", "TSLA", "MSFT", "AMZN") }
@@ -47,7 +49,13 @@ class StocksController(
     fun start() {
         if (job != null) return
         if (source == null) { _state.value = DemoStocks.watchlist(clock()); return }
-        job = scope.launch {
+        job = loop(source)
+        // A new watchlist from the settings page fetches at once (stale() sees the symbols changed).
+        watch = scope.launch { settings.changes.filter { it == StockSettings.SYMBOLS }.collect { job?.cancel(); job = loop(source) } }
+    }
+
+    private fun loop(source: QuoteSource): Job = run {
+        scope.launch {
             while (true) {
                 val now = clock()
                 if (stale(now)) {
@@ -67,7 +75,7 @@ class StocksController(
         }
     }
 
-    fun stop() { job?.cancel(); job = null }
+    fun stop() { job?.cancel(); job = null; watch?.cancel(); watch = null }
 
     /** Open: older than 5 min. Closed: fetched before the last session ended (+20 min for final prints). */
     fun stale(now: Long): Boolean {

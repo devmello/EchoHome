@@ -11,9 +11,14 @@ import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -30,12 +35,16 @@ import okhttp3.Request
  *  - Expands today + tomorrow (device zone) and re-expands at midnight.
  *  - Colour per calendar: `calendar.color.<n>` ("#RRGGBB", n = 0-based URL index), else the design palette.
  *  - URLs are secrets (they grant read access): never logged; files are named by a hash.
+ *  - The URLs can change while the app runs (the settings page sets secrets live): [urls] is
+ *    followed and a change refetches at once. With none, it mirrors [fallback] (the fake: the
+ *    sample calendar in demo mode, empty otherwise).
  */
 class IcsCalendarProvider(
-    private val urls: List<String>,
+    private val urls: Flow<List<String>>,
     private val cacheDir: File,
     private val settings: SettingsStore,
     private val scope: CoroutineScope,
+    private val fallback: CalendarProvider? = null,
     private val client: OkHttpClient = Net.http,
     private val periodMs: Long = 15 * 60_000L,
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
@@ -45,6 +54,8 @@ class IcsCalendarProvider(
     override val events: StateFlow<List<CalendarEvent>> = _events.asStateFlow()
     private val lock = Mutex()
     private var started = false
+    /** The current URL list (secret: never logged). */
+    @Volatile private var current: List<String> = emptyList()
 
     /** Last download problem per feed, for the status / a future settings screen. */
     val errors = MutableStateFlow<Map<Int, String>>(emptyMap())
@@ -53,16 +64,26 @@ class IcsCalendarProvider(
         if (started) return
         started = true
         scope.launch {
-            rebuild()
-            while (true) {
-                downloadAll()
+            urls.map { l -> l.map { it.trim() }.filter { it.isNotEmpty() } }.distinctUntilChanged().collectLatest { list ->
+                current = list
+                if (list.isEmpty()) {
+                    errors.value = emptyMap()
+                    if (fallback != null) fallback.events.collect { _events.value = it } else _events.value = emptyList()
+                    return@collectLatest
+                }
                 rebuild()
-                val now = clock()
-                val midnight = localDate(now, zone()).plusDays(1).atStartOfDay(zone()).toInstant().toEpochMilli()
-                if (midnight - now < periodMs) { delay(midnight - now + 1000); rebuild(); delay((periodMs - (midnight - now)).coerceAtLeast(0)) }
-                else delay(periodMs)
+                while (true) {
+                    downloadAll()
+                    rebuild()
+                    val now = clock()
+                    val midnight = localDate(now, zone()).plusDays(1).atStartOfDay(zone()).toInstant().toEpochMilli()
+                    if (midnight - now < periodMs) { delay(midnight - now + 1000); rebuild(); delay((periodMs - (midnight - now)).coerceAtLeast(0)) }
+                    else delay(periodMs)
+                }
             }
         }
+        // A colour change on the settings page shows at once.
+        scope.launch { settings.changes.filter { it.startsWith("calendar.color.") }.collect { if (current.isNotEmpty()) rebuild() } }
     }
 
     override fun refresh() { scope.launch { downloadAll(); rebuild() } }
@@ -70,8 +91,8 @@ class IcsCalendarProvider(
     private fun key(url: String): String =
         MessageDigest.getInstance("SHA-1").digest(url.toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
 
-    private fun file(i: Int) = File(cacheDir, "ics/cal$i-${key(urls[i])}.ics")
-    private fun meta(i: Int) = File(cacheDir, "ics/cal$i-${key(urls[i])}.meta")
+    private fun file(u: List<String>, i: Int) = File(cacheDir, "ics/cal$i-${key(u[i])}.ics")
+    private fun meta(u: List<String>, i: Int) = File(cacheDir, "ics/cal$i-${key(u[i])}.meta")
 
     /** webcal:// is just https. */
     internal fun httpUrl(u: String) = u.trim().replaceFirst(Regex("^webcals?://", RegexOption.IGNORE_CASE), "https://")
@@ -79,16 +100,17 @@ class IcsCalendarProvider(
     private suspend fun downloadAll() = withContext(Dispatchers.IO) {
         File(cacheDir, "ics").mkdirs()
         val errs = HashMap<Int, String>()
-        for (i in urls.indices) {
-            try { download(i) } catch (e: IOException) { errs[i] = e.message ?: "download failed" } catch (e: IllegalArgumentException) { errs[i] = "bad URL" }
+        val u = current // a snapshot: the list may change meanwhile
+        for (i in u.indices) {
+            try { download(u, i) } catch (e: IOException) { errs[i] = e.message ?: "download failed" } catch (e: IllegalArgumentException) { errs[i] = "bad URL" }
         }
         errors.value = errs
     }
 
-    private fun download(i: Int) {
-        val f = file(i); val m = meta(i)
+    private fun download(u: List<String>, i: Int) {
+        val f = file(u, i); val m = meta(u, i)
         val (etag, modified) = if (m.exists() && f.exists()) m.readLines().let { it.getOrNull(0).orEmpty() to it.getOrNull(1).orEmpty() } else "" to ""
-        val req = Request.Builder().url(httpUrl(urls[i])).apply {
+        val req = Request.Builder().url(httpUrl(u[i])).apply {
             if (etag.isNotEmpty()) header("If-None-Match", etag)
             if (modified.isNotEmpty()) header("If-Modified-Since", modified)
         }.build()
@@ -108,8 +130,9 @@ class IcsCalendarProvider(
             val z = zone()
             val from = localDate(now, z).atStartOfDay(z).toInstant()
             val to = localDate(now, z).plusDays(2).atStartOfDay(z).toInstant()
-            urls.indices.flatMap { i ->
-                val f = file(i)
+            val u = current
+            u.indices.flatMap { i ->
+                val f = file(u, i)
                 if (!f.exists()) return@flatMap emptyList()
                 val cal = try { f.bufferedReader().use { Ics.parse(it, from, to, z) } } catch (_: Exception) { return@flatMap emptyList() }
                 toEvents(cal, i, from, to, z)

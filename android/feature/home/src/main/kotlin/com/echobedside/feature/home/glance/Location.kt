@@ -28,7 +28,8 @@ import org.json.JSONObject
 /**
  * Where "here" is ([HomeLocation], bound to `EchoServices.location`), for weather, the commute's
  * home and other features. Precedence:
- *  1. MANUAL: `weather.lat` / `weather.lon` / `weather.place` (a settings screen or `home.set`);
+ *  1. MANUAL: `weather.location` ("lat,lon") + `weather.location.place` from the settings page
+ *     (the older `weather.lat` / `weather.lon` / `weather.place` are still read for one release);
  *  2. DEMO: Santa Cruz, the designs' sample, only while demo data is on and nothing is manual;
  *  3. AUTO: detected from the public IP, stored under `weather.auto.*` (never touches the manual keys);
  *  4. FALLBACK: Livermore, CA.
@@ -109,7 +110,8 @@ class LocationResolver(
     }
 
     companion object {
-        private val KEYS = setOf(WeatherSettings.LAT, WeatherSettings.LON, WeatherSettings.PLACE,
+        private val KEYS = setOf(WeatherSettings.LOCATION, WeatherSettings.LOCATION_PLACE,
+            WeatherSettings.LAT, WeatherSettings.LON, WeatherSettings.PLACE,
             Locations.AUTO_LAT, Locations.AUTO_LON, Locations.AUTO_PLACE)
     }
 }

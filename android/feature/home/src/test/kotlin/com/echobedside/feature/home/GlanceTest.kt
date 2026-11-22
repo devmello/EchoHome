@@ -23,6 +23,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.mockwebserver.MockResponse
@@ -136,7 +137,7 @@ class GlanceTest {
         val dir = Files.createTempDirectory("ics").toFile()
         val url = server.url("/cal.ics").toString()
         val settings = MemSettings("calendar.color.0" to "#FF375F")
-        val p = IcsCalendarProvider(listOf(url), dir, settings, scope, Net.http, zone = { la }, clock = { now })
+        val p = IcsCalendarProvider(flowOf(listOf(url)), dir, settings, scope, client = Net.http, zone = { la }, clock = { now })
         p.start()
         val ev = withTimeout(5000) { p.events.first { it.isNotEmpty() } }.single()
         assertEquals("Standup", ev.title)
@@ -151,7 +152,7 @@ class GlanceTest {
         assertEquals("\"v1\"", second.getHeader("If-None-Match"))
 
         // A fresh provider (e.g. after a reboot, offline) reads the cache first.
-        val offline = IcsCalendarProvider(listOf(url), dir, settings, CoroutineScope(SupervisorJob() + Dispatchers.IO), Net.http, zone = { la }, clock = { now })
+        val offline = IcsCalendarProvider(flowOf(listOf(url)), dir, settings, CoroutineScope(SupervisorJob() + Dispatchers.IO), client = Net.http, zone = { la }, clock = { now })
         server.shutdown()
         offline.start()
         assertEquals("Standup", withTimeout(5000) { offline.events.first { it.isNotEmpty() } }.single().title)
@@ -159,8 +160,39 @@ class GlanceTest {
         Unit
     }
 
+    @Test fun calendarFollowsUrlChangesLiveAndMirrorsTheFakeWithoutUrls() = runBlocking {
+        val body = ics("Standup")
+        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest) = MockResponse().setBody(body)
+        }
+        val sample = com.echobedside.core.model.CalendarEvent("s", "Sample", "", now, now + 1, color = 0)
+        val fake = object : com.echobedside.core.model.CalendarProvider { override val events = MutableStateFlow(listOf(sample)) }
+        val urls = MutableStateFlow<List<String>>(emptyList())
+        val dir = Files.createTempDirectory("ics").toFile()
+        val p = IcsCalendarProvider(urls, dir, MemSettings(), scope, fallback = fake, client = Net.http, zone = { la }, clock = { now })
+        p.start()
+        assertEquals("Sample", withTimeout(3000) { p.events.first { it.isNotEmpty() } }.single().title) // no URLs: the fake
+        urls.value = listOf(server.url("/a.ics").toString()) // set on the settings page
+        assertEquals("Standup", withTimeout(5000) { p.events.first { e -> e.any { it.title == "Standup" } } }.single().title)
+        assertEquals(1, server.requestCount)
+        urls.value = emptyList()
+        assertEquals("Sample", withTimeout(3000) { p.events.first { e -> e.any { it.title == "Sample" } } }.single().title)
+        dir.deleteRecursively()
+        Unit
+    }
+
+    @Test fun manualLocationKeyWinsOverTheOldKeys() {
+        val s = MemSettings("weather.lat" to "36.97", "weather.lon" to "-122.03", "weather.place" to "Santa Cruz")
+        assertEquals(Place(36.97, -122.03, "Santa Cruz"), WeatherSettings.place(s)) // old keys still read
+        s.putString("weather.location", " 37.68 , -121.77 "); s.putString("weather.location.place", "Livermore")
+        assertEquals(Place(37.68, -121.77, "Livermore"), WeatherSettings.place(s))
+        s.putString("weather.location", "somewhere")
+        assertEquals("Santa Cruz", WeatherSettings.place(s)!!.name) // unparsable: falls back
+        assertNull(WeatherSettings.latLon("91,0"))
+    }
+
     @Test fun calendarHelpers() {
-        val p = IcsCalendarProvider(listOf("x"), File("."), MemSettings(), CoroutineScope(Job()))
+        val p = IcsCalendarProvider(flowOf(listOf("x")), File("."), MemSettings(), CoroutineScope(Job()))
         assertEquals("https://p01-calendars.example.com/a.ics", p.httpUrl("webcal://p01-calendars.example.com/a.ics"))
         assertEquals(0xFF30D158.toInt(), IcsCalendarProvider.parseColor("30d158"))
         assertNull(IcsCalendarProvider.parseColor("red"))

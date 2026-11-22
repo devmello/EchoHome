@@ -4,16 +4,17 @@ import com.echobedside.core.model.SettingsStore
 import com.echobedside.feature.home.home.Slot
 
 /**
- * Settings `:feature:home` reads, all optional (SettingsStore):
- *  - weather: `weather.lat`, `weather.lon`, `weather.place`, `weather.unit` (WeatherSettings)
+ * Settings `:feature:home` reads, all optional (SettingsStore), declared for the web settings page
+ * in [HomeSettingsSchema]:
+ *  - weather: `weather.location` (+ `.place`), `weather.unit` (WeatherSettings)
  *  - calendars: `calendar.color.<n>` (URLs are secrets: `calendar.icsUrls`)
  *  - commute: `commute.*` (CommuteSettings) · stocks: `stocks.*` (StockSettings)
  *  - optional Home Assistant Home screen + doorbell: `home.*` below.
  *
- * There's no settings screen yet; set them from adb with the launch intent:
+ * For debugging they can also be set from adb with the launch intent:
  *
  *     adb shell am start -n com.echobedside/.MainActivity --es screen commute \
- *       --es home.set 'weather.lat=36.97;weather.lon=-122.03;weather.place=Santa Cruz'
+ *       --es home.set 'weather.location=37.68,-121.77;weather.location.place=Livermore'
  *
  * (`home.set` = `key=value` pairs separated by `;` for the keys above; an empty value removes one.)
  */

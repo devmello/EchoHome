@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import org.json.JSONException
 
@@ -25,7 +26,11 @@ sealed interface CommuteState {
 
 /** Settings for the commute (all optional). */
 object CommuteSettings {
-    /** Home location; default: the weather location (manual > IP-detected > Livermore). */
+    /** Where to go: "auto" (next calendar event with a place, else [DESTINATION]), "event" or "fixed". */
+    const val SOURCE = "commute.source"
+    /** Start point, LOCATION ("lat,lon"); default: the home location (manual > IP-detected > Livermore). */
+    const val HOME = "commute.home"
+    /** Older start-point keys, still read. */
     const val LAT = "commute.lat"
     const val LON = "commute.lon"
     /** Use the next calendar event with a location within this many hours (default 4). */
@@ -74,6 +79,8 @@ class CommuteController(
         }
         if (!demo) jobs += scope.launch { calendar.events.collect { recompute() } }
         jobs += scope.launch { location.drop(1).collect { recompute() } }
+        // Settings apply live: a new destination or start point recomputes (routes are cached per pair).
+        jobs += scope.launch { settings.changes.filter { it.startsWith("commute.") && !it.startsWith("commute.geo.") }.collect { recompute() } }
     }
 
     fun stop() { jobs.forEach { it.cancel() }; jobs.clear(); fetching?.cancel(); fetching = null }
@@ -85,6 +92,7 @@ class CommuteController(
      * is the DEMO location (demo data, nothing manual): the screen shows the design's sample.
      */
     internal fun home(): LatLon? {
+        WeatherSettings.latLon(WeatherSettings.text(settings, CommuteSettings.HOME))?.let { (lat, lon) -> return LatLon(lat, lon) }
         val lat = WeatherSettings.number(settings, CommuteSettings.LAT)
         val lon = WeatherSettings.number(settings, CommuteSettings.LON)
         if (lat != null && lon != null) return LatLon(lat, lon)
@@ -94,13 +102,17 @@ class CommuteController(
     fun recompute() {
         val now = clock()
         val home = home() ?: run { _state.value = CommuteState.Ready(CommuteMath.demo(now)); return } // demo only
-        val trip = CommuteMath.nextEventTrip(calendar.events.value, now, int(CommuteSettings.EVENT_HOURS, 4))
-            ?: CommuteMath.defaultTrip(WeatherSettings.text(settings, CommuteSettings.LABEL) ?: "work",
-                WeatherSettings.text(settings, CommuteSettings.DESTINATION), WeatherSettings.text(settings, CommuteSettings.ARRIVE_BY), now, zone())
-            ?: run {
-                _state.value = CommuteState.Empty("No trips coming up", "Calendar events with a place show here a few hours ahead")
-                return
+        val source = WeatherSettings.text(settings, CommuteSettings.SOURCE) ?: "auto"
+        val fromCalendar = if (source == "fixed") null else CommuteMath.nextEventTrip(calendar.events.value, now, int(CommuteSettings.EVENT_HOURS, 4))
+        val fixed = if (source == "event") null else CommuteMath.defaultTrip(WeatherSettings.text(settings, CommuteSettings.LABEL) ?: "work",
+            WeatherSettings.text(settings, CommuteSettings.DESTINATION), WeatherSettings.text(settings, CommuteSettings.ARRIVE_BY) ?: "09:00", now, zone())
+        val trip = fromCalendar ?: fixed ?: run {
+            _state.value = when {
+                source == "fixed" -> CommuteState.Empty("No destination set", "Set one in Settings › Commute")
+                else -> CommuteState.Empty("No trips coming up", "Calendar events with a place show here a few hours ahead")
             }
+            return
+        }
         val key = "${home.lat},${home.lon}>" + trip.destination.lowercase() // a new home means new routes
         val cached = cache[key]
         if (cached == null || now - cached.first > routeTtlMs) fetch(key, trip.destination, home)
