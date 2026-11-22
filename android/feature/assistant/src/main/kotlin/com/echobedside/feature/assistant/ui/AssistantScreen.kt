@@ -199,10 +199,12 @@ class AssistantScreen(context: Context, private val services: EchoServices, priv
         args ?: return
         @Suppress("DEPRECATION") fun s(k: String) = args.get(k)?.toString()
         s("wake")?.let { engine.setWakeOverride(it == "1" || it == "true") }
+        s("voice")?.let { engine.debugVoice(it) } // e.g. a tts/<id>/ voice for synth
         when {
             s("script") != null -> engine.runDemo(s("script")!!, s("at")?.toLongOrNull())
             s("mictest") != null -> engine.setMicTest(s("mictest") == "1" || s("mictest") == "true")
-            s("synth") != null -> engine.synthTest(s("synth")!!) // silent: synthesizes, plays nothing
+            // silent: synthesizes, plays nothing; saves the audio to voice/bench/synth.wav (for the stt bench)
+            s("synth") != null -> engine.synthTest(s("synth")!!, context.getExternalFilesDir("voice")?.let { java.io.File(it, "bench").apply { mkdirs() }.resolve("synth.wav") })
             s("bench") != null -> context.getExternalFilesDir("voice")?.let { // silent: "stt:bench/0.wav"
                 val (kind, path) = s("bench")!!.split(':', limit = 2).let { it[0] to it.getOrElse(1) { "bench/0.wav" } }
                 engine.benchTest(kind, java.io.File(it, path))

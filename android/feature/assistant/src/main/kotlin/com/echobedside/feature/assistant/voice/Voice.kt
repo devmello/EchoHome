@@ -31,7 +31,7 @@ interface Speaker {
     /** Synthesizes and plays [text] at [speed] (1 = normal); returns false when it couldn't. */
     fun speak(text: String, speed: Float = 1f): Boolean
     /** Synthesizes [text] without playing it (silent measurement); null when it couldn't. */
-    fun synthesize(text: String, speed: Float = 1f): SynthStats? = null
+    fun synthesize(text: String, speed: Float = 1f, saveTo: java.io.File? = null): SynthStats? = null
     /** 0..1 level of what's playing right now (any thread). */
     val level: Float
     /** Stops playback (any thread). */

@@ -22,6 +22,7 @@ import com.echobedside.feature.assistant.pipeline.AssistReducer
 import com.echobedside.feature.assistant.pipeline.AssistState
 import com.echobedside.feature.assistant.pipeline.DemoScripts
 import com.echobedside.feature.assistant.pipeline.Phase
+import com.echobedside.feature.assistant.pipeline.SpeechText
 import com.echobedside.feature.assistant.pipeline.Transcript
 import com.echobedside.feature.assistant.pipeline.TurnEvent
 import com.echobedside.feature.assistant.voice.VoiceStack
@@ -168,6 +169,9 @@ class AssistantEngine(
     }
 
     fun refreshPermission() { permission.value = hasMicPermission() }
+
+    /** Debug: use voice [id] for this run (the setting is unchanged). */
+    fun debugVoice(id: String) { scope.launch(voiceThread) { voice.selectVoice(id) } }
 
     private fun selectVoice() {
         val id = settings.getString(KEY_VOICE, voice.defaultVoice)
@@ -376,7 +380,7 @@ class AssistantEngine(
             _speaking.value = true
             try {
                 val rate = speechRate()
-                withContext(voiceThread) { voice.speaker().speak(speakText, rate) }
+                withContext(voiceThread) { voice.speaker().speak(SpeechText.forSpeech(speakText), rate) }
             } finally {
                 _speaking.value = false
             }
@@ -540,12 +544,12 @@ class AssistantEngine(
      * Synthesizes [text] with the on-device voice and plays nothing: logs load time, synthesis
      * time and the real-time factor (measuring TTS silently, e.g. at night). Frees the voice after.
      */
-    fun synthTest(text: String) {
+    fun synthTest(text: String, synthSaveTo: java.io.File? = null) {
         if (!voice.ttsAvailable) { Log.i(TAG, "synth: no voice installed"); return }
         scope.launch(voiceThread) {
             val sp = voice.speaker()
-            val cold = sp.synthesize(text, speechRate())
-            val warm = sp.synthesize(text, speechRate())
+            val cold = sp.synthesize(SpeechText.forSpeech(text), speechRate())
+            val warm = sp.synthesize(SpeechText.forSpeech(text), speechRate(), saveTo = synthSaveTo)
             if (cold == null || warm == null) { Log.w(TAG, "synth failed"); return@launch }
             Log.i(TAG, "synth: load ${cold.loadMs} ms, first ${cold.synthMs} ms, again ${warm.synthMs} ms " +
                 "for ${warm.audioMs} ms of audio (RTF ${"%.2f".format(java.util.Locale.US, warm.rtf)}), ${text.length} chars")

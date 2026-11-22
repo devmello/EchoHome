@@ -59,6 +59,9 @@ unpack "$STT.tar.bz2" stt encoder-epoch-99-avg-1.int8.onnx decoder-epoch-99-avg-
 
 TTS=vits-piper-en_US-amy-low-int8
 fetch "$GH/tts-models/$TTS.tar.bz2" "$TTS.tar.bz2" 93070ac9fadf512e56c46bdd0c5d2ce96b424fdc4e683d560167410bd2c4df7d
-unpack "$TTS.tar.bz2" tts en_US-amy-low.onnx en_US-amy-low.onnx.json tokens.txt espeak-ng-data MODEL_CARD
+unpack "$TTS.tar.bz2" tts en_US-amy-low.onnx en_US-amy-low.onnx.json tokens.txt MODEL_CARD
+# sherpa-onnx 2.x dropped espeak-ng (GPL): Piper voices take phonemes from this English lexicon instead.
+fetch "$GH/tts-models/lexicon-en-us.txt" lexicon-en-us.txt 8b67ae549a465eee78f92ecb74644ad90c3c58ce65f19c68baf85878a10ef73a
+cp "$CACHE/lexicon-en-us.txt" "$OUT/tts/"
 
 echo "models ready in $OUT (push with tools/push-voice-models.sh)"

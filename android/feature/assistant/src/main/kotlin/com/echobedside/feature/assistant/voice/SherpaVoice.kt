@@ -51,7 +51,10 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
 
     override val sttAvailable get() = native && has(sttDir, STT_ENC, STT_DEC, STT_JOIN, "tokens.txt")
     override val wakeAvailable get() = native && has(kwsDir, KWS_ENC, KWS_DEC, KWS_JOIN, "tokens.txt", "keywords.txt")
-    override val ttsAvailable get() = native && has(ttsDir, ttsModel, "tokens.txt")
+    /** sherpa-onnx 2.x has no espeak-ng: Piper voices read phonemes from an English lexicon. */
+    private val lexicon get() = File(ttsDir, LEXICON).takeIf { it.isFile } ?: File(ttsRoot, LEXICON)
+
+    override val ttsAvailable get() = native && has(ttsDir, ttsModel, "tokens.txt") && lexicon.isFile
 
     override val defaultVoice get() = DEFAULT_VOICE
 
@@ -248,7 +251,7 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
                 model = OfflineTtsModelConfig(
                     vits = OfflineTtsVitsModelConfig(
                         model = from, tokens = f(ttsDir, "tokens.txt"),
-                        dataDir = f(ttsDir, "espeak-ng-data"),
+                        lexicon = lexicon.absolutePath,
                     ),
                     numThreads = threads,
                 ),
@@ -258,15 +261,21 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
             Log.i(TAG, "TTS loaded in $lastLoadMs ms")
         }
 
-        override fun synthesize(text: String, speed: Float): SynthStats? {
+        override fun synthesize(text: String, speed: Float, saveTo: File?): SynthStats? {
             val wasLoaded = tts != null && loadedFrom == f(ttsDir, ttsModel)
             try { prepare() } catch (e: Throwable) { Log.w(TAG, "TTS load failed: ${e.javaClass.simpleName}"); return null }
             val engine = tts ?: return null
             val t0 = SystemClock.elapsedRealtime()
             var samples = 0L
+            val keep = if (saveTo != null) ArrayList<FloatArray>() else null
             return try {
                 // Nothing is played: the samples are only counted.
-                engine.generateWithCallback(text, 0, speed) { s -> samples += s.size; 1 }
+                engine.generateWithCallback(text, 0, speed) { s -> samples += s.size; keep?.add(s.copyOf()); 1 }
+                if (saveTo != null && keep != null) {
+                    val all = FloatArray(keep.sumOf { it.size }); var o = 0
+                    for (k in keep) { k.copyInto(all, o); o += k.size }
+                    com.k2fsa.sherpa.onnx.GeneratedAudio(all, engine.sampleRate()).save(saveTo.absolutePath)
+                }
                 SynthStats(if (wasLoaded) 0 else lastLoadMs, SystemClock.elapsedRealtime() - t0, samples * 1000 / engine.sampleRate())
             } catch (e: Throwable) {
                 Log.w(TAG, "TTS failed: ${e.javaClass.simpleName}"); null
@@ -365,6 +374,8 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
         const val TTS_MODEL = "en_US-amy-low.onnx"
         const val DEFAULT_VOICE = "amy"
         const val ACTIVE_KEYWORDS = "keywords-active.txt"
+        /** sherpa-onnx tts-models release `lexicon-en-us.txt` (word to espeak phones). */
+        const val LEXICON = "lexicon-en-us.txt"
         const val MAX_DECODES_PER_CHUNK = 8
     }
 }
