@@ -1,2 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- volume / mic mute / DND (DND needs `cmd notification allow_dnd com.echobedside`) -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <!-- Bluetooth toggle, Wi-Fi name -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- wake the screen after the mic button (until the key layout is remapped) -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- system brightness (`appops set com.echobedside WRITE_SETTINGS allow`) -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
+    <!-- shutter state from the window policy dump (`pm grant com.echobedside android.permission.DUMP`) -->
+    <uses-permission android:name="android.permission.DUMP" tools:ignore="ProtectedPermissions" />
+
+    <application>
+        <!-- `cmd notification allow_listener com.echobedside/com.echobedside.feature.system.banner.BannerListenerService` -->
+        <service
+            android:name="com.echobedside.feature.system.banner.BannerListenerService"
+            android:exported="true"
+            android:label="Echo banners"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>
