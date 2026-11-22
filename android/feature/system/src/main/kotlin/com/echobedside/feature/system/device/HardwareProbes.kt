@@ -11,7 +11,7 @@ import java.io.File
  * Reads the Echo's privacy hardware without root (measured on the device, Nov 22 2026; see
  * docs/status/system.md):
  *
- *  - **Mic/camera button**: the `amazon-gating` platform driver exposes the latched hardware state
+ *  - **Mic button**: the `amazon-gating` platform driver exposes the latched hardware state
  *    at `/sys/devices/platform/amazon-gating/state` (world-readable; DT `state-gpios` = gpio-405,
  *    active-low). The button toggles that latch in hardware and also sends KEY_POWER on the
  *    `gating` input device, which Android swallows as the power key until it's remapped.

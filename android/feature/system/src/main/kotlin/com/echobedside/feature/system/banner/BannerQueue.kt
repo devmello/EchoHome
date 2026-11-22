@@ -18,6 +18,10 @@ class BannerQueue {
     var behind: Banner? = null; private set
     var expanded = false; private set
     private var shownAt = 0L
+    /** `system.banners.seconds`. */
+    var showMs = SHOW_MS
+    /** `system.dnd.critical`: doorbell / alarm / calls still show in Do Not Disturb. */
+    var dndAllowsCritical = true
 
     /** Returns true if what's shown changed. */
     fun update(feed: List<Banner>, dnd: Boolean, now: Long): Boolean {
@@ -33,7 +37,7 @@ class BannerQueue {
             val last = seen[b.id]
             if (last != null && last >= b.postedAtMillis) continue
             seen[b.id] = b.postedAtMillis
-            if (dnd && !b.critical) continue
+            if (dnd && !(b.critical && dndAllowsCritical)) continue
             if (current?.id == b.id) { shownAt = now; continue }
             queue.removeAll { it.id == b.id }
             queue.addLast(b)
@@ -44,7 +48,7 @@ class BannerQueue {
 
     fun tick(now: Long): Boolean {
         val c = current ?: return false
-        if (expanded || now < shownAt + SHOW_MS) {
+        if (expanded || now < shownAt + showMs) {
             if (behind != null && now >= shownAt + BEHIND_MS) { behind = null; return true }
             return false
         }
@@ -57,8 +61,8 @@ class BannerQueue {
     fun deadline(): Long? = when {
         current == null -> null
         expanded -> if (behind != null) shownAt + BEHIND_MS else null
-        behind != null -> minOf(shownAt + BEHIND_MS, shownAt + SHOW_MS)
-        else -> shownAt + SHOW_MS
+        behind != null -> minOf(shownAt + BEHIND_MS, shownAt + showMs)
+        else -> shownAt + showMs
     }
 
     fun expand(): Boolean { if (current == null) return false; expanded = true; behind = null; return true }
@@ -72,7 +76,7 @@ class BannerQueue {
     }
 
     private fun show(b: Banner, now: Long) {
-        behind = current?.takeIf { now - shownAt < SHOW_MS }
+        behind = current?.takeIf { now - shownAt < showMs }
         current = b
         shownAt = now
     }

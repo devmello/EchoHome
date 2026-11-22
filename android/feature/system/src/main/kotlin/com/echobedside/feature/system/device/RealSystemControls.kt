@@ -180,7 +180,7 @@ internal class RealSystemControls(private val ui: SystemUi) : SystemControls {
 
     @Suppress("DEPRECATION")
     override fun setWifiEnabled(on: Boolean): Boolean = try {
-        // Always false for a non-privileged app targeting API 29+.
+        // Works once the app is in /system (Android 11 allows system apps); false for a user app (CC opens the Wi-Fi panel).
         app.getSystemService(WifiManager::class.java).setWifiEnabled(on)
     } catch (_: Exception) { false }
 

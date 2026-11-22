@@ -18,6 +18,8 @@ import com.echobedside.core.design.SpecText
 import com.echobedside.core.design.withAlpha
 import com.echobedside.core.model.SystemState
 import com.echobedside.core.model.observeWhileAttached
+import com.echobedside.feature.system.SystemFeature
+import com.echobedside.feature.system.SystemSettings
 import com.echobedside.feature.system.SystemUi
 import com.echobedside.feature.system.ui.ColorTween
 import com.echobedside.feature.system.ui.EASE
@@ -76,6 +78,13 @@ internal class HudOverlay(context: Context, private val ui: SystemUi) : View(con
             val ex = i.extras ?: return@observeWhileAttached
             if (DEBUG_KEYS.any { ex.containsKey(it) }) ui.debug.value = android.os.Bundle(ex).apply { putLong("_t", System.nanoTime()) }
         }
+        // settings page, applied live
+        observeWhileAttached(ui.services.settings.changes) { k ->
+            when (k) {
+                SystemSettings.HUD_SECONDS, SystemSettings.HUD_BADGES -> { readSettings(); invalidate() }
+                SystemSettings.NIGHT_MODE -> SystemFeature.applyNightSetting(ui.services)
+            }
+        }
         observeWhileAttached(ui.services.system.state) { s ->
             val badgesBefore = badges(state)
             state = s
@@ -97,6 +106,7 @@ internal class HudOverlay(context: Context, private val ui: SystemUi) : View(con
         super.onAttachedToWindow()
         (context as? Activity)?.let { ui.activity = it }
         ui.controls.start()
+        readSettings()
     }
 
     override fun onWindowVisibilityChanged(visibility: Int) {
@@ -245,11 +255,19 @@ internal class HudOverlay(context: Context, private val ui: SystemUi) : View(con
 
     private fun badges(s: SystemState) = Badges(
         mic = s.micMuted || s.micMutedHardware,
-        cam = s.cameraDisabled || s.shutterClosed || s.micMutedHardware,
+        cam = s.cameraDisabled || s.shutterClosed,
     )
 
     /** right 22, top 18, 34 px circles, gap 8, ring 0 0 0 3px rgba(0,0,0,.5). */
+    private var showBadges = true
+
+    private fun readSettings() {
+        queue.levelMs = SystemSettings.hudLevelMs(ui.services.settings)
+        showBadges = ui.services.settings.getBoolean(SystemSettings.HUD_BADGES, true)
+    }
+
     private fun drawBadges(c: Canvas) {
+        if (!showBadges) return
         val b = badges(state)
         val list = buildList {
             if (b.mic && !queue.showing(MessageKind.Subject.MIC)) add(Icons.micOff to EchoRed)

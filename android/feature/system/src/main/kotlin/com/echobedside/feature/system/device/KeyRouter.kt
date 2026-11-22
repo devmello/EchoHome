@@ -10,7 +10,7 @@ import com.echobedside.feature.system.SystemUi
  *  - VOLUME_UP/DOWN (gpio-keys): one step on STREAM_MUSIC with flags 0 (no system panel) + our HUD.
  *    Key repeats step too, so holding a key ramps like the stock panel.
  *  - VOLUME_MUTE: toggles mute.
- *  - [HardwareMonitor.MIC_KEYCODE]: the mic/camera button once `gating.kl` is installed.
+ *  - [HardwareMonitor.MIC_KEYCODE]: the mic button once `gating.kl` is installed.
  *  - BACK: closes the topmost open overlay (Control Center, expanded island/banner).
  */
 internal class KeyRouter(private val ui: SystemUi) {
@@ -29,7 +29,7 @@ internal class KeyRouter(private val ui: SystemUi) {
             }
             HardwareMonitor.MIC_KEYCODE -> {
                 if (down && e.repeatCount == 0) {
-                    Log.i(TAG, "mic/camera button (keycode ${e.keyCode}, scan ${e.scanCode}, device ${e.device?.name})")
+                    Log.i(TAG, "mic button (keycode ${e.keyCode}, scan ${e.scanCode}, device ${e.device?.name})")
                     ui.monitor.onMicButton()
                 }
                 true

@@ -351,8 +351,8 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
     private fun drawSquares(c: Canvas) {
         val mic = state.micMuted || state.micMutedHardware
         square(c, Hit.MIC, "Microphone", when { state.micMutedHardware -> "Off · button"; mic -> "Off"; else -> "On" }, if (mic) Icons.micOff else Icons.mic, mic, RED_DOT)
-        val camOff = state.cameraBlocked
-        square(c, Hit.CAM, "Camera", when { state.cameraDisabled -> "Off"; state.shutterClosed -> "Shutter closed"; state.micMutedHardware -> "Off · button"; state.cameraInUse -> "In use"; else -> "On" },
+        val camOff = state.cameraDisabled || state.shutterClosed // the button is a mic button: it doesn't block the camera
+        square(c, Hit.CAM, "Camera", when { state.cameraDisabled -> "Off"; state.shutterClosed -> "Shutter closed"; state.cameraInUse -> "In use"; else -> "On" },
             if (camOff) Icons.camOff else Icons.cam, camOff, RED_DOT)
         val t = timers.firstOrNull { it.state != EchoTimer.State.DONE } ?: timers.firstOrNull()
         val tState = if (t == null) "Start" else (t.label.ifBlank { "Timer" } + " · " + mmss(t.remainingMs()))
@@ -512,7 +512,15 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
             Hit.TIMER -> { requestClose(); s.navigator.show("timers") }
             Hit.AUTO -> s.profiles.setAutoByFace(!autoByFace)
             Hit.P0, Hit.P1, Hit.P2, Hit.P3 -> profiles.getOrNull(h.ordinal - Hit.P0.ordinal)?.let { s.profiles.switchTo(it.id, SwitchReason.MANUAL) }
-            Hit.SETTINGS -> { requestClose(); try { context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {} }
+            Hit.SETTINGS -> {
+                // :feature:settings' pairing screen (URL + QR + code); Android Settings until that screen exists
+                requestClose()
+                s.navigator.show(SETTINGS_SCREEN)
+                postDelayed({
+                    if (s.navigator.current.value != SETTINGS_SCREEN)
+                        try { context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {}
+                }, 200)
+            }
             Hit.GRABBER -> requestClose()
             Hit.BRIGHT, Hit.VOL -> {}
         }
@@ -524,6 +532,7 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
     companion object {
         const val KEY_AIRPLAY = "system.cc.airplay"
         const val KEY_SPOTIFY = "system.cc.spotify"
+        const val SETTINGS_SCREEN = "settings-pair"
         val BLUE = 0xFF0A84FF.toInt()
         val GREEN = 0xFF30D158.toInt()
         val ORANGE = 0xFFFF9F0A.toInt()

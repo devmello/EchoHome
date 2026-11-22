@@ -39,6 +39,8 @@ private const val GREEN = 0x8030D158.toInt()
  */
 class HudQueue {
     var current: Hud? = null; private set
+    /** `system.hud.seconds` (settings page), default [LEVEL_MS]. */
+    var levelMs = LEVEL_MS
     private var shownAt = 0L
     private var updatedAt = 0L
     private val pendingMessages = ArrayDeque<Hud.Message>()
@@ -76,7 +78,7 @@ class HudQueue {
     /** When [current] expires; null when nothing is shown. */
     fun deadline(): Long? = when (val c = current) {
         null -> null
-        is Hud.Level -> updatedAt + LEVEL_MS
+        is Hud.Level -> updatedAt + levelMs
         is Hud.Message -> shownAt + MESSAGE_MS
     }
 

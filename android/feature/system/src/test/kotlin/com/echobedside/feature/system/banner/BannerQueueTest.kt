@@ -59,6 +59,16 @@ class BannerQueueTest {
         assertNull(q.current)
     }
 
+    @Test fun settingsChangeTimeAndDndCritical() {
+        val q = BannerQueue().apply { showMs = 2000; dndAllowsCritical = false }
+        q.update(listOf(b("door", critical = true)), dnd = true, now = 0)
+        assertNull("critical hidden too when the setting is off", q.current)
+        q.update(listOf(b("msg", at = 5)), dnd = false, now = 10)
+        assertEquals("msg", q.current?.id)
+        q.tick(10 + 2000)
+        assertNull(q.current)
+    }
+
     @Test fun queuedWhileExpanded() {
         val q = BannerQueue()
         q.update(listOf(b("1")), false, 0)

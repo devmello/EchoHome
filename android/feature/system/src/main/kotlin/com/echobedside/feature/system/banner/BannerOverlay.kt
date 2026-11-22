@@ -21,6 +21,7 @@ import com.echobedside.core.design.withAlpha
 import com.echobedside.core.model.Banner
 import com.echobedside.core.model.IslandAction
 import com.echobedside.core.model.observeWhileAttached
+import com.echobedside.feature.system.SystemSettings
 import com.echobedside.feature.system.SystemUi
 import com.echobedside.feature.system.ui.EASE
 import com.echobedside.feature.system.ui.GlassSpec
@@ -95,11 +96,24 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
             if (st.nightActive != night) { night = st.nightActive; for (g in arrayOf(glass, backGlass, btnGlass, primaryGlass)) g.night = night; invalidate() }
         }
         observeWhileAttached(ui.debug) { b -> b?.getString("banner")?.toIntOrNull()?.let { postDemo(it) } }
+        observeWhileAttached(s.settings.changes) { k -> if (k.startsWith("system.banners.") || k == SystemSettings.DND_CRITICAL) { readSettings(); refresh() } }
+    }
+
+    // settings page (applied live)
+    private var enabled = true
+    private var echoApps = true
+
+    private fun readSettings() {
+        enabled = s.settings.getBoolean(SystemSettings.BANNERS_ENABLED, true)
+        echoApps = s.settings.getBoolean(SystemSettings.BANNERS_ECHO_APPS, true)
+        q.showMs = SystemSettings.bannerShowMs(s.settings)
+        q.dndAllowsCritical = s.settings.getBoolean(SystemSettings.DND_CRITICAL, true)
     }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         ui.backHandlers += backHandler
+        readSettings(); refresh()
     }
 
     override fun onDetachedFromWindow() { ui.backHandlers -= backHandler; handler.removeCallbacksAndMessages(null); super.onDetachedFromWindow() }
@@ -107,7 +121,12 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
     private val backHandler: () -> Boolean = { if (q.expanded) { close(dismiss = false); true } else false }
 
     private fun refresh() {
-        if (q.update(feed, dnd, SystemClock.uptimeMillis())) apply()
+        val shown = when {
+            !enabled -> emptyList()
+            !echoApps -> feed.filterNot { it.id.startsWith(BannerListenerService.ID_PREFIX) }
+            else -> feed
+        }
+        if (q.update(shown, dnd, SystemClock.uptimeMillis())) apply()
         schedule()
     }
 

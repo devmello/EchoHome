@@ -35,15 +35,21 @@ object SystemFeature : EchoFeature {
         val ui = SystemUi(host.context, host.services)
         this.ui = ui
         host.services.systemControls = ui.controls
-        host.services.settings.getString("system.night.mode", "").takeIf { it.isNotEmpty() }?.let { m ->
-            runCatching { NightMode.valueOf(m) }.getOrNull()?.let { mode -> host.services.system.update { it.copy(nightMode = mode) } }
-        }
+        applyNightSetting(host.services)
+        SystemSettings.sections.forEach { host.registerSettings(it) }
         host.registerKeyHandler { ui.keys.onKey(it) }
         host.registerOverlay(OverlaySpec("island", 300) { IslandOverlay(it, ui) })
         host.registerOverlay(OverlaySpec("banners", 400) { BannerOverlay(it, ui) })
         host.registerOverlay(OverlaySpec("huds", 500) { HudOverlay(it, ui) })
         host.registerOverlay(OverlaySpec("controlcenter", 600) { ControlCenterOverlay(it, ui) })
         if (host.services.config.debug) registerDebug(host.context, ui)
+    }
+
+    /** `system.night.mode` (CC button or the settings page) → SystemState.nightMode. Also called live on change. */
+    internal fun applyNightSetting(services: com.echobedside.core.model.EchoServices) {
+        val m = services.settings.getString(SystemSettings.NIGHT_MODE, "").takeIf { it.isNotEmpty() } ?: return
+        val mode = runCatching { NightMode.valueOf(m.uppercase()) }.getOrNull() ?: return
+        if (services.system.state.value.nightMode != mode) services.system.update { it.copy(nightMode = mode) }
     }
 
     private fun registerDebug(ctx: Context, ui: SystemUi) {
