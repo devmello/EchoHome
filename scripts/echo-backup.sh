@@ -14,7 +14,8 @@ echo_connect >/dev/null
 root_echo
 mkdir -p "$OUT/chunks"
 PARTS=$(adb_echo shell 'for d in /sys/class/block/mmcblk0p*; do echo "$(grep PARTNAME $d/uevent | cut -d= -f2) $(cat $d/size)"; done' | tr -d '\r' | grep -v -E '^(userdata|cache) ')
-echo "$PARTS" | while read -r p sectors; do
+# Not `echo | while read`: adb reads stdin and would swallow the rest of the list.
+while read -r p sectors <&3; do
   [ -z "$p" ] && continue
   dev=/dev/block/by-name/$p
   bytes=$((sectors * 512)); chunks=$(( (bytes + CHUNK_MB*1048576 - 1) / (CHUNK_MB*1048576) ))
@@ -23,8 +24,8 @@ echo "$PARTS" | while read -r p sectors; do
     f="$OUT/chunks/$p.$i.gz"; ok=
     for try in 1 2 3 4; do
       echo_connect >/dev/null 2>&1 || true
-      dsum=$(adb_echo shell "dd if=$dev bs=1048576 skip=$((i*CHUNK_MB)) count=$CHUNK_MB 2>/dev/null | sha256sum" | tr -d '\r' | awk '{print $1}')
-      adb_echo exec-out "dd if=$dev bs=1048576 skip=$((i*CHUNK_MB)) count=$CHUNK_MB 2>/dev/null | gzip -1" > "$f" || true
+      dsum=$(adb_echo shell </dev/null "dd if=$dev bs=1048576 skip=$((i*CHUNK_MB)) count=$CHUNK_MB 2>/dev/null | sha256sum" | tr -d '\r' | awk '{print $1}')
+      adb_echo exec-out </dev/null "dd if=$dev bs=1048576 skip=$((i*CHUNK_MB)) count=$CHUNK_MB 2>/dev/null | gzip -1" > "$f" || true
       lsum=$(gunzip -c "$f" 2>/dev/null | shasum -a 256 | awk '{print $1}')
       if [ -n "$dsum" ] && [ "$dsum" = "$lsum" ]; then ok=1; break; fi
       echo "  retry $p chunk $i (try $try)"; root_echo >/dev/null 2>&1 || true
@@ -32,13 +33,15 @@ echo "$PARTS" | while read -r p sectors; do
     [ -n "$ok" ] || { echo "FAILED $p chunk $i"; exit 1; }
     cat "$f" >> "$OUT/$p.img.gz"; rm -f "$f"
   done
-  dsum=$(adb_echo shell "sha256sum $dev" | tr -d '\r' | awk '{print $1}')
+  dsum=$(adb_echo shell </dev/null "sha256sum $dev" | tr -d '\r' | awk '{print $1}')
   lsum=$(gunzip -c "$OUT/$p.img.gz" | shasum -a 256 | awk '{print $1}')
   [ "$dsum" = "$lsum" ] || { echo "MISMATCH $p (device $dsum, local $lsum)"; exit 1; }
   echo "$dsum  $p.img" >> "$OUT/SHA256SUMS"
   echo "ok $p $(du -h "$OUT/$p.img.gz" | cut -f1)"
-done
+done 3<<< "$PARTS"
 rmdir "$OUT/chunks"
+want=$(echo "$PARTS" | grep -c .); got=$(grep -c . "$OUT/SHA256SUMS")
+[ "$want" = "$got" ] || { echo "INCOMPLETE: $got of $want partitions"; exit 1; }
 adb_echo shell getprop ro.lineage.display.version > "$OUT/BUILD" || true
 date > "$OUT/COMPLETE"
 echo "Backup complete: $OUT"
