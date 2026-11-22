@@ -13,6 +13,7 @@ import android.graphics.Outline
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.MessageQueue
 import android.os.SystemClock
 import android.util.Log
 import android.view.MotionEvent
@@ -66,8 +67,8 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
     private var current: Slot? = null
     private var neighbour: Slot? = null
     private var neighbourDir = 0
-    /** Neighbours built right after touch-down (before anything moves), keyed by direction ±1. */
-    private val spares = HashMap<Int, Slot>()
+    /** Faces built during this StandBy visit, by id (see [obtain], [arrange]). */
+    private val built = LinkedHashMap<String, Slot>()
     private var shown = false
     private var nightOn = false
     private var awakeUntil = 0L
@@ -92,7 +93,9 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
     private var dimAnim: ValueAnimator? = null
 
     private val timeReceiver = object : BroadcastReceiver() {
-        override fun onReceive(c: Context, i: Intent) { current?.face?.onTimeChanged(); neighbour?.face?.onTimeChanged() }
+        override fun onReceive(c: Context, i: Intent) {
+            for (b in built.values) if (b.face.view.visibility == VISIBLE) b.face.onTimeChanged()
+        }
     }
     private val longPress = Runnable { longPressed = true; tracking = false; setEditing(true) }
     private val redim = Runnable { applyDim(animate = true) }
@@ -105,7 +108,10 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
             override fun getOutline(view: View, outline: Outline) =
                 outline.setRoundRect(0, 0, view.width, view.height, EDIT_RADIUS / EDIT_SCALE * editProgress)
         }
-        observeWhileAttached(services.faces.faces) { if (current == null || services.faces.byId(current!!.spec.id) == null) showFace(selectedFaceId(), persist = false) else syncOverlay() }
+        observeWhileAttached(services.faces.faces) { list ->
+            releaseBuilt(list.mapTo(HashSet()) { it.id })
+            if (current == null || services.faces.byId(current!!.spec.id) == null) showFace(selectedFaceId(), persist = false) else { arrange(); syncOverlay() }
+        }
         observeWhileAttached(services.profiles.active) { followProfile() }
         observeWhileAttached(services.profiles.profiles) { followProfile() }
         observeWhileAttached(services.system.state) { st ->
@@ -180,8 +186,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
     }
 
     private fun reconfigure() {
-        current?.let { it.face.setConfig(configFor(it.spec)) }
-        neighbour?.let { it.face.setConfig(configFor(it.spec)) }
+        for (s in built.values) s.face.setConfig(configFor(s.spec))
     }
 
     private fun create(spec: FaceSpec): Slot {
@@ -191,30 +196,66 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         stage.addView(f.view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         f.onTimeChanged()
         if (services.config.debug) Log.d("EchoClock", "created face ${spec.id} in ${SystemClock.uptimeMillis() - t0} ms")
-        return Slot(spec, f)
+        return Slot(spec, f).also { built[spec.id] = it }
     }
 
-    private fun dropSpares() {
-        for (s in spares.values) remove(s)
-        spares.clear()
+    /** The face's view, built once per StandBy visit (a face costs 25–50 ms to build on the Echo). */
+    private fun obtain(spec: FaceSpec): Slot {
+        val s = built[spec.id] ?: return create(spec)
+        s.face.view.visibility = VISIBLE
+        s.face.onTimeChanged()
+        return s
     }
 
-    /** Builds both neighbours off screen so the first drag frame doesn't pay for face creation. */
-    private val prewarm = Runnable {
-        val cur = current ?: return@Runnable
+    /** Stops [slot]'s motion; [arrange] decides where it sits. */
+    private fun park(slot: Slot?) {
+        slot?.face?.onScreenHidden()
+    }
+
+    /**
+     * Current face at 0; built neighbours visible just off screen, so their display lists stay
+     * recorded and the first drag frame only moves them; every other built face invisible.
+     */
+    private fun arrange() {
+        val cur = current ?: return
         val i = indexOf(cur.spec.id)
-        for (dir in intArrayOf(-1, 1)) {
-            val spec = faces().getOrNull(i + dir) ?: continue
-            if (spares[dir]?.spec?.id == spec.id || (neighbour?.spec?.id == spec.id)) continue
-            spares.remove(dir)?.let { remove(it) }
-            spares[dir] = create(spec).also { it.face.view.translationY = dir * stage.height.toFloat() }
+        val h = stage.height.toFloat()
+        for ((id, s) in built) {
+            val v = s.face.view
+            val j = indexOf(id)
+            val d = if (s === cur) 0 else if (j < 0) 9 else j - i
+            if (d in -1..1) { v.translationY = d * h; v.visibility = VISIBLE } else v.visibility = INVISIBLE
         }
     }
 
-    private fun remove(slot: Slot?) {
-        slot ?: return
-        slot.face.onScreenHidden()
-        stage.removeView(slot.face.view)
+    /** Builds the current face's missing neighbours one per idle moment, never mid-animation. */
+    private val warm = MessageQueue.IdleHandler {
+        val cur = current
+        if (!shown || cur == null) return@IdleHandler false
+        if (dragging || switchAnim != null || editAnim != null) return@IdleHandler true
+        val i = indexOf(cur.spec.id)
+        val next = listOfNotNull(faces().getOrNull(i + 1), faces().getOrNull(i - 1)).firstOrNull { f -> f.id !in built }
+            ?: return@IdleHandler false
+        create(next)
+        arrange()
+        true
+    }
+
+    private fun scheduleWarm() {
+        Looper.myQueue().removeIdleHandler(warm)
+        Looper.myQueue().addIdleHandler(warm)
+    }
+
+    /** Frees every face but the current one (StandBy hidden, or faces unregistered). */
+    private fun releaseBuilt(keepIds: Set<String>) {
+        val it = built.entries.iterator()
+        while (it.hasNext()) {
+            val (id, s) = it.next()
+            if (s === current || id in keepIds) continue
+            s.face.onScreenHidden()
+            stage.removeView(s.face.view)
+            it.remove()
+        }
     }
 
     /** Shows face [id] immediately (no animation); [persist] = the user chose it. */
@@ -222,12 +263,13 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         val spec = services.faces.byId(id) ?: faces().firstOrNull() ?: return
         if (spec.id == current?.spec?.id) return
         switchAnim?.cancel()
-        dropSpares()
-        remove(neighbour); neighbour = null
-        remove(current)
-        current = create(spec).also { it.face.view.translationY = 0f; if (shown) it.face.onScreenShown(null) }
+        park(neighbour); neighbour = null
+        park(current)
+        current = obtain(spec).also { if (shown) it.face.onScreenShown(null) }
+        arrange()
         if (persist) rememberFace(spec.id)
         syncOverlay()
+        if (shown) scheduleWarm()
     }
 
     /** Drag offset in screen px (negative = finger moved up = next face). */
@@ -237,14 +279,15 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         val dir = if (dy < 0) 1 else -1
         val target = indexOf(cur.spec.id) + dir
         if (dy == 0f || target !in faces().indices) {
-            remove(neighbour); neighbour = null
+            neighbour = null
+            arrange()
             cur.face.view.translationY = dy / 3f // rubber band at the ends
             return
         }
         if (neighbour?.spec?.id != faces()[target].id) {
-            neighbour?.let { old -> spares[neighbourDir] = old; old.face.view.translationY = neighbourDir * stage.height.toFloat() }
-            neighbour = spares.remove(dir)?.takeIf { it.spec.id == faces()[target].id } ?: create(faces()[target])
+            neighbour = obtain(faces()[target])
             neighbourDir = dir
+            arrange()
         }
         val h = stage.height.toFloat()
         cur.face.view.translationY = dy
@@ -259,18 +302,19 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         val commit = n != null && (abs(dy) > h / 4 || (abs(vy) > minFling && (vy < 0) == (neighbourDir > 0)))
         val to = if (commit) -neighbourDir * h else 0f
         animateStage(dy, to) {
-            if (commit && n != null) {
-                remove(cur)
-                current = n; neighbour = null
-                n.face.view.translationY = 0f
-                if (shown) n.face.onScreenShown(null)
-                rememberFace(n.spec.id)
-                syncOverlay()
-            } else {
-                remove(neighbour); neighbour = null
-                cur.face.view.translationY = 0f
-            }
+            if (commit && n != null) becomeCurrent(n, persist = true)
+            else { neighbour = null; arrange() }
         }
+    }
+
+    private fun becomeCurrent(n: Slot, persist: Boolean) {
+        park(current)
+        current = n; neighbour = null
+        arrange()
+        if (shown) n.face.onScreenShown(null)
+        if (persist) rememberFace(n.spec.id)
+        syncOverlay()
+        scheduleWarm()
     }
 
     private fun animateStage(from: Float, to: Float, end: () -> Unit) {
@@ -278,6 +322,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         val cur = current ?: return
         val h = stage.height.toFloat()
         switchAnim = ValueAnimator.ofFloat(from, to).apply {
+            updateStageLayer(moving = true)
             duration = 380
             interpolator = Motion.EASE
             addUpdateListener {
@@ -288,35 +333,21 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
             addListener(object : AnimatorListenerAdapter() {
                 var cancelled = false
                 override fun onAnimationCancel(a: Animator) { cancelled = true }
-                override fun onAnimationEnd(a: Animator) { if (switchAnim === a) switchAnim = null; if (!cancelled) end(); dropSpares() }
+                override fun onAnimationEnd(a: Animator) { if (switchAnim === a) switchAnim = null; if (!cancelled) end(); updateStageLayer() }
             })
             start()
         }
     }
 
-    /** Switches to face [index] with the slide animation (page dots). */
+    /** Switches to face [index] with the slide animation (page dots, profiles). */
     private fun slideTo(index: Int, persist: Boolean = true) {
         val cur = current ?: return
         val from = indexOf(cur.spec.id)
         if (index == from || index !in faces().indices || switchAnim != null) return
-        remove(neighbour)
         neighbourDir = if (index > from) 1 else -1
-        neighbour = create(faces()[index])
+        neighbour = obtain(faces()[index])
         neighbour!!.face.view.translationY = neighbourDir * stage.height.toFloat()
-        settleTo(persist)
-    }
-
-    private fun settleTo(persist: Boolean) {
-        val cur = current ?: return
-        val n = neighbour ?: return
-        animateStage(0f, -neighbourDir * stage.height.toFloat()) {
-            remove(cur)
-            current = n; neighbour = null
-            n.face.view.translationY = 0f
-            if (shown) n.face.onScreenShown(null)
-            if (persist) rememberFace(n.spec.id)
-            syncOverlay()
-        }
+        animateStage(0f, -neighbourDir * stage.height.toFloat()) { neighbour?.let { becomeCurrent(it, persist) } }
     }
 
     // ------------------------------------------------------------------ night
@@ -357,9 +388,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         stage.pivotX = EDIT_PIVOT_X
         stage.pivotY = EDIT_PIVOT_Y
         stage.clipToOutline = true
-        // Scaling re-rasterizes big glyphs at every step; render the face once into a GPU layer
-        // and scale that instead (the layer updates only when the face redraws).
-        stage.setLayerType(LAYER_TYPE_HARDWARE, null)
+        updateStageLayer(moving = false, force = true)
         applyDim(animate = false)
         editAnim?.cancel()
         val target = if (on) 1f else 0f
@@ -385,14 +414,24 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
     }
 
     private fun finishEdit(on: Boolean) {
-        // The layer only pays off while the scale changes; at rest it would be re-rendered on
-        // every frame of a face swipe.
-        stage.setLayerType(LAYER_TYPE_NONE, null)
+        updateStageLayer()
         if (on) return
         stage.clipToOutline = false
         overlay?.let { removeView(it) }
         overlay = null
         applyDim(animate = true)
+    }
+
+    /**
+     * The stage is a GPU layer while it is scaled (edit mode and its transition), except while
+     * faces move inside it: then the layer would be re-rendered every frame for nothing. As a
+     * layer, the scaled face costs the render thread one textured quad per frame (palette spring,
+     * overlay fades) instead of re-issuing every glyph — edit mode is render-thread bound on the Echo.
+     */
+    private fun updateStageLayer(moving: Boolean = dragging || switchAnim != null, force: Boolean = false) {
+        val want = (force || editing || editAnim != null) && !moving
+        val type = if (want) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE
+        if (stage.layerType != type) stage.setLayerType(type, null)
     }
 
     private fun syncOverlay() {
@@ -453,7 +492,6 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
                 dragging = false; longPressed = false
                 tracking = e.y > TOP_EDGE && switchAnim == null
                 if (!editing) handler.postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
-                if (tracking) handler.post(prewarm)
             }
             MotionEvent.ACTION_POINTER_DOWN -> { handler.removeCallbacks(longPress); if (!dragging) tracking = false }
             MotionEvent.ACTION_MOVE -> {
@@ -462,6 +500,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
                 if (abs(dx) > slop || abs(dy) > slop) handler.removeCallbacks(longPress)
                 if (!dragging && tracking && abs(dy) > slop && abs(dy) > abs(dx) * 1.2f && faces().size > 1) {
                     dragging = true
+                    updateStageLayer()
                     parent?.requestDisallowInterceptTouchEvent(true)
                     overlay?.colors?.setOpen(false)
                 }
@@ -473,7 +512,6 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
                     velocity!!.computeCurrentVelocity(1000)
                     settle(velocity!!.yVelocity)
                 } else {
-                    handler.removeCallbacks(prewarm); dropSpares()
                     if (!intercepting && !longPressed && abs(e.x - downX) < slop && abs(e.y - downY) < slop) onTap(e.x, e.y)
                 }
                 dragging = false
@@ -481,7 +519,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
             }
             MotionEvent.ACTION_CANCEL -> {
                 handler.removeCallbacks(longPress)
-                if (dragging) settle(0f) else { handler.removeCallbacks(prewarm); dropSpares() }
+                if (dragging) settle(0f)
                 dragging = false
                 velocity?.recycle(); velocity = null
             }
@@ -508,13 +546,17 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         current?.face?.onScreenShown(args)
         night.start()
         applyDim(animate = false)
+        scheduleWarm()
     }
 
     override fun onScreenHidden() {
         shown = false
         current?.face?.onScreenHidden()
-        neighbour?.face?.onScreenHidden()
-        dropSpares()
+        switchAnim?.cancel()
+        neighbour = null
+        Looper.myQueue().removeIdleHandler(warm)
+        releaseBuilt(emptySet()) // only the current face stays built while other screens show
+        arrange()
         night.stop()
         handler.removeCallbacks(longPress)
         if (editing) setEditing(false, animate = false)
@@ -559,6 +601,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
     override fun onDetachedFromWindow() {
         context.unregisterReceiver(timeReceiver)
         handler.removeCallbacksAndMessages(null)
+        Looper.myQueue().removeIdleHandler(warm)
         night.stop()
         super.onDetachedFromWindow()
     }
