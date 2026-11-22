@@ -16,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
@@ -176,9 +177,11 @@ class OpenMeteoWeatherProvider(
     private var loop: Job? = null
     private var mirror: Job? = null
 
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
     fun start() {
         restart()
-        scope.launch { settings.changes.filter { it.startsWith("weather.") }.collect { restart() } }
+        // Debounced: `home.set` or a settings screen changes lat, lon and place together.
+        scope.launch { settings.changes.filter { it.startsWith("weather.") }.debounce(400).collect { restart() } }
     }
 
     override fun refresh() = restart()

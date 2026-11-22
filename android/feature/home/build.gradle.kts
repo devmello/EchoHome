@@ -10,7 +10,7 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:design"))
-    // Stock quotes (Twelve Data REST). Already in the APK through :core:data, so it adds nothing.
+    // HTTP for Open-Meteo, iCal, Nominatim, OSRM and Yahoo. Already in the APK through :core:data, so it adds nothing.
     implementation(libs.okhttp)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)

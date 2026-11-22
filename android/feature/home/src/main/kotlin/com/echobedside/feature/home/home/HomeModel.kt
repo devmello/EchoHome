@@ -60,8 +60,10 @@ object RoomMapper {
 
         val rooms = registry.areas.mapNotNull { area ->
             val mine = byArea[area.id].orEmpty()
-            val hasControls = mine.any { it.domain in TOGGLE_DOMAINS || it.domain == "climate" }
-            // An area without lights/switches/climate still becomes a room if its lamp/toggles are pinned.
+            // A thermostat alone makes a room only when rooms have their own (with one house
+            // thermostat every room borrows it, so a "Hallway" with just that isn't a room).
+            val hasControls = mine.any { it.domain in TOGGLE_DOMAINS || (it.domain == "climate" && houseClimate.size > 1) }
+            // An area without lights/switches still becomes a room if its lamp/toggles are pinned.
             val anyOverride = override(area.id, Slot.LAMP) != null || override(area.id, Slot.TOGGLES) != null
             if (!hasControls && !anyOverride) return@mapNotNull null
 

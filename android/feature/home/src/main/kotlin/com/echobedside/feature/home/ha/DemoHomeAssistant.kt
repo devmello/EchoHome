@@ -59,9 +59,6 @@ class DemoHomeAssistant(private val scope: CoroutineScope, private val latencyMs
     override suspend fun callService(domain: String, service: String, entityId: String?, data: JSONObject?, returnResponse: Boolean): JSONObject {
         delay(latencyMs)
         if (failCalls) throw HaException("home_assistant_error", "Demo failure")
-        if (domain == "waze_travel_time" && service == "get_travel_times") return JSONObject().put("routes", JSONArray()
-            .put(JSONObject().put("name", "Hwy 17").put("duration", 24.0).put("distance", 31.2))
-            .put(JSONObject().put("name", "Soquel Dr").put("duration", 31.0).put("distance", 27.9)))
         val id = entityId ?: return JSONObject()
         val e = _entities.value[id] ?: throw HaException("not_found", "Entity $id not found")
         val a = JSONObject(e.attributes.toString())
