@@ -85,6 +85,8 @@ class AssistantEngine(
     private val keyConfigured: Flow<Boolean> = flowOf(true),
     private val hasMicPermission: () -> Boolean,
     private val voiceThread: CoroutineDispatcher,
+    /** TTS gets its own thread: loading the voice is slow on the Echo and must never hold up listening. */
+    private val ttsThread: CoroutineDispatcher = voiceThread,
     val demoData: Boolean,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
@@ -171,18 +173,18 @@ class AssistantEngine(
     fun refreshPermission() { permission.value = hasMicPermission() }
 
     /** Debug: use voice [id] for this run (the setting is unchanged). */
-    fun debugVoice(id: String) { scope.launch(voiceThread) { voice.selectVoice(id) } }
+    fun debugVoice(id: String) { scope.launch(ttsThread) { voice.selectVoice(id) } }
 
     private fun selectVoice() {
         val id = settings.getString(KEY_VOICE, voice.defaultVoice)
-        scope.launch(voiceThread) { voice.selectVoice(id) }
+        scope.launch(ttsThread) { voice.selectVoice(id) }
     }
 
     /**
      * Whether answers are spoken: `assistant.speak`, and in night mode only with
      * `assistant.speakAtNight` (the screen still shows the answer word by word).
      */
-    fun shouldSpeak(): Boolean = voice.ttsAvailable && settings.getBoolean(KEY_SPEAK, true) &&
+    fun shouldSpeak(): Boolean = voice.ttsAvailable && settings.getBoolean(KEY_SPEAK, SPEAK_DEFAULT) &&
         (!system.state.value.nightActive || settings.getBoolean(KEY_SPEAK_AT_NIGHT, false))
 
     private fun speechRate() = settings.getFloat(KEY_SPEECH_RATE, 1f).coerceIn(0.5f, 2f)
@@ -327,7 +329,7 @@ class AssistantEngine(
         val a = agent() ?: run { emit(t, TurnEvent.Failed("no-key")); return false }
         // Load the voice while Claude works.
         val tts = if (shouldSpeak())
-            scope.async(voiceThread) { runCatching { voice.speaker().prepare() }.isSuccess } else null
+            scope.async(ttsThread) { runCatching { voice.speaker().prepare() }.isSuccess } else null
         val follow = now() - lastAnswerAt < CONVERSATION_KEEP_MS && historyModel == ClaudeModels.of(a.model())
         val answer = try {
             withTimeout(TURN_TIMEOUT_MS) { a.turn(query, if (follow) history else emptyList()) { ev -> emit(t, ev) } }
@@ -335,11 +337,11 @@ class AssistantEngine(
             Log.w(TAG, "Claude: ${e.code} ${e.message}")
             emit(t, TurnEvent.Failed(e.code))
             if (e.code == "auth" || e.code == "refusal") history = emptyList()
-            finishTurn(t, AssistReducer.friendly(e.code), tts?.await() == true)
+            finishTurn(t, AssistReducer.friendly(e.code), ttsReady(tts))
             return false
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
             emit(t, TurnEvent.Failed("timeout"))
-            finishTurn(t, AssistReducer.friendly("timeout"), tts?.await() == true)
+            finishTurn(t, AssistReducer.friendly("timeout"), ttsReady(tts))
             return false
         }
         // A conversation that grew too long starts over (rather than cutting its start, which
@@ -348,7 +350,7 @@ class AssistantEngine(
         historyModel = answer.model
         lastAnswerAt = now()
         emit(t, TurnEvent.Answer(answer.answer.ifBlank { "Done." }, answer.cards))
-        finishTurn(t, answer.answer, tts?.await() == true)
+        finishTurn(t, answer.answer, ttsReady(tts))
         return t == token && answer.answer.trim().endsWith("?") && settings.getBoolean(KEY_FOLLOW_UP, true)
     }
 
@@ -374,13 +376,17 @@ class AssistantEngine(
         }
     }
 
+    /** The voice, if it finished loading by now or within [TTS_WAIT_MS]; else the answer is only shown. */
+    private suspend fun ttsReady(tts: kotlinx.coroutines.Deferred<Boolean>?): Boolean =
+        tts != null && (withTimeoutOrNull(TTS_WAIT_MS) { tts.await() } ?: false.also { Log.i(TAG, "voice not ready: answer shown only") })
+
     private suspend fun finishTurn(t: Int, speakText: String?, ttsReady: Boolean = false) {
         if (speakText != null && ttsReady && t == token) {
             ducker.duck()
             _speaking.value = true
             try {
                 val rate = speechRate()
-                withContext(voiceThread) { voice.speaker().speak(SpeechText.forSpeech(speakText), rate) }
+                withContext(ttsThread) { voice.speaker().speak(SpeechText.forSpeech(speakText), rate) }
             } finally {
                 _speaking.value = false
             }
@@ -389,7 +395,7 @@ class AssistantEngine(
             _speaking.value = true
             try { delay(speakText.split(' ').size * DemoScripts.REVEAL_WORD_MS) } finally { _speaking.value = false }
         }
-        if (voice.ttsAvailable && !settings.getBoolean(KEY_KEEP_TTS, false)) withContext(voiceThread) { voice.speaker().release() }
+        if (voice.ttsAvailable && !settings.getBoolean(KEY_KEEP_TTS, false)) scope.launch(ttsThread) { voice.speaker().release() } // after a load still running, never waited for
         emit(t, TurnEvent.TurnEnd)
         scheduleDismiss()
     }
@@ -546,7 +552,7 @@ class AssistantEngine(
      */
     fun synthTest(text: String, synthSaveTo: java.io.File? = null) {
         if (!voice.ttsAvailable) { Log.i(TAG, "synth: no voice installed"); return }
-        scope.launch(voiceThread) {
+        scope.launch(ttsThread) {
             val sp = voice.speaker()
             val cold = sp.synthesize(SpeechText.forSpeech(text), speechRate())
             val warm = sp.synthesize(SpeechText.forSpeech(text), speechRate(), saveTo = synthSaveTo)
@@ -579,7 +585,7 @@ class AssistantEngine(
             try {
                 _state.value = AssistState(phase = Phase.ANSWER, answer = text)
                 ducker.duck()
-                withContext(voiceThread) { voice.speaker().prepare() }
+                withContext(ttsThread) { voice.speaker().prepare() }
                 finishTurn(t, text, ttsReady = true)
             } finally {
                 if (t == token) { turnActive.value = false; ducker.release(); syncWake() }
@@ -678,6 +684,9 @@ class AssistantEngine(
         const val KEY_SPEAK_AT_NIGHT = "assistant.speakAtNight"
         const val KEY_VOICE = "assistant.voice"
         const val KEY_SPEECH_RATE = "assistant.speechRate"
+        /** Off: on the Echo Show 5 the Piper voice loads in ~35 s and synthesizes at 3.4× real time (status file). */
+        const val SPEAK_DEFAULT = false
+        const val TTS_WAIT_MS = 1500L
         const val DISMISS_S = 12
         const val CONVERSATION_KEEP_MS = 60_000L
         const val TURN_TIMEOUT_MS = 45_000L

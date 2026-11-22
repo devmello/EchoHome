@@ -125,7 +125,7 @@ class EngineTest {
         val key = MutableStateFlow(withKey)
         val system = DefaultSystemStateStore()
         val island = DefaultIslandManager()
-        val settings = FakeSettings().also { it.map[AssistantEngine.KEY_WAKE] = wake }
+        val settings = FakeSettings().also { it.map[AssistantEngine.KEY_WAKE] = wake; it.map[AssistantEngine.KEY_SPEAK] = true }
         val nav = FakeNav()
         val mic = FakeMic()
         var ducked = 0

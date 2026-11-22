@@ -42,6 +42,9 @@ object AssistantFeature : EchoFeature {
         val voiceThread = Executors.newSingleThreadExecutor { r ->
             Thread({ Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO); r.run() }, "assistant-voice")
         }.asCoroutineDispatcher()
+        val ttsThread = Executors.newSingleThreadExecutor { r ->
+            Thread({ Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO); r.run() }, "assistant-tts")
+        }.asCoroutineDispatcher()
         // /sdcard/Android/data/com.echobedside/files/voice (created here so adb can push into it).
         val root = ctx.getExternalFilesDir("voice") ?: File(ctx.filesDir, "voice")
         val voice = SherpaVoice(root)
@@ -66,6 +69,7 @@ object AssistantFeature : EchoFeature {
             keyConfigured = services.configFlow.map { it.secrets.anthropicConfigured },
             hasMicPermission = { ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED },
             voiceThread = voiceThread,
+            ttsThread = ttsThread,
             demoData = services.config.demoData,
         )
         this.engine = engine
