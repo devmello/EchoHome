@@ -7,7 +7,9 @@ import com.echobedside.core.model.ScreenSpec
 import com.echobedside.feature.home.commute.CommuteView
 import com.echobedside.feature.home.doorbell.DemoSnapshot
 import com.echobedside.feature.home.doorbell.DoorbellWatcher
+import com.echobedside.feature.home.glance.AutoLocation
 import com.echobedside.feature.home.glance.IcsCalendarProvider
+import com.echobedside.feature.home.glance.NetworkChanges
 import com.echobedside.feature.home.glance.OpenMeteoWeatherProvider
 import com.echobedside.feature.home.ha.DemoHomeAssistant
 import com.echobedside.feature.home.home.HomeScreenView
@@ -15,8 +17,8 @@ import com.echobedside.feature.home.stocks.StocksView
 
 /**
  * `:feature:home` (agent F — glances + optional smart home). Works with no Home Assistant (NOTES §4.1):
- *  - services.weather → Open-Meteo once `weather.lat`/`weather.lon` are set (until then the fake:
- *    sample data in demo mode, null otherwise).
+ *  - services.weather → Open-Meteo for the manual location, else the IP-detected one, else
+ *    Livermore (works with no settings). Demo mode with no manual location: the sample weather.
  *  - services.calendar → the iCal URLs in secrets (`calendar.icsUrls`); none = the fake stays.
  *  - Commute (order 40): Nominatim + OSRM, no key. Stocks (order 50): Yahoo chart, no key.
  *  - Home (order 20) + doorbell: only with Home Assistant configured. In demo mode without HA the
@@ -30,7 +32,10 @@ object HomeFeature : EchoFeature {
 
     override fun install(host: FeatureHost) {
         val s = host.services
-        val weather = OpenMeteoWeatherProvider(s.settings, s.scope, fallback = s.weather)
+        // Manual location > IP-detected (daily, and after a network change) > Livermore. Demo mode
+        // with no manual location keeps the sample weather.
+        val weather = OpenMeteoWeatherProvider(s.settings, s.scope, fallback = s.weather, demo = s.config.demoData,
+            auto = AutoLocation(s.settings), networkChanges = NetworkChanges.flow(host.context))
         s.weather = weather
         weather.start()
 

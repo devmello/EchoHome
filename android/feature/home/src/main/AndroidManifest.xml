@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Stock quotes (Twelve Data). Home Assistant traffic uses the same permission. -->
+    <!-- Open-Meteo, iCal, IP location, Nominatim, OSRM, Yahoo chart; Home Assistant when configured. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Network-change callback: look up the IP location again after a change of Wi-Fi. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 </manifest>

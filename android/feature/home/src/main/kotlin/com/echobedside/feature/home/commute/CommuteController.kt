@@ -3,6 +3,7 @@ package com.echobedside.feature.home.commute
 import com.echobedside.core.model.CalendarProvider
 import com.echobedside.core.model.SettingsStore
 import com.echobedside.core.model.WeatherProvider
+import com.echobedside.feature.home.glance.Locations
 import com.echobedside.feature.home.glance.WeatherSettings
 import java.io.IOException
 import java.time.ZoneId
@@ -23,7 +24,7 @@ sealed interface CommuteState {
 
 /** Settings for the commute (all optional). */
 object CommuteSettings {
-    /** Home location; default `weather.lat` / `weather.lon`. */
+    /** Home location; default: the weather location (manual > IP-detected > Livermore). */
     const val LAT = "commute.lat"
     const val LON = "commute.lon"
     /** Use the next calendar event with a location within this many hours (default 4). */
@@ -76,19 +77,17 @@ class CommuteController(
 
     private fun int(key: String, def: Int) = WeatherSettings.number(settings, key)?.toInt() ?: def
 
-    private fun home(): LatLon? {
-        val lat = WeatherSettings.number(settings, CommuteSettings.LAT) ?: WeatherSettings.number(settings, WeatherSettings.LAT)
-        val lon = WeatherSettings.number(settings, CommuteSettings.LON) ?: WeatherSettings.number(settings, WeatherSettings.LON)
-        return if (lat != null && lon != null) LatLon(lat, lon) else null
+    /** `commute.lat`/`lon`, else the weather location (manual > IP-detected > Livermore); null in demo with nothing manual. */
+    internal fun home(): LatLon? {
+        val lat = WeatherSettings.number(settings, CommuteSettings.LAT)
+        val lon = WeatherSettings.number(settings, CommuteSettings.LON)
+        if (lat != null && lon != null) return LatLon(lat, lon)
+        return Locations.resolve(settings, demo)?.let { LatLon(it.lat, it.lon) }
     }
 
     fun recompute() {
         val now = clock()
-        if (demo && home() == null) { _state.value = CommuteState.Ready(CommuteMath.demo(now)); return }
-        val home = home() ?: run {
-            _state.value = CommuteState.Empty("Set your home location", "Commute needs weather.lat / weather.lon (or commute.lat / commute.lon)")
-            return
-        }
+        val home = home() ?: run { _state.value = CommuteState.Ready(CommuteMath.demo(now)); return } // demo only
         val trip = CommuteMath.nextEventTrip(calendar.events.value, now, int(CommuteSettings.EVENT_HOURS, 4))
             ?: CommuteMath.defaultTrip(WeatherSettings.text(settings, CommuteSettings.LABEL) ?: "work",
                 WeatherSettings.text(settings, CommuteSettings.DESTINATION), WeatherSettings.text(settings, CommuteSettings.ARRIVE_BY), now, zone())

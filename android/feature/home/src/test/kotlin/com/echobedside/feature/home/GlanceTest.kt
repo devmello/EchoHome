@@ -102,14 +102,14 @@ class GlanceTest {
 
     private class Fake(w: Weather?) : WeatherProvider { override val weather = MutableStateFlow(w) }
 
-    @Test fun providerMirrorsFakeUntilALocationIsSetThenFetches() = runBlocking {
+    @Test fun demoProviderMirrorsFakeUntilALocationIsSetThenFetches() = runBlocking {
         val body = forecast().toString()
         server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
             override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest) = MockResponse().setBody(body)
         }
         val settings = MemSettings("weather.unit" to "F")
         val sample = Weather(70, 72, 50, WeatherCondition.CLEAR, false, location = "Sample")
-        val p = OpenMeteoWeatherProvider(settings, scope, Fake(sample), Net.http, server.url("/v1/forecast"))
+        val p = OpenMeteoWeatherProvider(settings, scope, Fake(sample), demo = true, auto = null, client = Net.http, base = server.url("/v1/forecast"))
         p.start()
         withTimeout(2000) { p.weather.first { it?.location == "Sample" } }
         assertEquals(0, server.requestCount)
