@@ -340,11 +340,25 @@ internal class ProgressView(context: Context) : View(context) {
     private var scrub: Float? = null
     private var labelsFor = Long.MIN_VALUE
     private var labels = "" to ""
+    private var drawnPx = -1
+    private var drawnSec = Long.MIN_VALUE
+    private var drawnLeft = Long.MIN_VALUE
+
+    /**
+     * Called on every ticker frame while playing: redraws only when the bar's pixel width or a
+     * label would change (2–3 times a second for a typical track), not 60 times a second.
+     */
+    fun refreshIfChanged() {
+        if (scrub != null) return
+        val pos = position()
+        if ((width * Format.fraction(pos, duration)).toInt() != drawnPx || pos / 1000 != drawnSec || (duration - pos) / 1000 != drawnLeft) invalidate()
+    }
 
     override fun onDraw(canvas: Canvas) {
         val w = width.toFloat()
         val pos = scrub?.let { (it * duration).toLong() } ?: position()
         val f = Format.fraction(pos, duration)
+        drawnPx = (w * f).toInt(); drawnSec = pos / 1000; drawnLeft = (duration - pos) / 1000
         track.color = if (night) withAlpha(Night.COLOR, 0.3f) else withAlpha(Color.WHITE, 0.24f)
         fill.color = if (night) Night.COLOR else withAlpha(Color.WHITE, 0.95f)
         rect.set(0f, barTop, w, barTop + 8f)

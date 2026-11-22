@@ -55,6 +55,25 @@ Before the 1/4-size ambient layer the GPU part after swap was 6.1 ms; with it, ~
 
 Empty state, measured (04:50): PSS 41.0 MB, **CPU 0.0 %, 0 frames** ("no frames drawn (idle)"). Paused settles to the same after 30 s; a hidden screen stops everything in `onScreenHidden`.
 
+### Music island redraw fix (Nov 22, 13:24 vs 13:27, debug, `--ez demo true`, silent demo media playing)
+
+Agent E found the whole app drawing ~60 fps on Timers / alarm. Cause: the island overlay covers the whole window and repainted itself every 33 ms for the equaliser bars. Under hardware rendering an invalidate damages a view's whole bounds, so every frame repainted the full screen and everything under it.
+
+Fix (branch `media-island-perf`, in `:feature:system`'s island at the lead's request):
+- The bars are now `IslandEqualizer`, a 30×24 px child View of the overlay (now a `FrameLayout`). It animates itself at ~15 fps (66 ms) only while playing and shown, and is static when paused, in Night, or not visible.
+- The overlay no longer asks for frames for music, and the GPU repaints just that rect (the Echo has `EGL_KHR_partial_update`).
+- Now Playing's scrubber now redraws only when its pixel width or a label changes (a few times a second), not every ticker frame. The ambient drift is unchanged (the design's 1 s linear motion, only while Now Playing is shown).
+
+`docs/status/shots/media/island-perf.sh`, 10 s each:
+
+| Screen | Before: CPU / frames / janky / p50-p99 | After |
+|---|---|---|
+| Timers (island: music) | 25.3 % / 458 / 0 % / 5–7 ms | **9.5 %** / 153 / 0 % / 5–5 ms |
+| StandBy (island: music) | 25.9 % / 261 / 0.4 % / 6–11 ms | **12.0 %** / 161 / 0 % / 5–9 ms |
+| Alarm ringing demo | 62.3 % / 622 / 0.3 % / 8–14 ms | 62.2 % / 627 / 0.2 % / 8–13 ms |
+
+The alarm row doesn't move because its cost is the alarm screen's own 60 fps breathing glow (agent E's screen), not the island. What's left on Timers / StandBy is mostly the presence camera at 2 fps.
+
 ## Screenshots (`docs/status/shots/media/`, compared with the design rendered in Chrome at 960×480)
 
 Design renders came from `NowPlaying.dc.html` with its template values filled in (track a, pos 1:23, Inter) and Chrome headless at 960×480.
