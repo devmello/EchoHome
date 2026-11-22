@@ -77,6 +77,9 @@ class EditOverlay(context: Context, private val callbacks: Callbacks) : FrameLay
         labelText.drawCentered(canvas, faceLabel, 480f, labelText.baselineIn(436f), withAlpha(Color.WHITE, 0.72f))
     }
 
+    /** The fade-in applies alpha per child: no full-screen offscreen layer per frame. */
+    override fun hasOverlappingRendering() = false
+
     /** A tap on the zoomed face (not on a control). */
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean = false

@@ -85,6 +85,8 @@ class WeatherFace(context: Context, services: EchoServices) : SpecFace(context, 
     private var hours: List<Hour> = emptyList()
     private var rain: IntArray = IntArray(0)
 
+    private val content = android.graphics.RenderNode("weather-content")
+    private var contentDirty = true
     private var cloud1: Bitmap? = null
     private var cloud2: Bitmap? = null
 
@@ -121,6 +123,7 @@ class WeatherFace(context: Context, services: EchoServices) : SpecFace(context, 
         val key = now / 60_000
         if (key == minuteKey) return false
         minuteKey = key
+        contentDirty = true
         val w = weather
         val loc = HomeLocation.from(services)
         val zone = TimeZone.getDefault()
@@ -235,6 +238,21 @@ class WeatherFace(context: Context, services: EchoServices) : SpecFace(context, 
             drawCloud(canvas, cloud1!!, 120f + (30 * sin(t / 20)).toFloat(), 300f, 760f, 220f, 40f)
             drawCloud(canvas, cloud2!!, -200f + (40 * cos(t / 26)).toFloat(), 360f, 700f, 220f, 46f)
         }
+
+        // Everything below changes at most once a minute: recorded once into a RenderNode, so the
+        // once-a-second motion frame only re-records the sky, stars and clouds above.
+        if (canvas.isHardwareAccelerated) {
+            if (contentDirty) {
+                content.setPosition(0, 0, W.toInt(), H.toInt())
+                val c = content.beginRecording()
+                try { drawContent(c, night, fg, fg2) } finally { content.endRecording() }
+                contentDirty = false
+            }
+            canvas.drawRenderNode(content)
+        } else drawContent(canvas, night, fg, fg2)
+    }
+
+    private fun drawContent(canvas: Canvas, night: Boolean, fg: Int, fg2: Int) {
 
         // current conditions (left 52, top 40)
         var y = 40f
