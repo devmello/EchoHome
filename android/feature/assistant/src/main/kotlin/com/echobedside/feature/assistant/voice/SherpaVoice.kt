@@ -242,7 +242,17 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
         val text = textFile.readText()
         if (model == "supertonic") return benchSupertonic(dir, n, p.getOrNull(4)?.toIntOrNull() ?: 5, text)
         val t0 = SystemClock.elapsedRealtime()
-        val tts = OfflineTts(null, ttsConfig(f(dir, model), f(dir, "tokens.txt"), lex.absolutePath, n))
+        // "matcha": an acoustic model in dir plus the vocoder at p[5].
+        val vocoder = p.getOrNull(5)?.takeIf { it.isNotEmpty() }?.let(::at)
+        val tts = OfflineTts(null, if (vocoder == null) ttsConfig(f(dir, model), f(dir, "tokens.txt"), lex.absolutePath, n)
+            else OfflineTtsConfig(
+                model = OfflineTtsModelConfig(
+                    matcha = com.k2fsa.sherpa.onnx.OfflineTtsMatchaModelConfig(acousticModel = f(dir, model), vocoder = vocoder.absolutePath,
+                        tokens = f(dir, "tokens.txt"), lexicon = lex.absolutePath),
+                    numThreads = n,
+                ),
+                maxNumSentences = 1,
+            ))
         val load = SystemClock.elapsedRealtime() - t0
         val pssLoaded = android.os.Debug.getPss() / 1024
         var samples = 0L
