@@ -70,9 +70,9 @@ class AirPlayService : Service() {
     private var publishedMedia = false
     private var publishedIsland: String? = null
     private var focusRequest: AudioFocusRequest? = null
-    private var hasFocus = false
-    private var focusMuted = false
-    private var pausedForFocus = false
+    private var focus = FocusState()
+    /** Debug builds: a stand-in for the assistant's focus request (`--es focus duck|transient|release`). */
+    private var debugFocusRequest: AudioFocusRequest? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     @Volatile private var multicastLock: WifiManager.MulticastLock? = null
@@ -202,7 +202,7 @@ class AirPlayService : Service() {
         override fun onVolume(db: Float) {
             h.post {
                 update { Reducer.volume(it, db) }
-                player?.setGain(AirPlayMath.gain(db))
+                applyGain()
             }
         }
         override fun onMetadata(title: String?, artist: String?, album: String?, genre: String?, durationMs: Long) {
@@ -260,8 +260,8 @@ class AirPlayService : Service() {
         Log.i(TAG, "audio stream ${sampleRate}Hz/${channels}ch")
         update { Reducer.audioStart(it, now(), sampleRate, channels) }
         player = AudioPlayer(handle, sampleRate, channels) { flowing -> h.post { onFlowing(flowing) } }.also {
-            it.setGain(state.volumeDb?.let(AirPlayMath::gain) ?: 1f)
-            it.muted = state.locallyPaused || focusMuted
+            it.setGain(AudioFocusPolicy.gain(baseGain(), focus))
+            it.muted = state.locallyPaused || focus.muted
             it.start()
         }
         acquireStreamLocks()
@@ -278,8 +278,6 @@ class AirPlayService : Service() {
         stopPlayer()
         releaseStreamLocks()
         abandonFocus()
-        focusMuted = false
-        pausedForFocus = false
     }
 
     private fun stopPlayer() {
@@ -291,7 +289,7 @@ class AirPlayService : Service() {
     }
 
     private fun onFlowing(flowing: Boolean) {
-        if (flowing && !hasFocus) requestFocus()
+        if (flowing && !focus.hasFocus) requestFocus()
         update { Reducer.flowing(it, flowing, now()) }
         if (state.connected.not()) update { Reducer.markConnected(it) }
     }
@@ -361,7 +359,7 @@ class AirPlayService : Service() {
 
     private fun doPlay() {
         when {
-            state.locallyPaused -> { update { Reducer.locallyPaused(it, false, now()) }; player?.muted = focusMuted }
+            state.locallyPaused -> { update { Reducer.locallyPaused(it, false, now()) }; player?.muted = focus.muted }
             state.hasRemote && !state.playing -> remote(NativeBridge.CMD_PLAY_PAUSE)
         }
     }
@@ -377,7 +375,7 @@ class AirPlayService : Service() {
     private fun doSetVolume(fraction: Float) {
         val db = AirPlayMath.dbForFraction(fraction)
         update { Reducer.volume(it, db) }
-        player?.setGain(AirPlayMath.gain(db))
+        applyGain()
         if (state.hasRemote) remote(NativeBridge.CMD_VOLUME, AirPlayMath.dacpVolume(fraction))
     }
 
@@ -402,44 +400,70 @@ class AirPlayService : Service() {
         val am = getSystemService(AudioManager::class.java)
         val req = focusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
             .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-            .setWillPauseWhenDucked(false) // the system ducks us for short sounds
+            // We duck ourselves (AudioFocusPolicy): the framework's auto-duck may not reach a
+            // native-fed AudioTrack, and doing both would duck twice.
+            .setWillPauseWhenDucked(true)
             .setOnAudioFocusChangeListener(::onFocusChange, h)
             .build()
             .also { focusRequest = it }
-        hasFocus = am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        if (hasFocus) setFocusMuted(false)
-        Log.i(TAG, "audio focus ${if (hasFocus) "granted" else "denied"}")
+        val granted = am.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        applyFocus(AudioFocusPolicy.requested(focus, granted))
+        Log.i(TAG, "audio focus ${if (granted) "granted" else "denied"}")
     }
 
     private fun abandonFocus() {
         focusRequest?.let { getSystemService(AudioManager::class.java).abandonAudioFocusRequest(it) }
-        hasFocus = false
+        applyFocus(FocusState())
     }
 
     private fun onFocusChange(change: Int) {
-        Log.i(TAG, "audio focus change $change")
-        when (change) {
-            AudioManager.AUDIOFOCUS_GAIN -> {
-                hasFocus = true
-                setFocusMuted(false)
-                if (pausedForFocus) remote(NativeBridge.CMD_PLAY_PAUSE)
-                pausedForFocus = false
-            }
-            AudioManager.AUDIOFOCUS_LOSS, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                if (change == AudioManager.AUDIOFOCUS_LOSS) hasFocus = false
-                setFocusMuted(true)
-                if (state.hasRemote && state.playing && !pausedForFocus) {
-                    remote(NativeBridge.CMD_PLAY_PAUSE)
-                    pausedForFocus = change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
-                }
-            }
-            // AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK: the system ducks us.
-        }
+        val step = AudioFocusPolicy.change(focus, change, state.hasRemote, state.playing)
+        applyFocus(step.state)
+        if (step.togglePlayPause) remote(NativeBridge.CMD_PLAY_PAUSE)
+        val f = step.state
+        Log.i(TAG, "audio focus ${AudioFocusPolicy.name(change)} → " + when {
+            f.muted -> "muted" + if (f.pausedSender) ", sender paused" else ""
+            f.ducked -> "ducked to ${(AudioFocusPolicy.DUCK_GAIN * 100).toInt()}% (gain ${"%.3f".format(AudioFocusPolicy.gain(baseGain(), f))})"
+            else -> "restored (gain ${"%.3f".format(baseGain())})" + if (step.togglePlayPause) ", sender resumed" else ""
+        } + if (player == null) " [no stream]" else "")
     }
 
-    private fun setFocusMuted(muted: Boolean) {
-        focusMuted = muted
-        player?.muted = muted || state.locallyPaused
+    private fun applyFocus(f: FocusState) {
+        focus = f
+        player?.muted = f.muted || state.locallyPaused
+        applyGain()
+    }
+
+    /** The sender's volume as a linear gain. */
+    private fun baseGain(): Float = state.volumeDb?.let(AirPlayMath::gain) ?: 1f
+
+    private fun applyGain() {
+        player?.setGain(AudioFocusPolicy.gain(baseGain(), focus))
+    }
+
+    /**
+     * Debug builds: take focus the way the assistant does (GAIN_TRANSIENT_MAY_DUCK, USAGE_ASSISTANT,
+     * CONTENT_TYPE_SPEECH) or as a call would (GAIN_TRANSIENT), then give it back. "media" takes our
+     * own playback focus without a stream, so the duck / restore can be checked in silence.
+     */
+    private fun debugFocus(what: String) {
+        val am = getSystemService(AudioManager::class.java)
+        debugFocusRequest?.let { am.abandonAudioFocusRequest(it) }
+        debugFocusRequest = null
+        val gain = when (what) {
+            "media" -> { requestFocus(); return }
+            "end" -> { abandonFocus(); Log.i(TAG, "debug focus: playback focus abandoned"); return }
+            "duck" -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+            "transient" -> AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+            else -> { Log.i(TAG, "debug focus: released"); return }
+        }
+        val req = AudioFocusRequest.Builder(gain)
+            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANT).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
+            .setOnAudioFocusChangeListener({ Log.i(TAG, "debug focus holder: change $it") }, h)
+            .build()
+        val r = am.requestAudioFocus(req)
+        debugFocusRequest = req
+        Log.i(TAG, "debug focus: requested $what → ${if (r == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) "granted" else "result $r"}")
     }
 
     private fun acquireStreamLocks() {
@@ -510,7 +534,8 @@ class AirPlayService : Service() {
     /**
      * Debug builds only: `adb shell am broadcast -a com.echobedside.airplay.DEBUG` with
      * `--es mode ap1|ap2`, `--es mdns nsd|lib`, `--es name "…"`, `--ez dump true`,
-     * `--es cmd play|pause|next|previous` or `--ef volume 0.5`.
+     * `--es cmd play|pause|next|previous`, `--ef volume 0.5` or
+     * `--es focus media|duck|transient|release|end` (see [debugFocus]; plays nothing).
      */
     private fun registerDebugReceiver() {
         val r = object : BroadcastReceiver() {
@@ -526,8 +551,9 @@ class AirPlayService : Service() {
                     "previous" -> controls.previous()
                 }
                 if (intent.hasExtra("volume")) controls.setVolume(intent.getFloatExtra("volume", 0.5f))
+                intent.getStringExtra("focus")?.let { f -> h.post { debugFocus(f) } }
                 if (intent.getBooleanExtra("dump", false)) h.post {
-                    Log.i(TAG, "dump: handle=${handle != 0L} info=$info state=$state player=${player != null} focus=$hasFocus " +
+                    Log.i(TAG, "dump: handle=${handle != 0L} info=$info state=$state player=${player != null} focus=$focus " +
                         "dropped=${if (handle != 0L) NativeBridge.nativeDroppedSamples(handle) else 0} hub=${services.media.current.value?.state}")
                 }
             }
