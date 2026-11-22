@@ -25,9 +25,6 @@ internal object SystemSettings {
 
     val sections = listOf(
         SettingsSection("system.display", "Display", 20, listOf(
-            SettingSpec(NIGHT_MODE, "Night mode", SettingType.CHOICE, "AUTO",
-                help = "Red, dimmed screen in the dark. Auto follows the room light (threshold and schedule are in the Clock section).",
-                options = listOf("AUTO" to "Auto", "ON" to "Always on", "OFF" to "Off")),
             SettingSpec(ISLAND_LOOK, "Echo Island look", SettingType.CHOICE, "glass",
                 help = "The live-activity capsule at the top of the screen.",
                 options = listOf("glass" to "Glass", "black" to "Black")),
@@ -48,6 +45,7 @@ internal object SystemSettings {
             SettingSpec(HUD_BADGES, "Mic and camera off badges", SettingType.BOOLEAN, "true",
                 help = "Red badges top-right while the microphone or camera is off."),
         )),
+        // NIGHT_MODE isn't on the page: the clock's "clock.night.mode" (with the schedule) is the one Night setting.
         // CC_AIRPLAY isn't on the page: :feature:airplay's own "airplay.enabled" is the page's switch.
     )
 }

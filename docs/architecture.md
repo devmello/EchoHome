@@ -45,7 +45,7 @@ Screens and overlays may implement `EchoScreen` to get `onScreenShown(args)` / `
 - Plain platform Views + Canvas (decided in milestone 1, numbers in NOTES §8.1). **No Compose, no AndroidX** (no appcompat/lifecycle/recyclerview). Kotlin coroutines + StateFlow are available; collect with `view.observeWhileAttached(flow) { … }`.
 - Spec px are device px: use the numbers from `design/*.dc.html` directly (Views take px; don't convert to dp). Text: `SpecText(sizePx, weight, trackingEm)` matches the browser's layout.
 - Draw only when something changes. Clock faces redraw on the minute tick. Live values tick once a second with 1 s linear transitions (NOTES §3.5).
-- Glass: `GlassLayout` / `GlassSlider` / `GlassPainter`. Over a wallpaper or artwork, blur it **once** with `PreBlur.backdrop(bitmap, 960f, 480f)` (off the main thread for big images) and set `glass.backdrop`. Never blur per frame. Over black, no backdrop (rim + fill only).
+- Glass: `GlassLayout` / `GlassSlider` / `GlassPainter`. Over a wallpaper or artwork, blur it **once** with `PreBlur.backdrop(bitmap, 960f, 480f)` (off the main thread for big images) and set `glass.backdrop`. Never blur per frame. Over black, no backdrop (rim + fill only). `GlassPainter`'s drop shadow is re-blurred every frame: for static layouts set `shadow = false` and bake the shadows once into the backdrop bitmap (see `:feature:home`'s `HomeWallpaper`).
 - Bitmaps: decode at the size you draw (960×480 max), `RGB_565` where there's no alpha, recycle what you replace. Budget: the whole app < 200 MB PSS.
 - Night mode: `services.system.state.value.nightActive`; map colours with `Night.map(color, night)`; glass becomes a red outline (`GlassPainter.night`).
 

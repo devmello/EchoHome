@@ -141,3 +141,10 @@ Template:
 
 ## From agent F (home), 2026-11-22: GlassPainter shadow is re-blurred every frame
 `GlassPainter.draw` draws the drop shadow with `setShadowLayer` on a freshly `reset()` path + `clipOutPath`. HWUI can't cache that, so it blurs on the CPU every frame for every glass shape. On the Echo the Home screen (11 tiles) ran at ~100 ms/frame during a lamp drag. With `shadow = false` and the shadows baked once into the screen's wallpaper bitmap, it's 38 ms. Suggestion for `:core:design`: render the shadow once per (w, h, radius) into a small nine-patch-like bitmap (or an outset blurred rounded-rect bitmap) and draw that, or document "bake shadows for static layouts". `:feature:home` works around it locally (GlassTile sets `shadow = false`; `HomeWallpaper.shadows`), so nothing is blocked.
+- Status: accepted (Nov 22). For now the rule is "bake shadows for static layouts" (architecture.md); a cached shadow bitmap in `GlassPainter` is on the lead's list after integration.
+
+## 2026-11-22 · A (clock) · One "Night mode" setting, not two
+- Now on main: `:feature:system` registers `system.night.mode` (AUTO/ON/OFF) and `:feature:clock` registers `clock.night.mode` (auto/schedule/on/off, plus `clock.night.start|end` TIME and lux thresholds; lead asked for the schedule there). The settings page shows "Night mode" twice.
+- Both stay consistent at runtime: each writes `SystemState.nightMode`, and the clock keeps `clock.night.mode` in step with the state (AUTO keeps "schedule"; CC's OFF ↔ AUTO works).
+- Proposed: drop the `system.night.mode` SettingSpec from `SystemSettings` (system can keep persisting it for CC if it wants), so the one Night section is the clock's. Alternatively the clock drops its CHOICE and system adds "schedule"; but `NightMode` has no SCHEDULE value, so the clock's would need to stay the source for the schedule.
+- Status: done by the lead (Nov 22): `SystemSettings` no longer registers `system.night.mode`; system still persists it for the Control Center.
