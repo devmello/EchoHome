@@ -86,12 +86,17 @@ class GlassButton(context: Context, spec: GlassSpec, val text: SpecText, var lab
     fun contentWidth() = (if (icon != null) iconSize + gap else 0f) + text.width(label)
     fun wrapWidth(padL: Float, padR: Float) = Math.ceil((padL + contentWidth() + padR).toDouble()).toInt()
 
+    private val loc = IntArray(2)
+
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
-        glass.draw(c, w, h, radius)
-        var x = (w - contentWidth()) / 2
-        icon?.let { Icons.draw(c, it, x + iconSize / 2, h / 2, iconSize, color, iconStroke); x += iconSize + gap }
-        text.draw(c, label, x, text.baselineIn(0f, h), color)
+        // Window position of the untransformed view (press scaling shouldn't slide the backdrop).
+        var x = left.toFloat(); var y = top.toFloat()
+        (parent as? View)?.let { it.getLocationInWindow(loc); x += loc[0]; y += loc[1] }
+        glass.draw(c, w, h, radius, x, y)
+        var cx = (w - contentWidth()) / 2
+        icon?.let { Icons.draw(c, it, cx + iconSize / 2, h / 2, iconSize, color, iconStroke); cx += iconSize + gap }
+        text.draw(c, label, cx, text.baselineIn(0f, h), color)
     }
 }
 

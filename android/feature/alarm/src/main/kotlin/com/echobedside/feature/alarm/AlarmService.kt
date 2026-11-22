@@ -70,7 +70,7 @@ class AlarmService : Service() {
         current = r
         if (!r.any) {
             stopAll()
-            stopForeground(true)
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return
         }

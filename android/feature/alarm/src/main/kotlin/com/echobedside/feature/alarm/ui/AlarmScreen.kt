@@ -3,6 +3,7 @@ package com.echobedside.feature.alarm.ui
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
@@ -15,9 +16,11 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
+import com.echobedside.core.design.Backdrop
 import com.echobedside.core.design.EchoColors
 import com.echobedside.core.design.Motion
 import com.echobedside.core.design.Night
+import com.echobedside.core.design.PreBlur
 import com.echobedside.core.design.SpecText
 import com.echobedside.core.design.withAlpha
 import com.echobedside.core.model.AlarmPhase
@@ -95,7 +98,7 @@ class AlarmScreen(context: Context, private val services: EchoServices) : AbsLay
 
     init {
         setBackgroundColor(Color.BLACK)
-        clipChildren = true
+        clipChildren = false // glass shadows draw outside the buttons
         place(sky, 0f, 0f, 960, 480)
         place(sun, -240f, 100f, 1440, 900)
         place(ringText, 0f, 0f, 960, 300)
@@ -141,7 +144,7 @@ class AlarmScreen(context: Context, private val services: EchoServices) : AbsLay
     override fun onScreenShown(args: Bundle?) {
         shown = true
         if (args != null) {
-            val d = (args.get("alarm_demo") ?: args.get("demo")) as? String
+            val d = args.getString("alarm_demo") ?: runCatching { args.getString("demo") }.getOrNull()
             demo = when (d) { "ringing", "ring" -> Mode.RING; "snoozed", "snooze" -> Mode.SNOOZE; "morning" -> Mode.MORNING; else -> null }
             if (demo == Mode.SNOOZE) demoSnoozedAt = System.currentTimeMillis() - 12_000 // like the board, a few seconds in
         }
@@ -195,12 +198,51 @@ class AlarmScreen(context: Context, private val services: EchoServices) : AbsLay
             Mode.MORNING -> sun.to(0.55f, 0.9f, false)
             Mode.NONE -> sun.to(0f, 0.9f, false)
         }
+        applyBackdrops(snoozeNight)
         sky.animate().alpha(when (mode) { Mode.MORNING -> 1f; Mode.NONE -> 0f; else -> if (snoozeNight) 0f else 0.4f }).setDuration(1200).setInterpolator(Motion.EASE).start()
         if (!shown) sun.stopBreathing()
 
         ringText.invalidate(); snoozeText.invalidate(); morning.invalidate()
         handler.removeCallbacks(ticker)
         if (shown && mode != Mode.NONE) scheduleTick()
+    }
+
+    private val backdrops = HashMap<Mode, Backdrop>()
+
+    /**
+     * The buttons' backdrop-filter (blur 18, saturate 1.9, brightness 1.1) over the glow: the glow
+     * at that state's resting opacity / scale, rendered and filtered once per state (≈115 KB each),
+     * not per frame. The breathing (±5 % scale, .82–1 opacity) isn't tracked; inside a button it
+     * can't be told apart.
+     */
+    private fun applyBackdrops(snoozeNight: Boolean) {
+        val bd = if (mode == Mode.NONE || snoozeNight || width == 0) null else backdrops.getOrPut(mode) {
+            when (mode) {
+                Mode.RING -> glowBackdrop(1f, 1f, 0.4f)
+                Mode.SNOOZE -> glowBackdrop(0.32f, 0.9f, 0.4f)
+                else -> glowBackdrop(0.55f, 0.9f, 1f)
+            }
+        }
+        for (b in listOf(snoozeBtn, stopBtn, stopAlarmBtn, ringAgainBtn, doneBtn)) {
+            if (b.glass.backdrop !== bd) { b.glass.backdrop = bd; b.invalidate() }
+        }
+    }
+
+    private fun glowBackdrop(sunAlpha: Float, sunScale: Float, skyAlpha: Float): Backdrop {
+        val full = Bitmap.createBitmap(960, 480, Bitmap.Config.ARGB_8888)
+        val c = Canvas(full)
+        c.drawColor(Color.BLACK)
+        c.save(); c.translate(-240f, 100f); c.scale(sunScale, sunScale, 720f, 450f)
+        sun.drawGlow(c, 1440f, 900f, sunAlpha); c.restore()
+        sky.drawSky(c, 960f, 480f, skyAlpha)
+        val blurred = PreBlur.blur(full, 18f, 4, 1.9f, 1.1f)
+        full.recycle()
+        return Backdrop(blurred, 0f, 0f, 960f, 480f)
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+        super.onSizeChanged(w, h, ow, oh)
+        if (w > 0) post { applyBackdrops(night && mode == Mode.SNOOZE) }
     }
 
     /** Snoozed: every second (countdown). Otherwise on the minute (clock). */
@@ -415,12 +457,17 @@ class AlarmScreen(context: Context, private val services: EchoServices) : AbsLay
 private class SkyView(context: Context) : View(context) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     init { alpha = 0f }
-    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) = build(w.toFloat(), h.toFloat())
+    private fun build(w: Float, h: Float) {
         val rx = w * 0.70f; val ry = h * 0.55f
         p.shader = RadialGradient(0f, 0f, rx, intArrayOf(withAlpha(0xFF283C78.toInt(), 0.35f), 0), floatArrayOf(0f, 0.7f), Shader.TileMode.CLAMP)
             .apply { setLocalMatrix(Matrix().apply { setScale(1f, ry / rx); postTranslate(w / 2f, 0f) }) }
     }
     override fun onDraw(c: Canvas) = c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), p)
+    fun drawSky(c: Canvas, w: Float, h: Float, a: Float) {
+        if (p.shader == null) build(w, h)
+        p.alpha = (255 * a).toInt(); c.drawRect(0f, 0f, w, h, p); p.alpha = 255
+    }
 }
 
 /**
@@ -435,7 +482,14 @@ private class SunView(context: Context) : View(context) {
 
     init { alpha = 0f; scaleX = 0.9f; scaleY = 0.9f }
 
-    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
+    override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) = build(w.toFloat(), h.toFloat())
+
+    fun drawGlow(c: Canvas, w: Float, h: Float, a: Float) {
+        if (p.shader == null) build(w, h)
+        p.alpha = (255 * a).toInt(); c.drawOval(0f, 0f, w, h, p); p.alpha = 255
+    }
+
+    private fun build(w: Float, h: Float) {
         val rx = w / 2f * sqrt(2f); val ry = h / 2f * sqrt(2f)
         p.shader = RadialGradient(0f, 0f, rx,
             intArrayOf(0xF2FFC478.toInt(), withAlpha(0xFFFF8228.toInt(), 0.78f), withAlpha(0xFFD23E14.toInt(), 0.45f), withAlpha(0xFF5A141E.toInt(), 0.18f), 0),
