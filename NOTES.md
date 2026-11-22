@@ -159,7 +159,7 @@ Fully round shapes (capsules and circles). Inner radii are concentric with outer
 ### 4.1 No Home Assistant dependency (user decision, Nov 22, 2026)
 
 The app must work on its own, with **no Home Assistant**. Every feature talks to free public services or runs on the device:
-- **Weather:** Open-Meteo (free, no key). Location comes from settings (`weather.lat`, `weather.lon`, `weather.place`).
+- **Weather:** Open-Meteo (free, no key). Location (user decision, Nov 22, 2026): manual settings (`weather.lat`, `weather.lon`, `weather.place`) if set, else auto-detected by keyless IP geolocation (cached, refreshed at most daily), else **Livermore, CA** (37.6819, -121.7680). The Echo has no GPS and LineageOS without Google services has no network location, so IP geolocation is the practical source.
 - **Calendar:** private iCal (.ics) URLs, e.g. Google Calendar's "secret address in iCal format" (`calendar.icsUrls` in secrets.properties).
 - **Stocks:** a free keyless quote API (delayed quotes).
 - **Commute:** a free routing service (no key). Traffic may not be available.
@@ -239,7 +239,7 @@ There's no camera cutout in the screen, so the island is pure software: one live
 - **Photos:** the Immich server API (API key; album assets). Download 960-px previews, cache them on disk, prefetch the next photo. The slow zoom is a scale transform only (cheap).
 - **Commute:** a free routing service with no key (drive time between the saved home location and the next calendar event's location; traffic only if a free source has it). The "Leave in N min" countdown is computed from the next calendar event's start time and the travel time.
 - **Stocks:** a free keyless quote API (delayed quotes are fine).
-- **Weather:** Open-Meteo (free, no key): current, hourly, daily high/low, sunrise/sunset, precipitation. Location from settings.
+- **Weather:** Open-Meteo (free, no key): current, hourly, daily high/low, sunrise/sunset, precipitation. Location: manual > IP geolocation > Livermore (§4.1).
 
 ### 5.7 Clock face details worth keeping
 - Analog dial: for an angle θ, point = centre + d·t with d=(sin θ, −cos θ) and t = (|dx/a|^5 + |dy/b|^5)^(−1/5). Minute track a=446,b=222; numerals a=380,b=172. Ticks are rotated to the superellipse normal (see `Analog.dc.html → ring()`).
