@@ -12,4 +12,6 @@ dependencies {
     implementation(project(":core:design"))
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
+    // Android's org.json is stubbed in JVM unit tests.
+    testImplementation(libs.json)
 }

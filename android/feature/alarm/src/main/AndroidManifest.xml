@@ -1,2 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- :feature:alarm (agent E). Exact alarms on API 30 need no permission (SCHEDULE_EXACT_ALARM is API 31+). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- With the overlay grant (appops SYSTEM_ALERT_WINDOW allow), Android 11 lets us bring the alarm
+         screen up over another app; without it the ringing alarm is a heads-up with Snooze / Stop. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <application>
+        <!-- Rings alarms and timers while our activity is in the background / the screen is off. -->
+        <service
+            android:name="com.echobedside.feature.alarm.AlarmService"
+            android:exported="false" />
+
+        <!-- Our AlarmManager wake-ups. -->
+        <receiver
+            android:name="com.echobedside.feature.alarm.AlarmTriggerReceiver"
+            android:exported="false" />
+
+        <!-- Reschedule after boot, clock / time zone changes and app updates. -->
+        <receiver
+            android:name="com.echobedside.feature.alarm.AlarmSystemReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
