@@ -139,6 +139,13 @@ class SessionMappingTest {
         assertTrue(SessionMapping.canSeek(base))
     }
 
+    @Test fun mediaStorePlaceholderIsBlank() {
+        val m = SessionMapping.toMediaState(base.copy(artist = "<unknown>", albumArtist = "Someone", album = "<unknown>"), now = 5_000)!!
+        assertEquals("Someone", m.artist)
+        assertEquals("", m.album)
+        assertEquals("", SessionMapping.artist(base.copy(artist = "<unknown>")))
+    }
+
     @Test fun pausedAndBufferingDontAdvance() {
         val paused = SessionMapping.toMediaState(base.copy(playbackState = SessionMapping.STATE_PAUSED), now = 9_000)!!
         assertFalse(paused.playing)

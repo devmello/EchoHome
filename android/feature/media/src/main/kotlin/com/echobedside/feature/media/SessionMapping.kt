@@ -101,7 +101,7 @@ object SessionMapping {
         return MediaState(
             title = title(s),
             artist = artist(s),
-            album = s.album.orEmpty(),
+            album = firstNonBlank(s.album),
             artwork = artwork,
             durationMs = dur,
             positionMs = pos,
@@ -113,5 +113,10 @@ object SessionMapping {
         )
     }
 
-    private fun firstNonBlank(vararg v: String?): String = v.firstOrNull { !it.isNullOrBlank() }?.trim().orEmpty()
+    /** MediaStore's placeholder for a missing tag (`MediaStore.UNKNOWN_STRING`); treated as blank. */
+    const val UNKNOWN = "<unknown>"
+
+    private fun known(v: String?) = !v.isNullOrBlank() && v.trim() != UNKNOWN
+
+    private fun firstNonBlank(vararg v: String?): String = v.firstOrNull(::known)?.trim().orEmpty()
 }

@@ -124,7 +124,15 @@ class AppSessions(private val context: Context, private val services: EchoServic
                 ?: m.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
             val uri = (m.getString(MediaMetadata.METADATA_KEY_ART_URI) ?: m.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
                 ?: m.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI))?.takeIf { it.isNotBlank() }
-            val key: Any = bmp?.let { System.identityHashCode(it) } ?: uri ?: return
+            // Every callback unparcels a new Bitmap for the same picture, so key on the track and the
+            // picture's size (or URI), not the instance; otherwise each state change re-decodes the
+            // art and republishes the island and palette.
+            val track = m.description?.mediaId ?: listOf(m.getString(MediaMetadata.METADATA_KEY_TITLE), m.getString(MediaMetadata.METADATA_KEY_ALBUM)).joinToString("\u0000")
+            val key: Any = when {
+                bmp != null -> listOf(track, bmp.width, bmp.height)
+                uri != null -> uri
+                else -> return
+            }
             if (key == artKey) return
             artKey = key
             services.scope.launch {

@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Android 11 package visibility: lets "Playing from <app>" resolve the app's label (and the
+         launcher open it). Launchable apps only, not QUERY_ALL_PACKAGES. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.media.browse.MediaBrowserService" />
+        </intent>
+    </queries>
     <application>
         <!-- Media sessions of other apps (MediaSessionManager.getActiveSessions needs an enabled
              listener). Media only; banners have their own listener in :feature:system.
