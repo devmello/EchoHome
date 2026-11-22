@@ -35,7 +35,7 @@ class FaceProfileManager(
     demo: Boolean,
     private val clock: () -> Long = System::currentTimeMillis,
     var rejectCooldownMs: Long = 5 * 60_000,
-    var timeoutMs: Long = settings.getInt(KEY_TIMEOUT_MIN, 10) * 60_000L,
+    var timeoutMs: Long = settings.getInt(KEY_TIMEOUT_MIN, TIMEOUT_DEFAULT_MIN) * 60_000L,
 ) : ProfileManager {
 
     private val _profiles = MutableStateFlow(load(demo))
@@ -51,6 +51,15 @@ class FaceProfileManager(
     private val blockedUntil = HashMap<String, Long>()
 
     init {
+        // The web settings page writes the store directly: apply its changes live.
+        scope.launch {
+            settings.changes.collect { k ->
+                when (k) {
+                    KEY_AUTO -> _auto.value = settings.getBoolean(KEY_AUTO, true)
+                    KEY_TIMEOUT_MIN -> timeoutMs = settings.getInt(KEY_TIMEOUT_MIN, TIMEOUT_DEFAULT_MIN).coerceIn(1, 240) * 60_000L
+                }
+            }
+        }
         if (presence != null) scope.launch {
             presence.distinctUntilChanged().collectLatest { p ->
                 if (p == Presence.EMPTY) {
@@ -143,6 +152,7 @@ class FaceProfileManager(
         const val KEY_ACTIVE = "camera.profiles.active"
         const val KEY_AUTO = "camera.profiles.auto"
         const val KEY_TIMEOUT_MIN = "camera.profiles.timeoutMin"
+        const val TIMEOUT_DEFAULT_MIN = 10
 
         /** The designs' sample people (Profiles.dc.html: Maya, pink, the Float face). */
         val DEMO = listOf(

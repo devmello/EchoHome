@@ -21,7 +21,7 @@ import com.echobedside.feature.camera.CameraPipeline
 /**
  * "camera-bench" (debug): holds one pipeline stage continuously so its cost can be measured with
  * scripts/echo-perf.sh before the stage is turned on by default (NOTES §6.6).
- * `--es screen camera-bench --es stage presence|detect|recognize`
+ * `--es screen camera-bench --es stage presence|presence-duty|detect|detect-compare|recognize|selftest`
  * Logs per-stage timings every 10 s (tag EchoCamera).
  */
 @SuppressLint("ViewConstructor")
@@ -42,12 +42,14 @@ class CameraBenchView(context: Context, private val services: EchoServices, priv
     }
 
     override fun onScreenShown(args: Bundle?) {
-        if (args == null && pipeline.benchStage != null) return
+        if (args == null && (pipeline.benchStage != null || stage == "selftest")) return
         stage = args?.getString("stage") ?: "presence"
         pipeline.stats = CameraPipeline.Stats()
+        if (stage == "selftest") { selfTest(args?.getString("model"), args?.getString("threads")?.toIntOrNull() ?: 2, args?.getString("xnnpack") != "false"); return }
         pipeline.benchDuty = stage == "presence-duty"
+        pipeline.benchCompare = stage == "detect-compare"
         pipeline.benchStage = when (stage) {
-            "detect" -> CameraPhase.DETECTING
+            "detect", "detect-compare" -> CameraPhase.DETECTING
             "recognize" -> CameraPhase.RECOGNIZED
             else -> CameraPhase.PRESENCE
         }
@@ -55,12 +57,41 @@ class CameraBenchView(context: Context, private val services: EchoServices, priv
         main.removeCallbacks(tick); main.postDelayed(tick, 10_000)
     }
 
-    override fun onScreenHidden() { main.removeCallbacks(tick); pipeline.benchDuty = false; pipeline.benchStage = null }
+    override fun onScreenHidden() {
+        main.removeCallbacks(tick)
+        pipeline.benchDuty = false; pipeline.benchCompare = false
+        if (pipeline.benchStage != null) pipeline.benchStage = null
+        if (selfTesting) { selfTesting = false; pipeline.externalUser = false }
+    }
+
+    @Volatile private var selfLines: List<String> = emptyList()
+    private var selfTesting = false
+
+    /** Camera off; models on the drawn face, on a background thread. Logs "selftest: …" lines. */
+    private fun selfTest(model: String?, threads: Int, xnnpack: Boolean) {
+        if (selfTesting) return
+        selfTesting = true
+        pipeline.externalUser = true
+        selfLines = listOf("running…")
+        invalidate()
+        Thread({
+            val lines = try {
+                val t = ModelSelfTest(context)
+                if (model != null) t.variant(model, threads, xnnpack) else t.run()
+            } catch (t: Throwable) { listOf("failed: $t") }
+            lines.forEach { Log.i(CameraPipeline.TAG, "selftest: $it") }
+            Log.i(CameraPipeline.TAG, "selftest: done")
+            selfLines = lines
+            main.post { if (selfTesting) { selfTesting = false; pipeline.externalUser = false }; invalidate() }
+        }, "echo-selftest").start()
+    }
 
     override fun onDraw(canvas: Canvas) {
         canvas.drawColor(0xFF000000.toInt())
         var y = 80f
-        for (l in listOf("Camera bench: $stage", pipeline.stats.toString(), pipeline.ui.value.toString()))
+        val lines = if (stage == "selftest") listOf("Camera self-test") + selfLines
+            else listOf("Camera bench: $stage", pipeline.stats.toString(), pipeline.ui.value.toString())
+        for (l in lines)
             l.chunked(90).forEach { text.draw(canvas, it, 20f, y, 0xFFFFFFFF.toInt()); y += 28f }
     }
 }

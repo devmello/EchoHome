@@ -18,16 +18,23 @@ import com.echobedside.core.model.SwitchReason
 import com.echobedside.feature.camera.capture.Camera1Source
 import com.echobedside.feature.camera.capture.FrameSource
 import com.echobedside.feature.camera.capture.YPlane
+import com.echobedside.feature.camera.face.BlazeFaceFinder
 import com.echobedside.feature.camera.face.ConsecutiveMatcher
 import com.echobedside.feature.camera.face.FaceBox
-import com.echobedside.feature.camera.face.FaceEmbedder
+import com.echobedside.feature.camera.face.FaceFinder
+import com.echobedside.feature.camera.face.FaceImage
 import com.echobedside.feature.camera.face.FaceMatcher
 import com.echobedside.feature.camera.face.FaceTemplates
+import com.echobedside.feature.camera.face.FallbackEmbedder
 import com.echobedside.feature.camera.face.GreyImage
 import com.echobedside.feature.camera.face.LbpEmbedder
 import com.echobedside.feature.camera.face.LegacyFaceFinder
+import com.echobedside.feature.camera.face.MatchPolicy
+import com.echobedside.feature.camera.face.ModelFiles
 import com.echobedside.feature.camera.face.QualityFilter
 import com.echobedside.feature.camera.face.QualityIssue
+import com.echobedside.feature.camera.face.TfliteEmbedder
+import com.echobedside.feature.camera.face.alignFace
 import com.echobedside.feature.camera.face.cropFace
 import com.echobedside.feature.camera.presence.MotionDetector
 import com.echobedside.feature.camera.presence.PresenceTracker
@@ -55,7 +62,8 @@ data class CameraUi(
 )
 
 /** One enrolment frame: where the face is (for the guide) and, if it passed quality, its embedding. */
-class EnrolSample(val box: FaceBox?, val frameW: Int, val frameH: Int, val issue: QualityIssue, val embedding: FloatArray?, val sharpness: Float)
+class EnrolSample(val box: FaceBox?, val frameW: Int, val frameH: Int, val issue: QualityIssue, val embedding: FloatArray?, val sharpness: Float,
+    val embedderId: String = "")
 
 /**
  * Owns the camera and runs NOTES §6.6 stage by stage. Main-thread API; frames are processed on
@@ -67,6 +75,11 @@ class EnrolSample(val box: FaceBox?, val frameW: Int, val frameH: Int, val issue
  *  2. Presence at [PRESENCE_WIDTH] px, Y plane only, 80×60 differencing at 2 fps.
  *  3. Detection burst (~5 fps for ~2 s) after someone arrives.
  *  4. Quality filter. 5. Recognition (≤3 tries, 2 consecutive matches). 6. Greeting + switch.
+ *
+ * Detection is BlazeFace (or `android.media.FaceDetector`, setting `camera.detector`); the face is
+ * aligned on its landmarks and embedded by MobileFaceNet on TFLite, with LBP as the fallback if
+ * the model can't be loaded. The models are loaded on the first detection frame and freed
+ * whenever the camera stops (end of a burst, enrolment, screen off).
  *
  * Each stage can be turned off in settings (`camera.stage.presence|detect|recognize`); they were
  * measured on the Echo before being turned on by default (docs/status/camera.md).
@@ -81,7 +94,12 @@ class CameraPipeline(
     private val _ui = MutableStateFlow(CameraUi())
     val ui: StateFlow<CameraUi> = _ui.asStateFlow()
 
-    val embedder: FaceEmbedder = LbpEmbedder()
+    /** MobileFaceNet, or LBP for good once the model fails to load (`camera.embedder` = lbp forces it). */
+    val embedder = FallbackEmbedder(
+        if (settings.getString(KEY_EMBEDDER, "neural") == "lbp") null
+        else TfliteEmbedder(ModelFiles.EMBEDDER_ID, { ModelFiles.load(context, ModelFiles.EMBEDDER) }, xnnpack = ModelFiles.EMBEDDER_XNNPACK),
+        LbpEmbedder(),
+    ) { t -> Log.w(TAG, "face model failed, using LBP: $t") }
     @Volatile var stats = Stats()
 
     private var source: FrameSource? = null
@@ -92,12 +110,17 @@ class CameraPipeline(
     // camera-thread state
     private val motion = MotionDetector()
     private val tracker = PresenceTracker()
-    private val finder = LegacyFaceFinder()
+    // Models: created on the camera thread, freed after the camera stops (both under modelLock).
+    private val modelLock = Any()
+    private var blaze: FaceFinder? = null
+    private var blazeFailed = false
+    private var legacy: LegacyFaceFinder? = null
     private val quality = QualityFilter()
     private val enrolQuality = QualityFilter(maxAsymmetry = 0.45f)
     private val matcher = FaceMatcher()
     private val decision = ConsecutiveMatcher()
     private val crop = GreyImage(112, 112)
+    private val aligned = FaceImage(112)
     private var darkStreak = 0
     @Volatile private var touchAt = 0L
     @Volatile private var burstUntil = 0L
@@ -109,6 +132,8 @@ class CameraPipeline(
         set(v) { field = v; main.post { reconfigure() } }
     /** Debug: presence with the duty-cycled preview (bench stage "presence-duty"). */
     @Volatile var benchDuty = false
+    /** Debug: run both detectors on every detection frame (bench stage "detect-compare"). */
+    @Volatile var benchCompare = false
 
     // arrival bookkeeping (main thread)
     private var lastKnown = Presence.UNKNOWN
@@ -142,7 +167,7 @@ class CameraPipeline(
             services.system.state.map { it.cameraBlocked }.distinctUntilChanged().collect { evaluate() }
         }
         services.scope.launch { profiles.autoByFace.collect { evaluate() } }
-        services.scope.launch { settings.changes.collect { k -> if (k.startsWith("camera.stage.")) evaluate() } }
+        services.scope.launch { settings.changes.collect { k -> if (k.startsWith("camera.stage.") || k == KEY_DUTY) evaluate() } }
     }
 
     /** Our window became visible / invisible (screen off, another app in front). */
@@ -231,6 +256,7 @@ class CameraPipeline(
         val s = source ?: return
         source = null
         s.stop()
+        releaseModels()
         stats.framesSeen += s.framesSeen
         services.system.update { it.copy(cameraInUse = false) }
         if (!keepPresence) {
@@ -244,6 +270,7 @@ class CameraPipeline(
     private fun onCameraError(err: String) {
         Log.w(TAG, "camera error: $err")
         source = null
+        releaseModels()
         services.system.update { it.copy(cameraInUse = false) }
         _ui.value = _ui.value.copy(phase = CameraPhase.OFF, off = OffReason.ERROR)
         // Another client (or the HAL) took the camera: try again later.
@@ -259,6 +286,41 @@ class CameraPipeline(
         darkRetryMs = (darkRetryMs * 2).coerceAtMost(DARK_RETRY_MAX_MS)
         evaluate()
         main.postDelayed({ if (_ui.value.off == OffReason.DARK) evaluate() }, retry + 50)
+    }
+
+    /** Frees the detector and embedder (the camera thread is stopped, or between frames). */
+    private fun releaseModels() = synchronized(modelLock) {
+        blaze?.close(); blaze = null
+        legacy?.close(); legacy = null
+        embedder.release()
+    }
+
+    private fun useBlaze() = !blazeFailed && settings.getString(KEY_DETECTOR, DETECTOR_DEFAULT) == "blazeface"
+
+    /** The detector for this frame, created on first use (camera thread, under modelLock). */
+    private fun finder(blazeWanted: Boolean): FaceFinder {
+        if (blazeWanted && !blazeFailed) {
+            blaze?.let { return it }
+            val t0 = SystemClock.elapsedRealtimeNanos()
+            try {
+                return BlazeFaceFinder(ModelFiles.load(context, ModelFiles.DETECTOR)).also {
+                    blaze = it
+                    stats.load.add(SystemClock.elapsedRealtimeNanos() - t0)
+                }
+            } catch (t: Throwable) {
+                blazeFailed = true
+                Log.w(TAG, "BlazeFace failed to load, using android.media.FaceDetector: $t")
+            }
+        }
+        return legacy ?: LegacyFaceFinder().also { legacy = it }
+    }
+
+    /** The match rule: the embedder's, with the user's minimum threshold for the neural model. */
+    private fun policy(): MatchPolicy {
+        val p = embedder.policy
+        if (p != MatchPolicy.NEURAL) return p
+        val floor = settings.getFloat(KEY_THRESHOLD, p.floor).coerceIn(0.2f, 0.9f)
+        return p.copy(floor = floor, ceiling = maxOf(p.ceiling, floor))
     }
 
     // --- camera thread ---
@@ -286,9 +348,26 @@ class CameraPipeline(
         if (enrol == null && !inBurst) return
         if (f.width < DETECT_WIDTH) return // still on the presence size; the restart is on its way
 
+        synchronized(modelLock) { detect(f, enrol) }
+    }
+
+    private fun detect(f: YPlane, enrol: ((EnrolSample) -> Unit)?) {
+        val wantBlaze = useBlaze()
+        val det = finder(wantBlaze)
         val t1 = SystemClock.elapsedRealtimeNanos()
-        val faces = finder.find(f)
+        val faces = det.find(f)
         stats.detect.add(SystemClock.elapsedRealtimeNanos() - t1)
+        stats.found(det.name, faces.isNotEmpty())
+        if (benchCompare) {
+            val other = finder(!wantBlaze)
+            if (other !== det) {
+                val t = SystemClock.elapsedRealtimeNanos()
+                val alt = other.find(f)
+                stats.detectAlt.add(SystemClock.elapsedRealtimeNanos() - t)
+                stats.found(other.name, alt.isNotEmpty())
+                if (faces.isNotEmpty() || alt.isNotEmpty()) Log.i(TAG, "compare: ${det.name}=${faces.firstOrNull()} ${other.name}=${alt.firstOrNull()}")
+            }
+        }
         val box = faces.firstOrNull()
         val q = if (enrol != null) enrolQuality else quality
         var issue = box?.let { q.check(it, f.width, f.height) } ?: QualityIssue.TOO_SMALL
@@ -299,32 +378,39 @@ class CameraPipeline(
             issue = q.check(crop)
             sharp = QualityFilter.sharpness(crop)
             val recognize = enrol != null || stageEnabled("recognize") || benchStage == CameraPhase.RECOGNIZED
-            if (issue == QualityIssue.NONE && recognize) {
-                val t2 = SystemClock.elapsedRealtimeNanos()
-                emb = embedder.embed(crop)
-                stats.embed.add(SystemClock.elapsedRealtimeNanos() - t2)
-            }
+            if (issue == QualityIssue.NONE && recognize) emb = embed(f, box)
         }
         if (benchStage == CameraPhase.RECOGNIZED && emb == null) {
-            // Bench: time crop + embedding + matching on the centre even without a usable face.
-            val t2 = SystemClock.elapsedRealtimeNanos()
-            cropFace(f, FaceBox(f.width / 2f, f.height / 2.5f, f.width / 6f, 1f), 112, crop)
-            val v = embedder.embed(crop)
+            // Bench: time alignment + embedding + matching on the centre even without a usable face.
+            val v = embed(f, FaceBox(f.width / 2f, f.height / 2.5f, f.width / 6f, 1f))
             matcher.match(v, burstTemplates)
-            stats.embed.add(SystemClock.elapsedRealtimeNanos() - t2)
         }
         stats.count(issue)
         if (enrol != null) {
-            val sample = EnrolSample(box, f.width, f.height, issue, emb, sharp)
+            val sample = EnrolSample(box, f.width, f.height, issue, emb, sharp, embedder.id)
             main.post { enrolListener?.invoke(sample) }
             return
         }
         if (emb != null && burstTemplates.isNotEmpty()) {
+            matcher.policy = policy()
             val match = matcher.match(emb, burstTemplates, burstExcluded)
             Log.i(TAG, "match try ${decision.tries + 1}: ${match.profileId ?: "-"} score=${"%.3f".format(match.score)} second=${"%.3f".format(match.secondScore)}")
             decision.offer(match)
             if (decision.done) { val id = decision.decided; burstUntil = 0L; main.post { endBurst(id) } }
         }
+    }
+
+    /** Aligns and embeds; the first call after the camera starts also loads the model (timed apart). */
+    private fun embed(f: YPlane, box: FaceBox): FloatArray {
+        val t = SystemClock.elapsedRealtimeNanos()
+        alignFace(f, box, aligned)
+        stats.align.add(SystemClock.elapsedRealtimeNanos() - t)
+        val wasLoaded = (embedder.current as? TfliteEmbedder)?.loaded ?: true
+        val t2 = SystemClock.elapsedRealtimeNanos()
+        val v = embedder.embed(aligned)
+        val dt = SystemClock.elapsedRealtimeNanos() - t2
+        if (wasLoaded) stats.embed.add(dt) else stats.load.add(dt)
+        return v
     }
 
     private fun postPresence(p: Presence, arrived: Boolean, moved: Boolean = false) {
@@ -409,7 +495,12 @@ class CameraPipeline(
             fun add(ns: Long) { n++; totalNs += ns; if (ns > maxNs) maxNs = ns }
             fun avgMs() = if (n == 0L) 0f else totalNs / n / 1e6f
             override fun toString() = "n=$n avg=${"%.2f".format(avgMs())}ms max=${"%.1f".format(maxNs / 1e6f)}ms" }
-        val presence = Timer(); val detect = Timer(); val embed = Timer()
+        val presence = Timer(); val detect = Timer(); val detectAlt = Timer(); val align = Timer(); val embed = Timer()
+        /** Model loads (detector create, first embedding incl. interpreter create). */
+        val load = Timer()
+        private val foundBy = java.util.concurrent.ConcurrentHashMap<String, IntArray>()
+        /** Frames each detector ran on, and found a face in. */
+        fun found(detector: String, hit: Boolean) { val c = foundBy.getOrPut(detector) { IntArray(2) }; c[0]++; if (hit) c[1]++ }
         @Volatile var framesSeen = 0L
         @Volatile var changedSum = 0.0
         @Volatile var lumaSum = 0L
@@ -417,13 +508,20 @@ class CameraPipeline(
         @Volatile var restartMs = 0L
         val issues = IntArray(QualityIssue.entries.size)
         fun count(i: QualityIssue) { issues[i.ordinal]++ }
-        override fun toString() = "samples=$samples meanChanged=${"%.4f".format(if (samples > 0) changedSum / samples else 0.0)} meanLuma=${if (samples > 0) lumaSum / samples else 0} restartMs=$restartMs presence[$presence] detect[$detect] embed[$embed] quality=" +
+        override fun toString() = "samples=$samples meanChanged=${"%.4f".format(if (samples > 0) changedSum / samples else 0.0)} meanLuma=${if (samples > 0) lumaSum / samples else 0} restartMs=$restartMs presence[$presence] detect[$detect] detectAlt[$detectAlt] align[$align] embed[$embed] load[$load] found=" +
+            foundBy.entries.joinToString { "${it.key}:${it.value[1]}/${it.value[0]}" } + " quality=" +
             QualityIssue.entries.filter { issues[it.ordinal] > 0 }.joinToString { "${it.name}:${issues[it.ordinal]}" }
     }
 
     companion object {
         const val TAG = "EchoCamera"
         const val KEY_DUTY = "camera.presence.duty"
+        const val KEY_DETECTOR = "camera.detector"
+        const val DETECTOR_DEFAULT = "blazeface"
+        /** Debug: "lbp" forces the LBP embedder (read at start). */
+        const val KEY_EMBEDDER = "camera.embedder"
+        /** The neural model's minimum match threshold ([MatchPolicy.floor]). */
+        const val KEY_THRESHOLD = "camera.match.threshold"
         const val DUTY_DEFAULT = false
         const val PRESENCE_WIDTH = 176
         const val PRESENCE_INTERVAL_MS = 500L

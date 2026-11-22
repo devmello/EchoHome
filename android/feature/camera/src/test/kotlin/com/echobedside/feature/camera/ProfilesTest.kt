@@ -216,6 +216,16 @@ class FaceProfileManagerTest {
         assertEquals(SwitchReason.FACE, m.lastReason)
     }
 
+    @Test fun webSettingsApplyLive() = runTest {
+        val m = manager()
+        runCurrent()
+        settings.putBoolean(FaceProfileManager.KEY_AUTO, false)
+        settings.putInt(FaceProfileManager.KEY_TIMEOUT_MIN, 3)
+        runCurrent()
+        assertFalse(m.autoByFace.value)
+        assertEquals(3 * 60_000L, m.timeoutMs)
+    }
+
     @Test fun notMeBlocksForCooldown() = runTest {
         val m = manager()
         m.switchTo("maya", SwitchReason.FACE)

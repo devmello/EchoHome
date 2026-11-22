@@ -9,6 +9,7 @@ import com.echobedside.feature.camera.face.FaceTemplates
 import com.echobedside.feature.camera.face.GreyImage
 import com.echobedside.feature.camera.face.LbpEmbedder
 import com.echobedside.feature.camera.face.Match
+import com.echobedside.feature.camera.face.MatchPolicy
 import com.echobedside.feature.camera.face.QualityFilter
 import com.echobedside.feature.camera.face.QualityIssue
 import com.echobedside.feature.camera.face.cosine
@@ -45,14 +46,14 @@ class MatcherTest {
             FaceTemplates("maya", "e", List(5) { near(maya, 0.05f) }),
             FaceTemplates("sam", "e", List(5) { near(sam, 0.05f) }),
         )
-        val m = FaceMatcher(floor = 0.5f).match(near(maya, 0.05f), people)
+        val m = FaceMatcher(MatchPolicy.LBP).match(near(maya, 0.05f), people)
         assertEquals("maya", m.profileId)
         assertTrue(m.score > m.secondScore)
     }
 
     @Test fun strangerIsRejected() {
         val people = listOf(FaceTemplates("maya", "e", List(5) { near(unit(), 0.02f) }))
-        assertNull(FaceMatcher(floor = 0.5f).match(unit(), people).profileId)
+        assertNull(FaceMatcher(MatchPolicy.LBP).match(unit(), people).profileId)
     }
 
     @Test fun excludedPersonIsSkipped() {
@@ -64,7 +65,7 @@ class MatcherTest {
     @Test fun tooCloseToRunnerUpIsNoMatch() {
         val a = unit()
         val people = listOf(FaceTemplates("a", "e", List(3) { a }), FaceTemplates("b", "e", List(3) { a }))
-        val m = FaceMatcher(margin = 0.02f).match(a, people)
+        val m = FaceMatcher(MatchPolicy.LBP).match(a, people)
         assertNull(m.profileId)
         assertEquals(m.score, m.secondScore, 1e-6f)
     }
@@ -78,8 +79,8 @@ class MatcherTest {
         val v = listOf(floatArrayOf(1f, 0f), floatArrayOf(0.8f, 0.6f), floatArrayOf(1f, 0.1f))
         val t = FaceTemplates("x", "e", v)
         // weakest pair: (0.8,0.6)·(1,0) = 0.8 → threshold 0.79; never below the floor
-        assertEquals(0.79f, t.threshold(floor = 0.5f), 1e-4f)
-        assertEquals(0.9f, t.threshold(floor = 0.9f), 1e-6f)
+        assertEquals(0.79f, t.threshold(MatchPolicy.LBP), 1e-4f)
+        assertEquals(0.9f, t.threshold(MatchPolicy.LBP.copy(floor = 0.9f)), 1e-6f)
     }
 }
 

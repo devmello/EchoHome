@@ -58,6 +58,8 @@ class EnrolView(
     private var stepStart = 0L
     private var good = mutableListOf<Pair<Float, FloatArray>>()
     private val vectors = mutableListOf<FloatArray>()
+    /** The embedder that made [vectors] (if the model falls back to LBP mid-way, start over). */
+    private var vectorsId = ""
     private var last: EnrolSample? = null
     private var flashUntil = 0L
 
@@ -103,6 +105,10 @@ class EnrolView(
         last = s
         val now = SystemClock.elapsedRealtime()
         if (now < flashUntil) { invalidate(); return }
+        if (s.embedding != null && vectorsId != s.embedderId) {
+            if (vectors.isNotEmpty() || good.isNotEmpty()) { look = 0; vectors.clear(); good.clear(); stepStart = now }
+            vectorsId = s.embedderId
+        }
         if (now - stepStart >= SETTLE_MS && s.issue == QualityIssue.NONE && s.embedding != null) good += s.sharpness to s.embedding
         if (good.size >= SAMPLES_PER_LOOK) {
             vectors += good.maxBy { it.first }.second
@@ -120,7 +126,11 @@ class EnrolView(
         main.removeCallbacks(timeout)
         val who = person ?: return
         try {
-            manager.saveTemplates(FaceTemplates(who.id, pipeline.embedder.id, vectors.toList()))
+            val t = FaceTemplates(who.id, vectorsId, vectors.toList())
+            // Calibration aid (numbers only): how alike the person's own shots are.
+            Log.i(CameraPipeline.TAG, "enrolled ${who.id} with $vectorsId: weakest pair ${"%.3f".format(t.weakestPair())}, " +
+                "threshold ${"%.3f".format(t.threshold(pipeline.embedder.policy))}")
+            manager.saveTemplates(t)
             step = Step.DONE
         } catch (e: Exception) {
             Log.w(CameraPipeline.TAG, "saving templates failed", e)
