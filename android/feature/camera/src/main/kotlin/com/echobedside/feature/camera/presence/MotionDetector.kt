@@ -79,6 +79,22 @@ class MotionDetector(
             val ps = src.pixelStride
             val sw = src.width
             val sh = src.height
+            if (buf.hasArray()) {
+                // Camera1's NV21 buffer: index the array directly (no per-pixel ByteBuffer calls).
+                val a = buf.array()
+                val off = buf.arrayOffset()
+                for (oy in 0 until oh) {
+                    val r0 = off + (oy * sh / oh) * rs
+                    val r1 = off + ((((oy * 2 + 1) * sh) / (oh * 2)).coerceAtMost(sh - 1)) * rs
+                    for (ox in 0 until ow) {
+                        val x0 = (ox * sw / ow) * ps
+                        val x1 = ((((ox * 2 + 1) * sw) / (ow * 2)).coerceAtMost(sw - 1)) * ps
+                        out[oy * ow + ox] = ((a[r0 + x0].toInt() and 0xFF) + (a[r0 + x1].toInt() and 0xFF) +
+                            (a[r1 + x0].toInt() and 0xFF) + (a[r1 + x1].toInt() and 0xFF)) shr 2
+                    }
+                }
+                return
+            }
             for (oy in 0 until oh) {
                 val y0 = oy * sh / oh
                 val y1 = (((oy * 2 + 1) * sh) / (oh * 2)).coerceAtMost(sh - 1)

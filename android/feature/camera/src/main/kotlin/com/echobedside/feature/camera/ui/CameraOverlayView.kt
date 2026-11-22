@@ -30,6 +30,12 @@ import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.sin
 
+/**
+ * The "Who's there?" spinner redraws at 20 fps, not every vsync: the full-screen overlay at 59 fps
+ * cost ~65 % of a core on the Echo (measured), and the design itself steps it every 100 ms.
+ */
+private const val SPINNER_FRAME_MS = 50L
+
 /** What the overlay shows; [CameraUi] normally, or a forced step from the "profiles-demo" screen. */
 enum class DemoStep { EMPTY, DETECTING, RECOGNIZED, PERSONALIZED }
 
@@ -106,6 +112,12 @@ class CameraOverlayView(context: Context, private val services: EchoServices, pr
         pipeline.setVisible(visibility == VISIBLE)
     }
 
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        // e.g. back from the permission dialog: re-check the gate.
+        if (hasWindowFocus) pipeline.evaluate()
+    }
+
     override fun onDetachedFromWindow() {
         pipeline.setVisible(false)
         dimAnim?.cancel(); cardFade?.cancel(); cardMove?.cancel()
@@ -132,7 +144,6 @@ class CameraOverlayView(context: Context, private val services: EchoServices, pr
         if (g != null && g != greeting) { greeting = g; chips = chipsFor(g) }
         animateCard(g != null)
         invalidate()
-        if (phase == CameraPhase.DETECTING) postInvalidateOnAnimation()
         contentDescription = labelText()
     }
 
@@ -195,7 +206,7 @@ class CameraOverlayView(context: Context, private val services: EchoServices, pr
     override fun onDraw(canvas: Canvas) {
         if (dim > 0f) canvas.drawColor(withAlpha(Color.BLACK, 0.65f * dim))
         drawIndicator(canvas)
-        if (phase == CameraPhase.DETECTING) { drawPill(canvas); postInvalidateOnAnimation() }
+        if (phase == CameraPhase.DETECTING) { drawPill(canvas); postInvalidateDelayed(SPINNER_FRAME_MS) }
         if (cardIn > 0.001f) greeting?.let { drawCard(canvas, it) }
         if (phase == CameraPhase.DETECTING || phase == CameraPhase.RECOGNIZED) {
             val top = height - 14f - footText.normalLineHeight

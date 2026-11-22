@@ -42,7 +42,7 @@ import kotlinx.coroutines.launch
 /** What the camera is doing, for the indicator and the Profiles overlay (Profiles.dc.html). */
 enum class CameraPhase { OFF, PRESENCE, DETECTING, RECOGNIZED, ENROLLING }
 
-enum class OffReason { NONE, HIDDEN, BLOCKED, DARK, DISABLED, NO_PERMISSION, ERROR }
+enum class OffReason { NONE, HIDDEN, BLOCKED, DARK, DISABLED, NO_PERMISSION, ERROR, BUSY }
 
 data class CameraUi(
     val phase: CameraPhase = CameraPhase.OFF,
@@ -82,7 +82,7 @@ class CameraPipeline(
     val ui: StateFlow<CameraUi> = _ui.asStateFlow()
 
     val embedder: FaceEmbedder = LbpEmbedder()
-    val stats = Stats()
+    @Volatile var stats = Stats()
 
     private var source: FrameSource? = null
     private var sourceWidth = 0
@@ -107,6 +107,8 @@ class CameraPipeline(
     /** Debug: hold a stage continuously for measurements ("camera-bench" screen). */
     @Volatile var benchStage: CameraPhase? = null
         set(v) { field = v; main.post { reconfigure() } }
+    /** Debug: presence with the duty-cycled preview (bench stage "presence-duty"). */
+    @Volatile var benchDuty = false
 
     // arrival bookkeeping (main thread)
     private var lastKnown = Presence.UNKNOWN
@@ -118,6 +120,10 @@ class CameraPipeline(
     private var darkRetryMs = DARK_RETRY_MIN_MS
     private var darkUntil = 0L
     private var luxAtDark = -1f
+    private var errorUntil = 0L
+    // Another user of the camera in this app (the capture probe): stay off.
+    var externalUser = false
+        set(v) { field = v; evaluate() }
     private var lux = -1f
     private val sensors = context.getSystemService(SensorManager::class.java)
     private val luxListener = object : SensorEventListener {
@@ -174,10 +180,12 @@ class CameraPipeline(
 
     private fun offReason(): OffReason = when {
         !visible -> OffReason.HIDDEN
+        externalUser -> OffReason.BUSY
         services.system.state.value.cameraBlocked -> OffReason.BLOCKED
         !hasPermission() -> OffReason.NO_PERMISSION
         !stageEnabled("presence") && enrolListener == null && benchStage == null -> OffReason.DISABLED
-        SystemClock.elapsedRealtime() < darkUntil && enrolListener == null -> OffReason.DARK
+        SystemClock.elapsedRealtime() < errorUntil -> OffReason.ERROR
+        SystemClock.elapsedRealtime() < darkUntil && enrolListener == null && benchStage == null -> OffReason.DARK
         else -> OffReason.NONE
     }
 
@@ -200,7 +208,8 @@ class CameraPipeline(
         val interval = if (detecting) DETECT_INTERVAL_MS else PRESENCE_INTERVAL_MS
         if (source != null && sourceWidth != width) stopCamera(keepPresence = true)
         if (source == null) {
-            val src = Camera1Source(preferredWidth = width, minIntervalMs = interval)
+            val src = Camera1Source(preferredWidth = width, minIntervalMs = interval,
+                dutyCycle = !detecting && (benchDuty || settings.getBoolean(KEY_DUTY, DUTY_DEFAULT)))
             source = src
             sourceWidth = width
             motion.reset()
@@ -208,7 +217,7 @@ class CameraPipeline(
             services.system.update { it.copy(cameraInUse = true) }
             src.start({ f -> onFrame(f) }, { err -> main.post { onCameraError(err) } })
             Log.i(TAG, "camera on: ${src.name} width=$width every ${interval}ms")
-        } else source?.minIntervalMs = interval
+        } else source?.let { it.minIntervalMs = interval; (it as? Camera1Source)?.dutyCycle = !detecting && (benchDuty || settings.getBoolean(KEY_DUTY, DUTY_DEFAULT)) }
         val phase = when {
             enrolListener != null -> CameraPhase.ENROLLING
             detecting -> CameraPhase.DETECTING
@@ -238,8 +247,8 @@ class CameraPipeline(
         services.system.update { it.copy(cameraInUse = false) }
         _ui.value = _ui.value.copy(phase = CameraPhase.OFF, off = OffReason.ERROR)
         // Another client (or the HAL) took the camera: try again later.
-        darkUntil = SystemClock.elapsedRealtime() + ERROR_RETRY_MS
-        main.postDelayed({ if (_ui.value.off == OffReason.ERROR) { darkUntil = 0L; evaluate() } }, ERROR_RETRY_MS)
+        errorUntil = SystemClock.elapsedRealtime() + ERROR_RETRY_MS
+        main.postDelayed({ errorUntil = 0L; evaluate() }, ERROR_RETRY_MS)
     }
 
     private fun onDark() {
@@ -258,6 +267,8 @@ class CameraPipeline(
         val t0 = SystemClock.elapsedRealtimeNanos()
         val now = SystemClock.elapsedRealtime()
         val m = motion.process(f)
+        stats.changedSum += m.changed; stats.lumaSum += m.meanLuma; stats.samples++
+        (source as? Camera1Source)?.let { stats.restartMs = it.restartLatencyMs }
         stats.presence.add(SystemClock.elapsedRealtimeNanos() - t0)
         if (m.dark && enrolListener == null && benchStage == null) {
             if (++darkStreak >= DARK_SAMPLES) { darkStreak = 0; main.post { if (source != null) onDark() } }
@@ -294,6 +305,14 @@ class CameraPipeline(
                 stats.embed.add(SystemClock.elapsedRealtimeNanos() - t2)
             }
         }
+        if (benchStage == CameraPhase.RECOGNIZED && emb == null) {
+            // Bench: time crop + embedding + matching on the centre even without a usable face.
+            val t2 = SystemClock.elapsedRealtimeNanos()
+            cropFace(f, FaceBox(f.width / 2f, f.height / 2.5f, f.width / 6f, 1f), 112, crop)
+            val v = embedder.embed(crop)
+            matcher.match(v, burstTemplates)
+            stats.embed.add(SystemClock.elapsedRealtimeNanos() - t2)
+        }
         stats.count(issue)
         if (enrol != null) {
             val sample = EnrolSample(box, f.width, f.height, issue, emb, sharp)
@@ -310,6 +329,7 @@ class CameraPipeline(
 
     private fun postPresence(p: Presence, arrived: Boolean, moved: Boolean = false) {
         main.post {
+            darkRetryMs = DARK_RETRY_MIN_MS
             if (services.system.state.value.presence != p) services.system.update { it.copy(presence = p) }
             if (_ui.value.presence != p) _ui.value = _ui.value.copy(presence = p)
             onPresence(p, arrived, moved)
@@ -391,14 +411,20 @@ class CameraPipeline(
             override fun toString() = "n=$n avg=${"%.2f".format(avgMs())}ms max=${"%.1f".format(maxNs / 1e6f)}ms" }
         val presence = Timer(); val detect = Timer(); val embed = Timer()
         @Volatile var framesSeen = 0L
+        @Volatile var changedSum = 0.0
+        @Volatile var lumaSum = 0L
+        @Volatile var samples = 0L
+        @Volatile var restartMs = 0L
         val issues = IntArray(QualityIssue.entries.size)
         fun count(i: QualityIssue) { issues[i.ordinal]++ }
-        override fun toString() = "presence[$presence] detect[$detect] embed[$embed] quality=" +
+        override fun toString() = "samples=$samples meanChanged=${"%.4f".format(if (samples > 0) changedSum / samples else 0.0)} meanLuma=${if (samples > 0) lumaSum / samples else 0} restartMs=$restartMs presence[$presence] detect[$detect] embed[$embed] quality=" +
             QualityIssue.entries.filter { issues[it.ordinal] > 0 }.joinToString { "${it.name}:${issues[it.ordinal]}" }
     }
 
     companion object {
         const val TAG = "EchoCamera"
+        const val KEY_DUTY = "camera.presence.duty"
+        const val DUTY_DEFAULT = false
         const val PRESENCE_WIDTH = 176
         const val PRESENCE_INTERVAL_MS = 500L
         const val DETECT_WIDTH = 320
@@ -413,6 +439,6 @@ class CameraPipeline(
         const val DARK_RETRY_MAX_MS = 5 * 60_000L
         const val ERROR_RETRY_MS = 60_000L
         /** Defaults after measuring each stage on the Echo (docs/status/camera.md). */
-        val STAGE_DEFAULTS = mapOf("presence" to true, "detect" to false, "recognize" to false)
+        val STAGE_DEFAULTS = mapOf("presence" to true, "detect" to true, "recognize" to true)
     }
 }

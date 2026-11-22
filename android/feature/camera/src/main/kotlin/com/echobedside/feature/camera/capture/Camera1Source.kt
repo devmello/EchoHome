@@ -20,7 +20,16 @@ import java.util.concurrent.TimeUnit
 class Camera1Source(
     private val preferredWidth: Int = 160,
     override var minIntervalMs: Long = 500,
+    /**
+     * Duty-cycle the preview: stop it after each delivered frame and restart it just in time for
+     * the next, so the sensor + HAL idle between samples (presence at 2 fps needs 2 of ~10 frames).
+     */
+    @Volatile var dutyCycle: Boolean = false,
 ) : FrameSource {
+    /** Last startPreview → first frame latency, ms (duty-cycle mode). */
+    @Volatile var restartLatencyMs = 0L; private set
+    private var restartedAt = 0L
+    private var previewOn = false
     override val name = "camera1"
     override var size: Pair<Int, Int>? = null; private set
     @Volatile override var framesSeen = 0L; private set
@@ -73,13 +82,22 @@ class Camera1Source(
                 cam.setPreviewCallbackWithBuffer { data, c ->
                     framesSeen++
                     val now = SystemClock.elapsedRealtime()
+                    if (restartedAt != 0L) { restartLatencyMs = now - restartedAt; restartedAt = 0L }
                     if (running && now - lastDelivered >= minIntervalMs) {
                         lastDelivered = now
                         listener.onFrame(YPlane(wrap, sz.first, sz.second, sz.first, 1, SystemClock.elapsedRealtimeNanos()))
+                        if (dutyCycle && running) {
+                            c.addCallbackBuffer(data)
+                            h.post { if (running && previewOn) { try { c.stopPreview() } catch (_: Exception) {}; previewOn = false } }
+                            val wait = (minIntervalMs - restartLatencyMs.coerceIn(100, 800) - 30).coerceAtLeast(0)
+                            h.postDelayed({ if (running && !previewOn) { restartedAt = SystemClock.elapsedRealtime(); try { c.startPreview(); previewOn = true } catch (e: Exception) { Log.w(TAG, "restart failed", e) } } }, wait)
+                            return@setPreviewCallbackWithBuffer
+                        }
                     }
                     if (running) c.addCallbackBuffer(data)
                 }
                 cam.startPreview()
+                previewOn = true
             } catch (e: Exception) {
                 Log.w(TAG, "open failed", e)
                 stopInternal()

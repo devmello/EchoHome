@@ -93,6 +93,18 @@ class MotionDetectorTest {
         assertTrue(out.all { it == 77 })
     }
 
+    @Test fun directBufferPathMatchesArrayPath() {
+        // Camera2 hands out direct buffers; Camera1 wraps an array. Both paths must agree.
+        val w = 176; val h = 144; val rs = 180
+        val rnd = Random(3)
+        val bytes = ByteArray(rs * h) { rnd.nextInt(256).toByte() }
+        val direct = ByteBuffer.allocateDirect(bytes.size).apply { put(bytes); rewind() }
+        val a = IntArray(80 * 60); val b = IntArray(80 * 60)
+        MotionDetector.downscale(YPlane(ByteBuffer.wrap(bytes), w, h, rs, 1, 0), a, 80, 60)
+        MotionDetector.downscale(YPlane(direct, w, h, rs, 1, 0), b, 80, 60)
+        assertTrue(a.contentEquals(b))
+    }
+
     @Test fun picksCheapestCameraConfig() {
         val sizes = listOf(1600 to 1200, 640 to 480, 320 to 240, 176 to 144)
         assertEquals(176 to 144, pickSmallest(sizes, 160))

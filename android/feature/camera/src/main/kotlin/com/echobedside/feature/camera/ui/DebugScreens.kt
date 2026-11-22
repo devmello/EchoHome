@@ -44,6 +44,8 @@ class CameraBenchView(context: Context, private val services: EchoServices, priv
     override fun onScreenShown(args: Bundle?) {
         if (args == null && pipeline.benchStage != null) return
         stage = args?.getString("stage") ?: "presence"
+        pipeline.stats = CameraPipeline.Stats()
+        pipeline.benchDuty = stage == "presence-duty"
         pipeline.benchStage = when (stage) {
             "detect" -> CameraPhase.DETECTING
             "recognize" -> CameraPhase.RECOGNIZED
@@ -53,7 +55,7 @@ class CameraBenchView(context: Context, private val services: EchoServices, priv
         main.removeCallbacks(tick); main.postDelayed(tick, 10_000)
     }
 
-    override fun onScreenHidden() { main.removeCallbacks(tick); pipeline.benchStage = null }
+    override fun onScreenHidden() { main.removeCallbacks(tick); pipeline.benchDuty = false; pipeline.benchStage = null }
 
     override fun onDraw(canvas: Canvas) {
         canvas.drawColor(0xFF000000.toInt())

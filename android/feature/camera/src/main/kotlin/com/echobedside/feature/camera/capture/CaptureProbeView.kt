@@ -52,6 +52,7 @@ class CaptureProbeView(context: Context, private val services: EchoServices) : V
         // The shell also calls this from onResume with null args: keep a run that's going.
         if (args == null && source != null) return
         main.removeCallbacksAndMessages(null); source?.stop(); source = null
+        com.echobedside.feature.camera.CameraFeature.pipeline.externalUser = true
         lines.clear(); lines += "Camera capture probe"
         val api = args?.getString("api")
         queue = if (api != null) mutableListOf(api) else mutableListOf("camera2", "camera1")
@@ -65,6 +66,7 @@ class CaptureProbeView(context: Context, private val services: EchoServices) : V
         if (white) setWhite(false)
         source?.stop(); source = null
         setInUse(false)
+        com.echobedside.feature.camera.CameraFeature.pipeline.externalUser = false
     }
 
     override fun onAttachedToWindow() {
