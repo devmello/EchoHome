@@ -61,9 +61,14 @@ with cargo-ndk on the first try (no C deps; needs only liblog/libc/libm/libdl). 
 - **On / off**: `AirPlayFeature` starts the service while both `airplay.enabled` and
   `system.cc.airplay` (Control Center's toggle) are true (default true) and stops / restarts it
   when either changes.
-- **Audio focus / system**: AUDIOFOCUS_GAIN requested when PCM starts, abandoned when the stream
-  ends; transient loss mutes (and pauses the sender over DACP when possible, resuming on gain);
-  ducking left to the system. Partial wake lock + `WIFI_MODE_FULL_HIGH_PERF` lock only while a
+- **Audio focus / system** (`AudioFocusPolicy`, G's contract request): AUDIOFOCUS_GAIN
+  (USAGE_MEDIA) requested when PCM starts, abandoned when the stream ends, with
+  `setWillPauseWhenDucked(true)` so the framework doesn't auto-duck and we duck ourselves:
+  `LOSS_TRANSIENT_CAN_DUCK` (the assistant) lowers the AudioTrack to 20 % of the sender's volume;
+  `LOSS_TRANSIENT` mutes and, with DACP (AirPlay 1), pauses the sender; `GAIN` restores the volume
+  and plays again only if we paused it; `LOSS` pauses for good. Debug check without sound:
+  `am broadcast -a com.echobedside.airplay.DEBUG --es focus media|duck|transient|release|end`
+  (logs `audio focus … → ducked to 20% / muted / restored`). Partial wake lock + `WIFI_MODE_FULL_HIGH_PERF` lock only while a
   stream is set up; a multicast lock only while a sender is connected (DACP discovery). Wi-Fi
   coming back re-announces mDNS.
 - **Unit tests** (`./gradlew :feature:airplay:testDebugUnitTest`): dB/volume/gain/DACP mapping,
