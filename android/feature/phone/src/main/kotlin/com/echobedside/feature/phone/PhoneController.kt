@@ -19,14 +19,18 @@ import com.echobedside.core.model.DeviceName
 import com.echobedside.core.model.EchoServices
 import com.echobedside.core.model.LiveActivity
 import com.echobedside.core.model.LiveContent
+import com.echobedside.feature.phone.ams.AmsMediaSource
+import com.echobedside.feature.phone.ams.ArtworkLookup
 import com.echobedside.feature.phone.ancs.AncsPresenter
 import com.echobedside.feature.phone.ancs.AncsSession
 import com.echobedside.feature.phone.audio.BluetoothMediaSource
-import com.echobedside.feature.phone.ble.AncsGattClient
+import com.echobedside.feature.phone.ble.AppleGattClient
 import com.echobedside.feature.phone.ble.LePeripheral
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -34,7 +38,8 @@ import kotlinx.coroutines.launch
  * Everything iPhone-over-Bluetooth, on the main thread, driven only by Bluetooth callbacks and
  * broadcasts (no polling, no timers while idle):
  *
- *  - Notifications: LE advertising ([LePeripheral]) → the iPhone connects → [AncsGattClient]
+ *  - Notifications and the iPhone's Now Playing: LE advertising ([LePeripheral]) → the iPhone connects (or the
+ *    Echo connects out after a Classic speaker pairing) → [AppleGattClient] (ANCS + AMS)
  *    subscribes to ANCS → [AncsSession] → [AncsPresenter] → banners + call island. When the link
  *    drops it advertises again (low power), so the bonded iPhone reconnects by itself after
  *    reboots and when it comes back in range.
@@ -61,7 +66,7 @@ class PhoneController(private val context: Context, private val services: EchoSe
         }
     })
 
-    private var client: AncsGattClient? = null
+    private var client: AppleGattClient? = null
     private var session: AncsSession? = null
     private var presenter: AncsPresenter? = null
     /** Centrals that turned out not to have ANCS this session (don't probe them again). */
@@ -69,8 +74,21 @@ class PhoneController(private val context: Context, private val services: EchoSe
     private var audioDevice: BluetoothDevice? = null
     private var started = false
 
-    val media = BluetoothMediaSource(context, handler, { services.media }, { audioDevice?.let(::nameOf) ?: savedName() },
-        disconnectAudio = ::disconnectAudio)
+    private val artwork = ArtworkLookup(services.scope, { settings.getBoolean(KEY_ART_LOOKUP, true) })
+
+    val media: BluetoothMediaSource = BluetoothMediaSource(context, handler, { services.media }, { audioDevice?.let(::nameOf) ?: savedName() },
+        disconnectAudio = ::disconnectAudio, remote = { ams.merged }, artwork = artwork)
+
+    /** The iPhone's Now Playing over AMS (whatever plays, wherever its audio goes). */
+    val ams: AmsMediaSource = AmsMediaSource({ services.media }, { client?.device?.let(::nameOf) ?: savedName() }, ::a2dpSamePhone, artwork,
+        onMergedChanged = { media.refresh() })
+
+    /** The phone streaming to the Echo is the one AMS talks to (one Now Playing entry, not two). */
+    private fun a2dpSamePhone(): Boolean {
+        val a = audioDevice ?: return false
+        val c = client?.device ?: return false
+        return a.address == c.address || nameOf(a) == nameOf(c)
+    }
 
     /** The A2DP sink profile proxy (a binder handle, kept while Bluetooth is on). */
     private var a2dpSink: BluetoothProfile? = null
@@ -81,6 +99,13 @@ class PhoneController(private val context: Context, private val services: EchoSe
         get() = settings.getBoolean(KEY_NOTIFICATIONS, true)
         set(v) { settings.putBoolean(KEY_NOTIFICATIONS, v); applySetting(KEY_NOTIFICATIONS) }
 
+    var nowPlayingEnabled: Boolean
+        get() = settings.getBoolean(KEY_NOW_PLAYING, true)
+        set(v) { settings.putBoolean(KEY_NOW_PLAYING, v); applySetting(KEY_NOW_PLAYING) }
+
+    /** The LE link is wanted for notifications (ANCS) or Now Playing (AMS). */
+    private val leEnabled: Boolean get() = notificationsEnabled || nowPlayingEnabled
+
     var audioEnabled: Boolean
         get() = settings.getBoolean(KEY_AUDIO, true)
         set(v) { settings.putBoolean(KEY_AUDIO, v); applySetting(KEY_AUDIO) }
@@ -88,7 +113,8 @@ class PhoneController(private val context: Context, private val services: EchoSe
     /** Settings apply live (from the pairing screen, or the web settings page via SettingsStore.changes). */
     private fun applySetting(key: String) {
         when (key) {
-            KEY_NOTIFICATIONS -> { if (!notificationsEnabled) dropAncs(); updateMode() }
+            KEY_NOTIFICATIONS, KEY_NOW_PLAYING -> reconnectLe()
+            KEY_ART_LOOKUP -> { ams.refresh(); media.refresh() }
             KEY_AUDIO -> { media.enabled = audioEnabled; applyAudioPolicy() }
             KEY_SHOW_SILENT -> presenter?.showSilent = settings.getBoolean(KEY_SHOW_SILENT, false)
             KEY_CLEAR_ON_DISMISS -> presenter?.clearOnDismiss = settings.getBoolean(KEY_CLEAR_ON_DISMISS, true)
@@ -97,6 +123,15 @@ class PhoneController(private val context: Context, private val services: EchoSe
             else -> return
         }
         publishState()
+    }
+
+    /** ANCS/AMS switched on or off: subscribe again with the new set (the bond stays). */
+    private fun reconnectLe() {
+        ams.enabled = nowPlayingEnabled
+        val d = client?.device
+        dropAncs()
+        if (leEnabled && d != null && d.bondState == BluetoothDevice.BOND_BONDED) connectAncs(d)
+        updateMode()
     }
 
     private fun hiddenApps(): Set<String> = AncsPresenter.parseAppList(settings.getString(KEY_HIDDEN_APPS, ""))
@@ -134,8 +169,17 @@ class PhoneController(private val context: Context, private val services: EchoSe
         }
         context.registerReceiver(receiver, f, null, handler)
         media.enabled = audioEnabled
+        ams.enabled = nowPlayingEnabled
         services.scope.launch { settings.changes.collect { applySetting(it) } }
+        // Precedence between the iPhone's remote Now Playing and audio playing on the Echo.
+        services.scope.launch { services.media.sessions.collect { ams.onSessions(it) } }
         services.scope.launch { services.notifications.userDismissals.collect { presenter?.onUserDismissed(it) } }
+        // The assistant's island activity spans its turn (listening, working, speaking), the same
+        // span as its AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK. The framework doesn't duck A2DP sink audio.
+        services.scope.launch {
+            services.island.activities.map { l -> l.any { it.kind == ActivityKind.ASSISTANT } }
+                .distinctUntilChanged().collect { media.onAssistant(it) }
+        }
         val g = peripheral.probeGate()
         Log.i(TAG, "LE gate: $g")
         _state.update { it.copy(advertiseOk = g.started) }
@@ -202,9 +246,9 @@ class PhoneController(private val context: Context, private val services: EchoSe
     private fun updateMode() {
         val mode = when {
             adapter?.isEnabled != true -> LePeripheral.Mode.OFF
-            !notificationsEnabled -> LePeripheral.Mode.OFF
+            !leEnabled -> LePeripheral.Mode.OFF
             _state.value.pairingMode -> LePeripheral.Mode.PAIRING
-            client?.state == AncsGattClient.State.READY -> LePeripheral.Mode.OFF
+            client?.state == AppleGattClient.State.READY -> LePeripheral.Mode.OFF
             savedAddress().isNotEmpty() -> LePeripheral.Mode.RECONNECT
             else -> LePeripheral.Mode.OFF
         }
@@ -214,26 +258,30 @@ class PhoneController(private val context: Context, private val services: EchoSe
     // --- ANCS ---
 
     private fun centralConnected(device: BluetoothDevice) {
-        if (!notificationsEnabled) return
+        if (!leEnabled) return
         val c = client
-        if (c != null && c.state != AncsGattClient.State.CLOSED) return
+        if (c != null && c.state != AppleGattClient.State.CLOSED) return
         if (device.address in notIPhones && device.address != savedAddress()) { peripheral.cancelConnection(device); return }
         connectAncs(device)
     }
 
     private fun connectAncs(device: BluetoothDevice) {
-        Log.i(TAG, "probing ${device.address} for ANCS")
-        val c = AncsGattClient(context, device, handler, clientListener)
+        Log.i(TAG, "probing ${device.address} for ANCS/AMS")
+        val c = AppleGattClient(context, device, handler, clientListener, wantAncs = notificationsEnabled, wantAms = nowPlayingEnabled)
         client = c
+        // AMS sends the current values right after its subscription, before the client is ready.
+        if (nowPlayingEnabled) ams.attach(c, SystemClock::elapsedRealtime)
         c.connect()
         refreshStatus()
     }
 
-    private val clientListener = object : AncsGattClient.Listener {
-        override fun onAncsReady(client: AncsGattClient) {
+    private val clientListener = object : AppleGattClient.Listener {
+        override fun onReady(client: AppleGattClient) {
             val d = client.device
             settings.putString(KEY_ADDRESS, d.address)
             settings.putString(KEY_NAME, nameOf(d))
+            if (!client.hasAms) ams.detach()
+            if (!client.hasAncs) { updateMode(); updateBluetoothActivity(announce = true); publishState(); return }
             val p = AncsPresenter(services.notifications, services.island, d.address, { nameOf(d) }, ::performAction,
                 showSilent = settings.getBoolean(KEY_SHOW_SILENT, false), clearOnDismiss = settings.getBoolean(KEY_CLEAR_ON_DISMISS, true))
             p.hiddenApps = hiddenApps()
@@ -244,7 +292,8 @@ class PhoneController(private val context: Context, private val services: EchoSe
             publishState()
         }
 
-        override fun onNoAncs(client: AncsGattClient) {
+        override fun onNoAppleServices(client: AppleGattClient) {
+            if (this@PhoneController.client === client) ams.detach()
             notIPhones += client.device.address
             client.close()
             if (this@PhoneController.client === client) this@PhoneController.client = null
@@ -252,19 +301,22 @@ class PhoneController(private val context: Context, private val services: EchoSe
             updateMode(); refreshStatus()
         }
 
-        override fun onDisconnected(client: AncsGattClient, status: Int) {
+        override fun onDisconnected(client: AppleGattClient, status: Int) {
             if (this@PhoneController.client !== client) return
             dropAncs()
             updateMode()
             publishState()
         }
 
-        override fun onNotificationSource(client: AncsGattClient, bytes: ByteArray) { if (client === this@PhoneController.client) session?.onNotificationSource(bytes) }
-        override fun onDataSource(client: AncsGattClient, bytes: ByteArray) { if (client === this@PhoneController.client) session?.onDataSource(bytes) }
-        override fun onControlPointResult(client: AncsGattClient, status: Int) { if (client === this@PhoneController.client) session?.onWriteResult(status) }
-        override fun onResponseTimeout(client: AncsGattClient) { if (client === this@PhoneController.client) session?.onTimeout() }
+        override fun onNotificationSource(client: AppleGattClient, bytes: ByteArray) { if (client === this@PhoneController.client) session?.onNotificationSource(bytes) }
+        override fun onDataSource(client: AppleGattClient, bytes: ByteArray) { if (client === this@PhoneController.client) session?.onDataSource(bytes) }
+        override fun onControlPointResult(client: AppleGattClient, status: Int) { if (client === this@PhoneController.client) session?.onWriteResult(status) }
+        override fun onResponseTimeout(client: AppleGattClient) { if (client === this@PhoneController.client) session?.onTimeout() }
+        override fun onAmsEntityUpdate(client: AppleGattClient, bytes: ByteArray) { if (client === this@PhoneController.client) ams.session?.onEntityUpdate(bytes) }
+        override fun onAmsCommands(client: AppleGattClient, bytes: ByteArray) { if (client === this@PhoneController.client) ams.session?.onCommands(bytes) }
+        override fun onAmsAttribute(client: AppleGattClient, value: ByteArray?) { if (client === this@PhoneController.client) ams.session?.onAttributeRead(value) }
 
-        override fun onNeedsBond(client: AncsGattClient) {
+        override fun onNeedsBond(client: AppleGattClient) {
             val d = client.device
             Log.i(TAG, "bonding with ${d.address}")
             if (d.bondState == BluetoothDevice.BOND_NONE) d.createBond()
@@ -277,6 +329,8 @@ class PhoneController(private val context: Context, private val services: EchoSe
     private fun dropAncs() {
         client?.close()
         client = null
+        ams.session?.reset()
+        ams.detach()
         session?.reset()
         session = null
         presenter?.clearAll()
@@ -332,12 +386,29 @@ class PhoneController(private val context: Context, private val services: EchoSe
     }
 
     private fun audioConnected(d: BluetoothDevice, connected: Boolean) {
-        if (connected) audioDevice = d else if (audioDevice?.address == d.address) audioDevice = null
+        if (connected) audioDevice = d else if (audioDevice?.address == d.address) { audioDevice = null; outboundTried -= d.address }
         media.refresh()
+        ams.refresh()
         updateBluetoothActivity(announce = connected)
-        // The phone is in range: if notifications aren't connected yet, try reaching ANCS from our side.
-        if (connected && notificationsEnabled && client == null && d.address == savedAddress() && d.bondState == BluetoothDevice.BOND_BONDED) connectAncs(d)
+        // The phone is in range: if ANCS/AMS aren't connected yet, try reaching them from our side. That's also
+        // how a phone paired only as a speaker (iPhone Settings › Bluetooth) gets notifications, when
+        // cross-transport key derivation gave the bond LE keys; tried once per connection.
+        if (connected && leEnabled && client == null && d.bondState == BluetoothDevice.BOND_BONDED && outboundOk(d)) {
+            outboundTried += d.address
+            connectAncs(d)
+        }
         publishState()
+    }
+
+    /** Phones we already tried to reach over LE from our side during this audio connection. */
+    private val outboundTried = HashSet<String>()
+
+    private fun outboundOk(d: BluetoothDevice): Boolean {
+        if (d.address in outboundTried) return false
+        if (d.address == savedAddress()) return true
+        if (savedAddress().isNotEmpty() || d.address in notIPhones) return false
+        // A first pairing from iPhone Settings › Bluetooth: only phones (an iPhone is a "smartphone").
+        return d.bluetoothClass?.majorDeviceClass == BluetoothClass.Device.Major.PHONE
     }
 
     // --- pairing confirmation (privileged) ---
@@ -395,7 +466,7 @@ class PhoneController(private val context: Context, private val services: EchoSe
     private var activityShown: Pair<Boolean, Boolean>? = null
 
     private fun updateBluetoothActivity(announce: Boolean = false) {
-        val ancs = client?.state == AncsGattClient.State.READY
+        val ancs = client?.let { it.state == AppleGattClient.State.READY && it.hasAncs } == true
         val audio = audioDevice != null
         if (!ancs && !audio) {
             if (activityShown != null) services.island.end(ACTIVITY_ID)
@@ -424,7 +495,7 @@ class PhoneController(private val context: Context, private val services: EchoSe
         val on = a?.isEnabled == true
         val saved = savedAddress()
         val bonded = if (on) runCatching { a!!.bondedDevices.toList() }.getOrDefault(emptyList()) else emptyList()
-        val ancsAddr = client?.takeIf { it.state == AncsGattClient.State.READY }?.device?.address
+        val ancsAddr = client?.takeIf { it.state == AppleGattClient.State.READY && it.hasAncs }?.device?.address
         val audioAddr = audioDevice?.address
         val phones = bonded.filter { it.address == saved || it.address == audioAddr || it.bluetoothClass?.majorDeviceClass == BluetoothClass.Device.Major.PHONE }
             .map { PhoneInfo(it.address, nameOf(it), true, it.address == ancsAddr, it.address == audioAddr) }
@@ -449,7 +520,7 @@ class PhoneController(private val context: Context, private val services: EchoSe
         val status = when {
             !s.bluetoothOn -> "Bluetooth is off"
             s.pairing != null -> "Confirm the code on your iPhone"
-            c != null && c.state == AncsGattClient.State.READY -> "Connected to ${nameOf(c.device)}"
+            c != null && c.state == AppleGattClient.State.READY -> "Connected to ${nameOf(c.device)}"
             c != null -> "Connecting to ${nameOf(c.device)}…"
             s.pairingMode && s.advertiseOk == false -> "Bluetooth LE advertising isn't available"
             s.pairingMode -> "Ready to pair"
@@ -485,7 +556,7 @@ class PhoneController(private val context: Context, private val services: EchoSe
                     if (bs == BluetoothDevice.BOND_NONE && savedAddress() == d.address) { /* forgotten from Android Settings */ settings.remove(KEY_ADDRESS); updateMode() }
                 }
                 BluetoothDevice.ACTION_ACL_CONNECTED -> if (d != null) {
-                    if (d.address == savedAddress() && client == null && notificationsEnabled && d.bondState == BluetoothDevice.BOND_BONDED &&
+                    if (d.address == savedAddress() && client == null && leEnabled && d.bondState == BluetoothDevice.BOND_BONDED &&
                         i.getIntExtra(EXTRA_TRANSPORT, BluetoothDevice.TRANSPORT_AUTO) == BluetoothDevice.TRANSPORT_LE) connectAncs(d)
                 }
                 ACTION_A2DP_SINK_STATE -> if (d != null) {
@@ -511,6 +582,8 @@ class PhoneController(private val context: Context, private val services: EchoSe
         const val KEY_SHOW_SILENT = "phone.showSilent"
         const val KEY_CLEAR_ON_DISMISS = "phone.clearOnDismiss"
         const val KEY_HIDDEN_APPS = "phone.hiddenApps"
+        const val KEY_NOW_PLAYING = "phone.nowPlaying"
+        const val KEY_ART_LOOKUP = "phone.artLookup"
         const val PERMISSION_BLUETOOTH_PRIVILEGED = "android.permission.BLUETOOTH_PRIVILEGED"
 
         /** Hidden in API 30: BluetoothProfile.A2DP_SINK and its connection-state broadcast. */
