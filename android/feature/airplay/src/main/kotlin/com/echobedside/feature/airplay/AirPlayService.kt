@@ -63,7 +63,7 @@ class AirPlayService : Service() {
     private val nativeLock = Any()
     private var info: ServiceInfo? = null
     private var libMdns = false
-    private var state = ReceiverState()
+    @Volatile private var state = ReceiverState()
     private var artwork: Bitmap? = null
     private var player: AudioPlayer? = null
     private var publishedMedia = false
@@ -96,10 +96,8 @@ class AirPlayService : Service() {
         h.post { startReceiver() }
         mainScope.launch {
             services.settings.changes.collect { key ->
-                when (key) {
-                    AirPlayFeature.KEY_ENABLED -> if (!services.settings.getBoolean(key, true)) stopSelf()
-                    in AirPlayFeature.RESTART_KEYS -> h.post { restartReceiver() }
-                }
+                // On / off (airplay.enabled, system.cc.airplay) is AirPlayFeature's job: it stops us.
+                if (key in AirPlayFeature.RESTART_KEYS) h.post { restartReceiver("settings changed") }
             }
         }
         watchNetwork()
@@ -145,6 +143,7 @@ class AirPlayService : Service() {
         }
         val i = ServiceInfo.parse(NativeBridge.nativeServiceInfo(handle))
         info = i
+        state = state.copy(ap2 = ap2)
         if (libMdns) setMulticastLock(true) else nsd.register(i)
         Log.i(TAG, "receiver up as \"$name\" (${if (ap2) "AirPlay 2" else "AirPlay 1"}, mDNS ${if (libMdns) "library" else "NsdManager"}) " +
             "port ${i.port} in ${SystemClock.elapsedRealtime() - started} ms")
@@ -165,8 +164,8 @@ class AirPlayService : Service() {
         info = null
     }
 
-    private fun restartReceiver() {
-        Log.i(TAG, "settings changed: restarting receiver")
+    private fun restartReceiver(why: String) {
+        Log.i(TAG, "$why: restarting receiver")
         stopReceiver()
         startReceiver()
     }
@@ -257,7 +256,7 @@ class AirPlayService : Service() {
         stopPlayer()
         if (handle == 0L) return
         Log.i(TAG, "audio stream ${sampleRate}Hz/${channels}ch")
-        update { Reducer.audioStart(it, now()) }
+        update { Reducer.audioStart(it, now(), sampleRate, channels) }
         player = AudioPlayer(handle, sampleRate, channels) { flowing -> h.post { onFlowing(flowing) } }.also {
             it.setGain(state.volumeDb?.let(AirPlayMath::gain) ?: 1f)
             it.muted = state.locallyPaused || focusMuted
@@ -351,6 +350,11 @@ class AirPlayService : Service() {
         override fun seekTo(positionMs: Long) {} // DACP has no seek in the library; Now Playing hides it.
         override fun setVolume(volume: Float) { h.post { doSetVolume(volume) } }
         override val canSeek: Boolean get() = false
+        // AirPlay 2 senders take no commands from us: skip does nothing, pause only mutes here.
+        override val canSkip: Boolean get() = state.hasRemote
+        override val canPause: Boolean get() = state.hasRemote
+        /** The library can't drop one client, so restart the receiver (~10 ms): every sender is cut off. */
+        override fun disconnect() { h.post { if (handle != 0L) restartReceiver("disconnect") } }
     }
 
     private fun doPlay() {

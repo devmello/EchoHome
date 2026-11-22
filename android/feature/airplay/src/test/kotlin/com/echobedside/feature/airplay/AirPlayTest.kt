@@ -166,6 +166,23 @@ class ReceiverStateTest {
         assertEquals(-10f, s.volumeDb!!, 0f) // the sender's volume survives for the next stream
     }
 
+    @Test fun routeChips() {
+        var s = Reducer.audioStart(Reducer.clientConnected(ReceiverState(), "10.0.0.5"), 0, 44_100, 2)
+        assertEquals(listOf("AirPlay 2", "44.1 kHz"), s.toMediaState(null)!!.route)
+        s = Reducer.senderName(s, "10.0.0.5", "Maya's iPhone")
+        assertEquals(listOf("AirPlay 2", "44.1 kHz", "Maya's iPhone"), s.route())
+        assertEquals(listOf("AirPlay", "48 kHz", "Mono"), ReceiverState(ap2 = false, sampleRate = 48_000, channels = 1).route())
+        assertEquals("44.1 kHz", ReceiverState.formatRate(44_100))
+        assertEquals("48 kHz", ReceiverState.formatRate(48_000))
+        assertEquals("96 kHz", ReceiverState.formatRate(96_000))
+    }
+
+    @Test fun modeSurvivesLastDisconnect() {
+        var s = Reducer.clientConnected(ReceiverState(ap2 = false), "10.0.0.5")
+        s = Reducer.clientDisconnected(s, "10.0.0.5")
+        assertFalse(s.ap2)
+    }
+
     @Test fun nameForUnknownIpIgnored() {
         val s = Reducer.senderName(connected(), "10.0.0.9", "Other")
         assertNull(s.senderName)
