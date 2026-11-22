@@ -26,6 +26,7 @@ import com.echobedside.feature.home.HomeFeature
 import com.echobedside.feature.media.MediaFeature
 import com.echobedside.feature.phone.PhoneFeature
 import com.echobedside.feature.photos.PhotosFeature
+import com.echobedside.feature.settings.SettingsFeature
 import com.echobedside.feature.system.SystemFeature
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,7 +38,7 @@ import kotlinx.coroutines.launch
 /** Install order: providers first, the clock (main consumer) last. See EchoFeature. */
 val FeatureList: List<EchoFeature> = listOf(
     SystemFeature, PhoneFeature, AirPlayFeature, MediaFeature, AlarmFeature, HomeFeature,
-    AssistantFeature, CameraFeature, PhotosFeature, ClockFeature,
+    AssistantFeature, CameraFeature, PhotosFeature, ClockFeature, SettingsFeature,
 )
 
 /** Builds the shared services and installs every feature once per process. */
