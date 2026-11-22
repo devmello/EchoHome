@@ -157,10 +157,22 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
     }
 
     private fun takeBackdrop() {
+        // PixelCopy + blur off the UI thread (the banner isn't drawn yet, so it isn't in the copy)
+        val act = context as? Activity
+        val gen = ++backdropGen
+        if (act == null) { setBackdrop(Snapshot.region(this, Rect(150, 0, 810, 130), 20f, 1.9f, 1.1f)); return }
+        Snapshot.regionAsync(act, Rect(150, 0, 810, 130), 20f, 1.9f, 1.1f) { bd ->
+            if (gen == backdropGen && bd != null && shown != null) setBackdrop(bd) else bd?.bitmap?.recycle()
+        }
+    }
+
+    private var backdropGen = 0
+
+    private fun setBackdrop(bd: com.echobedside.core.design.Backdrop?) {
         val old = glass.backdrop
-        val bd = Snapshot.region(this, Rect(150, 0, 810, 130), 20f, 1.9f, 1.1f)
         glass.backdrop = bd; backGlass.backdrop = bd
-        old?.bitmap?.recycle()
+        if (old !== bd) old?.bitmap?.recycle()
+        invalidate()
     }
 
     // --- expanded ---

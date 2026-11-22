@@ -66,6 +66,28 @@ object Snapshot {
         return Backdrop(out, r.left.toFloat(), r.top.toFloat(), r.width().toFloat(), r.height().toFloat())
     }
 
+    /**
+     * Like [region] but from the composited screen (PixelCopy, GPU readback) with the blur on the blur
+     * thread: nothing runs on the UI thread. Use it while the caller itself isn't drawn yet (it would
+     * be in the copy). [done] runs on the main thread; null on failure.
+     */
+    fun regionAsync(activity: Activity, r: Rect, blurPx: Float, saturate: Float, brightness: Float, done: (Backdrop?) -> Unit) {
+        val bmp = Bitmap.createBitmap(max(1, r.width() / SCALE), max(1, r.height() / SCALE), Bitmap.Config.ARGB_8888)
+        try {
+            PixelCopy.request(activity.window, Rect(r), bmp, { res ->
+                if (res != PixelCopy.SUCCESS) { bmp.recycle(); done(null); return@request }
+                offMain({
+                    val out = PreBlur.blur(bmp, blurPx / SCALE, downscale = 1, saturate = saturate, brightness = brightness)
+                    bmp.recycle()
+                    Backdrop(out, r.left.toFloat(), r.top.toFloat(), r.width().toFloat(), r.height().toFloat())
+                }, done)
+            }, main)
+        } catch (e: Exception) {
+            Log.w(TAG, "PixelCopy region", e)
+            bmp.recycle(); done(null)
+        }
+    }
+
     /** Whole-window copy at 1/[SCALE], delivered on the main thread (null on failure). */
     fun window(activity: Activity, done: (Bitmap?) -> Unit) {
         val dec = activity.window.decorView

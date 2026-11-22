@@ -175,9 +175,22 @@ internal class HudOverlay(context: Context, private val ui: SystemUi) : View(con
 
     private fun takeBackdrop() {
         // The capsule's glass samples what's under it: a tiny pre-blurred snapshot, once per appearance.
+        // PixelCopy + blur off the UI thread (the capsule isn't drawn yet, so it isn't in the copy).
+        val act = context as? Activity
+        val gen = ++backdropGen
+        if (act == null) { setBackdrop(Snapshot.region(this, Rect(300, 0, 660, 96), 18f, 1.9f, 1.15f)); return }
+        Snapshot.regionAsync(act, Rect(300, 0, 660, 96), 18f, 1.9f, 1.15f) { bd ->
+            if (gen == backdropGen && bd != null) setBackdrop(bd) else bd?.bitmap?.recycle()
+        }
+    }
+
+    private var backdropGen = 0
+
+    private fun setBackdrop(bd: com.echobedside.core.design.Backdrop?) {
         val old = glass.backdrop
-        glass.backdrop = Snapshot.region(this, Rect(300, 0, 660, 96), 18f, 1.9f, 1.15f)
-        old?.bitmap?.recycle()
+        glass.backdrop = bd
+        if (old !== bd) old?.bitmap?.recycle()
+        invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {

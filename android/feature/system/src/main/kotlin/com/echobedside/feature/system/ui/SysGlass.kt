@@ -91,6 +91,26 @@ class SysGlassPainter(var spec: GlassSpec) {
     private var specKey = Long.MIN_VALUE
     private var rimTop: Shader? = null
     private var rimBottom: Shader? = null
+    private val shaderCache = HashMap<Long, Triple<Shader?, Shader, Shader>>()
+
+    private fun buildShaders(key: Long, w: Float, h: Float, a: Float, s: GlassSpec) {
+        val ang = Math.toRadians(s.specularAngle.toDouble())
+        val dx = sin(ang).toFloat()
+        val dy = -cos(ang).toFloat()
+        // CSS gradient line length for this angle
+        val len = abs(w * dx) + abs(h * dy)
+        val cx = w / 2f; val cy = h / 2f
+        val colors = IntArray(s.specularAlphas.size) { withAlpha(Color.WHITE, s.specularAlphas[it] * a) }
+        val sp = if (s.specularAlphas.all { it == 0f }) null else
+            LinearGradient(cx - dx * len / 2, cy - dy * len / 2, cx + dx * len / 2, cy + dy * len / 2, colors, s.specularStops, Shader.TileMode.CLAMP)
+        val rimH = min(h * 0.5f, 18f)
+        val rt = LinearGradient(0f, 0f, 0f, rimH, withAlpha(Color.WHITE, s.rimTopAlpha * a), Color.TRANSPARENT, Shader.TileMode.CLAMP)
+        val rb = LinearGradient(0f, h, 0f, h - rimH, withAlpha(Color.WHITE, s.rimBottomAlpha * a), Color.TRANSPARENT, Shader.TileMode.CLAMP)
+        specPaint.shader = sp; rimTop = rt; rimBottom = rb
+        // animating sizes/alphas (island morph, fades) would grow it without bound: keep it small
+        if (shaderCache.size >= 24) shaderCache.clear()
+        shaderCache[key] = Triple(sp, rt, rb)
+    }
 
     /**
      * Draws glass in [l,t,r,b] with corner [radius] (-1 = fully round). [windowX]/[windowY] = where the
@@ -136,18 +156,10 @@ class SysGlassPainter(var spec: GlassSpec) {
         val key = (w.roundToInt().toLong() shl 42) or (h.roundToInt().toLong() shl 21) or (a * 1000).roundToInt().toLong() or (s.hashCode().toLong() shl 50)
         if (key != specKey) {
             specKey = key
-            val ang = Math.toRadians(s.specularAngle.toDouble())
-            val dx = sin(ang).toFloat()
-            val dy = -cos(ang).toFloat()
-            // CSS gradient line length for this angle
-            val len = abs(w * dx) + abs(h * dy)
-            val cx = w / 2f; val cy = h / 2f
-            val colors = IntArray(s.specularAlphas.size) { withAlpha(Color.WHITE, s.specularAlphas[it] * a) }
-            specPaint.shader = if (s.specularAlphas.all { it == 0f }) null else
-                LinearGradient(cx - dx * len / 2, cy - dy * len / 2, cx + dx * len / 2, cy + dy * len / 2, colors, s.specularStops, Shader.TileMode.CLAMP)
-            val rimH = min(h * 0.5f, 18f)
-            rimTop = LinearGradient(0f, 0f, 0f, rimH, withAlpha(Color.WHITE, s.rimTopAlpha * a), Color.TRANSPARENT, Shader.TileMode.CLAMP)
-            rimBottom = LinearGradient(0f, h, 0f, h - rimH, withAlpha(Color.WHITE, s.rimBottomAlpha * a), Color.TRANSPARENT, Shader.TileMode.CLAMP)
+            // one painter often draws many tile sizes (Control Center): keep each size's shaders
+            val cached = shaderCache[key]
+            if (cached != null) { specPaint.shader = cached.first; rimTop = cached.second; rimBottom = cached.third }
+            else buildShaders(key, w, h, a, s)
         }
         canvas.save()
         canvas.translate(l, t)
