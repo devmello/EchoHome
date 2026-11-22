@@ -38,7 +38,7 @@ import java.util.WeakHashMap
  * presses, the art spring and the 1.2 s palette crossfade. Paused, the drift settles after
  * [PAUSED_DRIFT_MS]. Empty or hidden: no frames at all.
  *
- * Debug args (`--es np <cmd>`): empty, demo, paused, playing, next, popover.
+ * Debug args (`--es np <cmd>`): empty, demo, paused, playing, next, popover, night, day.
  */
 @SuppressLint("ViewConstructor")
 class NowPlayingScreen(context: Context, private val services: EchoServices) : FrameLayout(context), EchoScreen {
@@ -386,7 +386,7 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
         val cmd = pendingCmd ?: return
         val demo = MediaFeature.demo
         val s = session
-        if (s == null && cmd != "empty" && cmd != "demo") return // wait for a session
+        if (s == null && cmd in setOf("paused", "playing", "next", "popover")) return // wait for a session
         // Clear first: the controls publish synchronously and re-enter bind() → runPending().
         pendingCmd = null
         when (cmd) {
@@ -396,6 +396,17 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
             "playing" -> s?.controls?.play()
             "next" -> s?.controls?.next()
             "popover" -> if (isLaidOut) openPopover() else post { openPopover() }
+            // Debug only: preview Night mode (the clock feature owns nightActive; its sensor logic may flip it back).
+            "night", "day" -> services.system.update { it.copy(nightActive = cmd == "night") }
+            // Debug only: hide view groups to profile GPU cost, e.g. "perf:ar" (a ambient, r art, g glass, t text).
+            else -> if (cmd.startsWith("perf:")) {
+                val f = cmd.removePrefix("perf:")
+                fun vis(on: Boolean) = if (on) VISIBLE else INVISIBLE
+                ambient.visibility = vis('a' !in f); art.visibility = vis('r' !in f)
+                volume.visibility = vis('g' !in f); route.visibility = vis('g' !in f)
+                info.visibility = vis('t' !in f); progress.visibility = vis('t' !in f)
+                for (b in listOf(prev, play, next)) b.visibility = vis('t' !in f)
+            }
         }
     }
 }
