@@ -72,7 +72,7 @@ object AssistantSettings {
             SettingSpec(KEY_KEEP_STT, "Keep speech recognition loaded", SettingType.BOOLEAN, "false", advanced = true,
                 help = "Starts listening faster, but keeps about 40 MB in memory."),
             SettingSpec(KEY_KEEP_TTS, "Keep the voice loaded", SettingType.BOOLEAN, "false", advanced = true,
-                help = "Starts speaking faster (the voice takes about 35 s to load), but keeps about 70 MB in memory."),
+                help = "Starts speaking faster (the Piper voice takes 20–30 s to load), but keeps about 70 MB in memory."),
         ),
     )
 }
