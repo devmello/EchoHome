@@ -7,6 +7,7 @@ import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Shader
+import android.graphics.Typeface
 import com.echobedside.core.design.Night
 import com.echobedside.core.design.SpecText
 import com.echobedside.core.model.EchoServices
@@ -22,20 +23,28 @@ import kotlin.math.sin
  * StandBy "Float" face, from design/Float.dc.html: giant two-tone bubble digits that overlap
  * (screen blend), each slightly tilted and lifted, with a gradient fill per glyph.
  *
- * Font: the design uses Nunito 900 as a stand-in for SF Pro Rounded. We don't bundle a second
- * font; this draws Inter 900 (already bundled, OFL) with a round-joined outline stroke of
- * [ROUNDING] px, which softens the corners and terminals toward a rounded heavy look. Glyph
- * shapes differ from Nunito (Inter's digits are a little narrower and less round).
+ * Font: the design's Nunito 900 (stand-in for SF Pro Rounded) from this module's assets
+ * ([FloatFont], OFL, licence next to it). Without that file it falls back to Inter 900 with a
+ * round-joined outline stroke of [ROUNDING] px, which softens corners toward a rounded heavy look.
  */
 class FloatFace(context: Context, services: EchoServices) : SpecFace(context, services) {
 
+    private val nunito = FloatFont.get(context)
     private val digitText = SpecText(380f, 900).apply {
-        paint.style = Paint.Style.FILL_AND_STROKE
-        paint.strokeJoin = Paint.Join.ROUND
-        paint.strokeWidth = ROUNDING
+        if (nunito != null) {
+            paint.typeface = nunito
+            paint.fontVariationSettings = null // static Black
+        } else {
+            paint.style = Paint.Style.FILL_AND_STROKE
+            paint.strokeJoin = Paint.Join.ROUND
+            paint.strokeWidth = ROUNDING
+        }
         paint.fontFeatureSettings = null // the design has proportional digits here
         paint.blendMode = BlendMode.SCREEN
     }
+    /** Line-box metrics of the digit font (SpecText's own are Inter's). */
+    private val digitAscent = -digitText.paint.fontMetrics.ascent
+    private val digitDescent = digitText.paint.fontMetrics.descent
     private val alarmText = SpecText(18f, 700, -0.01f)
     private val alarmIcon = context.icon(R.drawable.ic_alarm_24)
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -121,7 +130,7 @@ class FloatFace(context: Context, services: EchoServices) : SpecFace(context, se
         val boxH = LINE * em
         val cy = 18f + (H - 18f) / 2f // padding-top 18, items centred
         val top = cy - boxH / 2
-        val baseline = digitText.baselineIn(0f, boxH)
+        val baseline = (boxH - (digitAscent + digitDescent)) / 2f + digitAscent
         for (g in glyphs) {
             if (g.colon) continue
             canvas.save()
@@ -154,5 +163,23 @@ class FloatFace(context: Context, services: EchoServices) : SpecFace(context, se
         const val ROUNDING = 14f
         private val TILTS = floatArrayOf(-4f, 3f, 0f, -3f, 4f)
         private val LIFTS = floatArrayOf(6f, -10f, 0f, 8f, -6f)
+    }
+}
+
+/**
+ * Nunito Black for the Float face: `assets/fonts/Nunito-Black.ttf` in this module (SIL Open Font
+ * License 1.1, `assets/fonts/OFL-Nunito.txt`). null when the file isn't bundled.
+ */
+object FloatFont {
+    const val ASSET = "fonts/Nunito-Black.ttf"
+    private var loaded = false
+    private var typeface: Typeface? = null
+
+    fun get(context: Context): Typeface? {
+        if (!loaded) {
+            loaded = true
+            typeface = runCatching { Typeface.createFromAsset(context.assets, ASSET) }.getOrNull()
+        }
+        return typeface
     }
 }

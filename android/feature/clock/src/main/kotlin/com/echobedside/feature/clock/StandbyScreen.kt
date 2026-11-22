@@ -9,7 +9,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Color
-import android.graphics.Outline
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -20,7 +23,6 @@ import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
-import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import com.echobedside.core.design.Motion
 import com.echobedside.core.design.Night
@@ -87,6 +89,10 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
 
     // edit mode
     private var editing = false
+    private var editExp = 0
+    private val cornerPath = Path()
+    private val cornerOval = RectF()
+    private val cornerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
     private var editProgress = 0f
     private var editAnim: ValueAnimator? = null
     private var overlay: EditOverlay? = null
@@ -104,10 +110,9 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         setBackgroundColor(Color.BLACK)
         clipChildren = false
         addView(stage, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        stage.outlineProvider = object : ViewOutlineProvider() {
-            override fun getOutline(view: View, outline: Outline) =
-                outline.setRoundRect(0, 0, view.width, view.height, EDIT_RADIUS / EDIT_SCALE * editProgress)
-        }
+        // Parked neighbours sit just outside the stage; clipChildren only clips each face to its
+        // own (translated) bounds, so clip the stage itself (shows once it's zoomed out in edit mode).
+        stage.addOnLayoutChangeListener { v, l, t, r, b, _, _, _, _ -> v.clipBounds = android.graphics.Rect(0, 0, r - l, b - t) }
         observeWhileAttached(services.faces.faces) { list ->
             releaseBuilt(list.mapTo(HashSet()) { it.id })
             if (current == null || services.faces.byId(current!!.spec.id) == null) showFace(selectedFaceId(), persist = false) else { arrange(); syncOverlay() }
@@ -228,6 +233,24 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
             val d = if (s === cur) 0 else if (j < 0) 9 else j - i
             if (d in -1..1) { v.translationY = d * h; v.visibility = VISIBLE } else v.visibility = INVISIBLE
         }
+        syncFaceLayers()
+    }
+
+    /**
+     * Edit mode draws each visible face from its own GPU layer (rendered once, re-rendered only
+     * when that face redraws: colour, minute, Analog's second hand). Scaling the stage, the
+     * overlay fades and face swipes then move textured quads instead of re-issuing every glyph,
+     * which is what made edit mode render-thread bound on the Echo. While the edit transition
+     * runs, only the current face has one (no extra layer renders mid-animation).
+     */
+    private fun syncFaceLayers() {
+        val inEdit = (editing || editAnim != null) && (editExp and EXP_NO_FACE_LAYERS) == 0
+        for (s in built.values) {
+            val v = s.face.view
+            val want = inEdit && v.visibility == VISIBLE && (s === current || editAnim == null)
+            val type = if (want) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE
+            if (v.layerType != type) v.setLayerType(type, null)
+        }
     }
 
     /** Builds the current face's missing neighbours one per idle moment, never mid-animation. */
@@ -324,7 +347,6 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         val cur = current ?: return
         val h = stage.height.toFloat()
         switchAnim = ValueAnimator.ofFloat(from, to).apply {
-            updateStageLayer(moving = true)
             duration = 380
             interpolator = Motion.EASE
             addUpdateListener {
@@ -335,7 +357,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
             addListener(object : AnimatorListenerAdapter() {
                 var cancelled = false
                 override fun onAnimationCancel(a: Animator) { cancelled = true }
-                override fun onAnimationEnd(a: Animator) { if (switchAnim === a) switchAnim = null; if (!cancelled) end(); updateStageLayer() }
+                override fun onAnimationEnd(a: Animator) { if (switchAnim === a) switchAnim = null; if (!cancelled) end() }
             })
             start()
         }
@@ -389,8 +411,6 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         }
         stage.pivotX = EDIT_PIVOT_X
         stage.pivotY = EDIT_PIVOT_Y
-        stage.clipToOutline = true
-        updateStageLayer(moving = false, force = true)
         applyDim(animate = false)
         editAnim?.cancel()
         val target = if (on) 1f else 0f
@@ -398,10 +418,12 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
             editProgress = p
             val s = 1f - (1f - EDIT_SCALE) * p
             stage.scaleX = s; stage.scaleY = s
-            stage.invalidateOutline()
+            invalidate() // corner masks
             overlay?.alpha = p.coerceIn(0f, 1f)
         }
         if (!animate) { apply(target); finishEdit(on); return }
+        // the overlay doesn't change while it fades: one layer render, then alpha on a quad
+        if ((editExp and EXP_NO_OVERLAY_LAYER) == 0) overlay?.setLayerType(LAYER_TYPE_HARDWARE, null)
         editAnim = ValueAnimator.ofFloat(editProgress, target).apply {
             duration = if (on) 520 else 420
             interpolator = if (on) Motion.SPRING_SOFT else Motion.EASE
@@ -413,27 +435,59 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
             })
             start()
         }
+        syncFaceLayers()
     }
 
     private fun finishEdit(on: Boolean) {
-        updateStageLayer()
+        // at rest the overlay animates on its own (palette spring): a layer would re-render each frame
+        overlay?.setLayerType(LAYER_TYPE_NONE, null)
+        syncFaceLayers()
+        invalidate()
         if (on) return
-        stage.clipToOutline = false
         overlay?.let { removeView(it) }
         overlay = null
         applyDim(animate = true)
     }
 
     /**
-     * The stage is a GPU layer while it is scaled (edit mode and its transition), except while
-     * faces move inside it: then the layer would be re-rendered every frame for nothing. As a
-     * layer, the scaled face costs the render thread one textured quad per frame (palette spring,
-     * overlay fades) instead of re-issuing every glyph — edit mode is render-thread bound on the Echo.
+     * The zoomed face's rounded corners (Customize.dc.html: 34 px). Painted as black corner
+     * pieces over the stage (StandBy's background is black) rather than `clipToOutline`: on the
+     * Echo, an outline clip whose radius changes every frame made the whole edit transition
+     * GPU-bound (21 ms frames); four small paths cost nothing.
      */
-    private fun updateStageLayer(moving: Boolean = dragging || switchAnim != null, force: Boolean = false) {
-        val want = (force || editing || editAnim != null) && !moving
-        val type = if (want) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE
-        if (stage.layerType != type) stage.setLayerType(type, null)
+    override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
+        val r = super.drawChild(canvas, child, drawingTime)
+        if (child === stage && editProgress > 0f) drawCorners(canvas)
+        return r
+    }
+
+    private fun drawCorners(canvas: Canvas) {
+        val sc = stage.scaleX
+        val l = EDIT_PIVOT_X * (1f - sc)
+        val t = EDIT_PIVOT_Y * (1f - sc)
+        val rt = EDIT_PIVOT_X + (stage.width - EDIT_PIVOT_X) * sc
+        val b = EDIT_PIVOT_Y + (stage.height - EDIT_PIVOT_Y) * sc
+        val rad = EDIT_RADIUS / EDIT_SCALE * editProgress.coerceIn(0f, 1.2f) * sc
+        if (rad < 0.5f) return
+        val p = cornerPath
+        p.rewind()
+        corner(p, l, t, rad, 180f)        // top-left
+        corner(p, rt - rad, t, rad, 270f)  // top-right
+        corner(p, rt - rad, b - rad, rad, 0f)
+        corner(p, l, b - rad, rad, 90f)
+        canvas.drawPath(p, cornerPaint)
+    }
+
+    /** The piece of the [r]×[r] square at ([x],[y]) outside the quarter circle facing [startDeg]. */
+    private fun corner(p: Path, x: Float, y: Float, r: Float, startDeg: Float) {
+        val cx = if (startDeg == 180f || startDeg == 90f) x + r else x
+        val cy = if (startDeg == 180f || startDeg == 270f) y + r else y
+        val ox = if (startDeg == 180f || startDeg == 90f) x else x + r // the square's outer corner
+        val oy = if (startDeg == 180f || startDeg == 270f) y else y + r
+        cornerOval.set(cx - r, cy - r, cx + r, cy + r)
+        p.moveTo(ox, oy)
+        p.arcTo(cornerOval, startDeg, 90f, false)
+        p.close()
     }
 
     private fun syncOverlay() {
@@ -502,7 +556,6 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
                 if (abs(dx) > slop || abs(dy) > slop) handler.removeCallbacks(longPress)
                 if (!dragging && tracking && abs(dy) > slop && abs(dy) > abs(dx) * 1.2f && faces().size > 1) {
                     dragging = true
-                    updateStageLayer()
                     parent?.requestDisallowInterceptTouchEvent(true)
                     overlay?.colors?.setOpen(false)
                 }
@@ -570,7 +623,11 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         fun str(k: String): String? = args.get(k)?.toString()
         str("profile")?.let { services.profiles.switchTo(it, SwitchReason.MANUAL) }
         str("face")?.let { showFace(it) }
-        str("nightmode")?.let { m -> NightMode.entries.firstOrNull { it.name.equals(m, true) }?.let { services.systemControls.setNightMode(it) } }
+        if (services.config.debug) str("editexp")?.toIntOrNull()?.let { editExp = it }
+        str("nightstart")?.let { services.settings.putString(ClockSettings.KEY_NIGHT_START, it) }
+        str("nightend")?.let { services.settings.putString(ClockSettings.KEY_NIGHT_END, it) }
+        // same values as the settings page: auto | schedule | on | off
+        str("nightmode")?.let { m -> services.settings.putString(ClockSettings.KEY_NIGHT_MODE, m.lowercase()) }
         val cur = current
         if (cur != null) {
             str("color")?.let { c -> parseHexColor(c)?.let { rememberColor(cur.spec, it) } }
@@ -615,5 +672,8 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         private const val EDIT_PIVOT_X = 96f / (1f - EDIT_SCALE)
         private const val EDIT_PIVOT_Y = 40f / (1f - EDIT_SCALE)
         private const val TOP_EDGE = 40f
+        // debug launch extra `editexp` (bits) to measure the edit-mode drawing choices on the Echo
+        private const val EXP_NO_OVERLAY_LAYER = 2
+        private const val EXP_NO_FACE_LAYERS = 4
     }
 }

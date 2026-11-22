@@ -19,6 +19,10 @@ object ClockSettings {
     const val KEY_NIGHT_ENTER_LUX = "clock.night.enterLux"
     const val KEY_NIGHT_LEAVE_LUX = "clock.night.leaveLux"
     const val KEY_NIGHT_DELAY_SEC = "clock.night.delaySec"
+    const val KEY_NIGHT_START = "clock.night.start"
+    const val KEY_NIGHT_END = "clock.night.end"
+    const val DEFAULT_NIGHT_START = "22:00"
+    const val DEFAULT_NIGHT_END = "07:00"
 
     /** Keys whose change StandBy applies to the face on screen. */
     fun affectsStandby(key: String) =
@@ -47,8 +51,11 @@ object ClockSettings {
                 default = WorldFace.DEFAULT_CITIES.joinToString(",") { WorldFace.encodeCity(it) },
                 help = "Up to three, each \"City|Time zone|latitude|longitude\", e.g. London|Europe/London|51.5|-0.13."))
             add(SettingSpec(KEY_NIGHT_MODE, "Night mode", SettingType.CHOICE, default = "auto",
-                options = listOf("auto" to "Automatic (dark room)", "on" to "Always on", "off" to "Off"),
-                help = "Night shows every face in dim red. Automatic turns it on when the room stays dark."))
+                options = listOf("auto" to "Automatic (dark room)", "schedule" to "On a schedule", "on" to "Always on", "off" to "Off"),
+                help = "Night shows every face in dim red. Automatic turns it on when the room stays dark; a schedule uses the times below."))
+            add(SettingSpec(KEY_NIGHT_START, "Night: from", SettingType.TIME, default = DEFAULT_NIGHT_START,
+                help = "Used when Night mode is On a schedule."))
+            add(SettingSpec(KEY_NIGHT_END, "Night: until", SettingType.TIME, default = DEFAULT_NIGHT_END))
             add(SettingSpec(KEY_NIGHT_ENTER_LUX, "Night: dark below (lux)", SettingType.FLOAT, default = "3",
                 min = 0f, max = 50f, step = 0.5f, advanced = true))
             add(SettingSpec(KEY_NIGHT_LEAVE_LUX, "Night: bright above (lux)", SettingType.FLOAT, default = "10",
