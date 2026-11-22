@@ -8,7 +8,7 @@
 # Re-run (--no-build to reuse the APK) after adding a privileged permission or to refresh the /system copy.
 set -e
 . "$(dirname "$0")/lib.sh"
-ls "$ECHO_ROOT"/backups/*/SHA256SUMS >/dev/null 2>&1 || { echo "No partition backup in backups/. Run ./scripts/echo-backup.sh first."; exit 1; }
+ls "$ECHO_ROOT"/backups/*/COMPLETE >/dev/null 2>&1 || { echo "No complete partition backup in backups/. Run ./scripts/echo-backup.sh first."; exit 1; }
 [ "${1:-}" = --no-build ] || (cd "$CHECKOUT/android" && ./gradlew -q :app:assembleRelease)
 APK="$CHECKOUT/android/app/build/outputs/apk/release/app-release.apk"
 XML="$ECHO_ROOT/device/privapp-permissions-com.echobedside.xml"
