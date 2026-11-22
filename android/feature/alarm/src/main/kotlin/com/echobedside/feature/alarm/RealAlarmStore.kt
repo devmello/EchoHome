@@ -46,6 +46,9 @@ import kotlinx.coroutines.launch
 class RealAlarmStore(private val ctx: Context, private val services: EchoServices) : AlarmStore {
     private val file = AtomicFile(File(ctx.filesDir, "alarms.json"))
     private val engine = AlarmEngine(load(), adjust = { AlarmSettings.apply(services.settings, it) })
+    /** What's on disk. Compared with the engine after every evaluate, so user actions (snooze, stop,
+     *  done, edits), which change the engine before evaluate runs, are saved too. */
+    private var saved: AlarmData = engine.data
     private val handler = Handler(Looper.getMainLooper())
     private val am = ctx.getSystemService(AlarmManager::class.java)
 
@@ -79,7 +82,6 @@ class RealAlarmStore(private val ctx: Context, private val services: EchoService
 
     /** Advances the state machine to now, applies the phase and reschedules. Safe to call any time. */
     fun evaluate(reason: String) {
-        val before = engine.data
         val ev = engine.evaluate(now())
         val oldPhase = _phase.value
         _alarms.value = engine.data.alarms
@@ -87,7 +89,7 @@ class RealAlarmStore(private val ctx: Context, private val services: EchoService
         _phase.value = ev.phase
         if (oldPhase::class != ev.phase::class) Log.i(AlarmRuntime.TAG, "phase ${oldPhase.name()} → ${ev.phase.name()} ($reason)")
         applyPhase(oldPhase, ev.phase)
-        if (engine.data != before) save()
+        if (engine.data != saved) save()
         schedule(ev)
     }
 
@@ -198,8 +200,10 @@ class RealAlarmStore(private val ctx: Context, private val services: EchoService
     private fun save() {
         val out = file.startWrite()
         try {
-            out.write(Codec.alarmsToJson(engine.data).toByteArray())
+            val data = engine.data
+            out.write(Codec.alarmsToJson(data).toByteArray())
             file.finishWrite(out)
+            saved = data
         } catch (e: Exception) {
             file.failWrite(out)
             Log.e(AlarmRuntime.TAG, "Saving alarms failed", e)
