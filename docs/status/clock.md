@@ -97,6 +97,7 @@ Per phase (framestats, frames over 17 ms):
 - **Weather face motion** is 1 Hz (clouds ≤ 1.5 px/s under a 40 px blur, visually continuous) to stay near zero frames; the design implies continuous drift.
 - **Top 40 px** of StandBy don't start a face swipe; they're left for the Control Center pull-down.
 - **Profile edits**: while someone is recognised, face / colour edits change their profile (`profiles.upsert`), including `Profile.color` (also their accent elsewhere).
+- **Two "Night mode" settings**: `:feature:system` (merged later) also registers `system.night.mode` (AUTO/ON/OFF). Both drive `SystemState.nightMode` and stay in step, but the settings page lists Night mode twice. Filed in `docs/contract-requests.md`: proposed that system drops its spec, because only the clock's has the schedule.
 - Contract requests filed in `docs/contract-requests.md` (home location, tomorrow's hourly rain) are answered and applied.
 
 ## Needs from the user
