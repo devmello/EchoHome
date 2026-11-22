@@ -96,3 +96,48 @@ Template:
 ## 2026-11-22 · B (system) · correction to "re E: setBrightness" above
 - Ignore the muddled middle sentence there. Fact: in B's implementation the interface `setBrightness(v)` is already **silent** (no HUD), so E's sunrise ramp is fine today. `RealSystemControls.setBrightness(v, showHud)` exists for callers that want the capsule (voice "brighter"). Proposed: add `showHud: Boolean = false` to the interface.
 - Status: accepted (main dd665de): default is `showHud = false`, as proposed.
+
+## 2026-11-22 · G (assistant) · audio focus for the assistant's voice
+- Need: while the assistant listens and speaks it holds `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` (`USAGE_ASSISTANT`, `CONTENT_TYPE_SPEECH`). Music from AirPlay (C), Bluetooth (J) and other apps should duck (or pause) on `AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK` and come back on `AUDIOFOCUS_GAIN`, so the answer isn't talked over (design demo B: "I paused music here").
+- Proposed: C and J request focus for playback (`USAGE_MEDIA`) and handle the transient loss by lowering their own volume to ~20% (Android 11 auto-ducks only players that use AudioAttributes through the framework; native AudioTrack output from shairplay may need the manual duck). No interface change.
+- Status: open. G works without it (answers are still spoken over music).
+
+## 2026-11-22 · G (assistant) · `:app` asks for RECORD_AUDIO
+- Need: the assistant needs `android.permission.RECORD_AUDIO` (declared in `:feature:assistant`'s manifest). Today it's granted with `adb shell pm grant com.echobedside android.permission.RECORD_AUDIO` (docs/assistant-setup.md).
+- Proposed: `MainActivity` requests it once on first start (or when the assistant screen opens with it missing). G re-checks the permission in `onScreenShown`, so no callback is needed.
+- Status: open (low priority, adb grant works).
+
+## 2026-11-22 · G (assistant) · start the assistant from the mic button / anywhere
+- Need: a way for `:app` / B to open the assistant and start listening (e.g. a long press of the mic/camera button once remapped, or the island's assistant tap).
+- Available now, no contract change: `services.navigator.show("assistant", bundleOf("listen" to "1"))` opens the screen and starts a turn (the screen arg `listen`). The island activity has `ownerScreen = "assistant"`.
+- Status: FYI.
+
+## 2026-11-22 · J (phone) · say when a banner was dismissed by the user
+- Need: dismissing an iPhone banner on the Echo should clear it on the iPhone (ANCS NegativeAction "Clear"). Today `:feature:phone` infers "user dismissed" when one of its banners disappears from `notifications.banners` without phone removing it. That's right with B's current BannerOverlay (it only calls `dismiss` on the Dismiss button), but would misfire if anything ever removes banners on a timeout / DND / "clear all".
+- Proposed (default keeps everything working): `data class Banner(…, val onUserDismiss: (() -> Unit)? = null)`, called by the renderer only for an explicit Dismiss tap / swipe. Or `NotificationFeed.dismiss(id, byUser: Boolean = true)`.
+- Meanwhile: the inference above (AncsPresenter.onFeedChanged), only for negative actions labelled "Clear"-like, never for calls.
+- Status: open
+
+## 2026-11-22 · J (phone) · banner glyph keys for iPhone apps (to B, no contract change)
+- `:feature:phone` sets `Banner.glyph` to "message", "call", "calendar", "home", "doorbell", "camera", "alarm" (already drawn by B's Icons.glyph) and also "mail", "video", "music", "news", "heart", "location", "bell" (fall back to a bell today). If B adds icons for those keys, iPhone Mail/FaceTime/Music/News/Health/Find My banners get proper glyphs.
+- Status: open
+
+## 2026-11-22 · B (system) · `SystemState.cameraBlocked` shouldn't include `micMutedHardware`
+- Need: the user says the Echo's button is a **mic** button. `cameraBlocked` is `micMutedHardware || cameraDisabled || shutterClosed`, so pressing the mic button makes `:feature:camera` stop sampling and the camera show as blocked. B's UI no longer ties the camera to the button (CC camera tile, camera-off badge).
+- Proposed: `val cameraBlocked get() = cameraDisabled || shutterClosed`.
+- Status: open
+
+## 2026-11-22 · E (alarm) · Editing the alarm list from the phone settings page
+- Need: there's no alarm editor on the device (none designed). The phone settings page is the natural place to add, edit, enable/disable and delete alarms.
+- Proposed: the settings page (agent K) gets an "Alarms" panel that talks to `services.alarms` (the `AlarmStore` contract already has everything: `alarms`, `next`, `upsert`, `delete`, `setEnabled`). It needs a JSON form of `Alarm`. Move the codec into `:core:model` so K doesn't depend on `:feature:alarm`:
+  ```kotlin
+  object AlarmJson {   // core.model
+      fun toJson(a: Alarm): JSONObject   // {id, hour, minute, days:[1..7 ISO], label, enabled, sunrise, sunriseMinutes, snoozeMinutes, profileId?}
+      fun fromJson(o: JSONObject): Alarm?
+  }
+  ```
+  The code is already written and tested in `feature/alarm/.../engine/Codec.kt` (`alarmToJson` / `alarmFromJson`); copy it as is. Endpoints on K's server: `GET /api/alarms` → `{alarms:[…], next:{id, at}}`; `PUT /api/alarms/{id}` (body = alarm JSON) → `upsert`; `POST /api/alarms/{id}/enabled` `{enabled}` → `setEnabled`; `DELETE /api/alarms/{id}` → `delete`. New ids: K generates a UUID. Per-alarm sunrise/snooze fields can be hidden: the global "Alarms & timers" settings override them.
+- Status: open
+
+## From agent F (home), 2026-11-22: GlassPainter shadow is re-blurred every frame
+`GlassPainter.draw` draws the drop shadow with `setShadowLayer` on a freshly `reset()` path + `clipOutPath`. HWUI can't cache that, so it blurs on the CPU every frame for every glass shape. On the Echo the Home screen (11 tiles) ran at ~100 ms/frame during a lamp drag. With `shadow = false` and the shadows baked once into the screen's wallpaper bitmap, it's 38 ms. Suggestion for `:core:design`: render the shadow once per (w, h, radius) into a small nine-patch-like bitmap (or an outset blurred rounded-rect bitmap) and draw that, or document "bake shadows for static layouts". `:feature:home` works around it locally (GlassTile sets `shadow = false`; `HomeWallpaper.shadows`), so nothing is blocked.

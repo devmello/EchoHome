@@ -19,7 +19,7 @@ settings put system sound_effects_enabled 1
 settings put system haptic_feedback_enabled 1
 echo "zen_mode=$(settings get global zen_mode) appops=$(cmd appops get com.echobedside PLAY_AUDIO)"'
 # Tell agents (docs/status/README.md) that quiet hours are over.
-cd "$ECHO_ROOT" && sed -i '' 's/^## Quiet hours (from the user, Nov 22, 2026, night)$/## Quiet hours (ENDED Nov 23, 2026, 10:00: sound is allowed again)/' docs/status/README.md || true
+cd "$ECHO_ROOT" && sed -i '' 's/^## Quiet hours (from the user, Nov 22, 2026, night)$/## Quiet hours (ENDED Nov 22, 2026, 10:00: sound is allowed again)/' docs/status/README.md || true
 PLIST="$HOME/Library/LaunchAgents/com.vesper.quiet-hours-end.plist"
 if [ -f "$PLIST" ]; then rm -f "$PLIST"; launchctl bootout "gui/$(id -u)/com.vesper.quiet-hours-end" 2>/dev/null || true; fi
 echo "Quiet hours ended $(date)"
