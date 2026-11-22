@@ -179,16 +179,21 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
             invalidate()
         }
         if (act == null) open() else Snapshot.window(act) { bmp ->
-            if (bmp != null) {
-                // the screen underneath: blur(26px), opacity .45 over black
+            if (bmp == null) { open(); return@window }
+            // the screen underneath: blur(26px), opacity .45 over black — blurred on the blur thread
+            Snapshot.offMain({
                 val bl = Snapshot.blurSmall(bmp, 26f, 1f, 1f)
                 bmp.recycle()
-                expandedBg?.recycle(); expandedBg = bl
-                val bd = com.echobedside.core.design.Backdrop(Snapshot.blurSmall(bl, 18f, 1.8f, 1.15f), 0f, 0f, 960f, 480f)
-                btnGlass.backdrop?.bitmap?.recycle()
-                btnGlass.backdrop = bd; primaryGlass.backdrop = bd
+                bl to Snapshot.blurSmall(bl, 18f, 1.8f, 1.15f)
+            }) { r ->
+                if (r != null) {
+                    expandedBg?.recycle(); expandedBg = r.first
+                    val bd = com.echobedside.core.design.Backdrop(r.second, 0f, 0f, 960f, 480f)
+                    btnGlass.backdrop?.bitmap?.recycle()
+                    btnGlass.backdrop = bd; primaryGlass.backdrop = bd
+                }
+                open()
             }
-            open()
         }
     }
 

@@ -78,6 +78,21 @@ object Snapshot {
         }
     }
 
+    /** One low-priority thread for the blurs, so a full-window snapshot never costs a UI frame. */
+    private val worker: Handler by lazy {
+        val t = android.os.HandlerThread("echo-blur", android.os.Process.THREAD_PRIORITY_BACKGROUND)
+        t.start(); Handler(t.looper)
+    }
+    private val main = Handler(Looper.getMainLooper())
+
+    /** Runs [work] on the blur thread, then [done] with its result on the main thread. */
+    fun <T> offMain(work: () -> T, done: (T?) -> Unit) {
+        worker.post {
+            val r = try { work() } catch (e: Exception) { Log.w(TAG, "blur", e); null }
+            main.post { done(r) }
+        }
+    }
+
     fun blurSmall(src: Bitmap, blurPx: Float, saturate: Float, brightness: Float): Bitmap =
         PreBlur.blur(src, blurPx / SCALE, downscale = 1, saturate = saturate, brightness = brightness)
 

@@ -104,13 +104,21 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
         if (snapshotPending) { then?.let { post(it) }; return }
         snapshotPending = true
         Snapshot.window(act) { bmp ->
-            snapshotPending = false
-            if (bmp != null) applySnapshot(bmp)
-            then?.invoke()
+            if (bmp == null) { snapshotPending = false; then?.invoke(); return@window }
+            // the blurs run on the blur thread (they cost 40–80 ms on the Echo); reveal once they're ready
+            Snapshot.offMain({ buildSnapshot(bmp) }) { r ->
+                snapshotPending = false
+                if (r != null) {
+                    bg.setBitmap(r.first)
+                    panel.setBackdrop(Backdrop(r.second, 0f, 0f, width.toFloat().coerceAtLeast(960f), height.toFloat().coerceAtLeast(480f)))
+                }
+                then?.invoke()
+            }
         }
     }
 
-    private fun applySnapshot(shot: Bitmap) {
+    /** Background bitmap + the tiles' glass backdrop. Runs off the main thread (no view state). */
+    private fun buildSnapshot(shot: Bitmap): Pair<Bitmap, Bitmap> {
         // background: blur(24px) saturate(1.3), opacity .55 over black, scale(1.04), + two radial tints
         val blurred = Snapshot.blurSmall(shot, 24f, 1.3f, 1f)
         shot.recycle()
@@ -127,10 +135,9 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
         radial(c, p, w * 0.3f, h * 0.2f, w * 0.7f, h * 0.6f, Color.argb(89, 10, 132, 255))
         // radial-gradient(ellipse 60% 60% at 85% 90%, rgba(191,90,242,.28), transparent 70%)
         radial(c, p, w * 0.85f, h * 0.9f, w * 0.6f, h * 0.6f, Color.argb(71, 191, 90, 242))
-        bg.setBitmap(comp)
         // the tiles' glass samples the background: blur(20px) saturate(1.8) brightness(1.1)
         val glass = Snapshot.blurSmall(comp, 20f, 1.8f, 1.1f)
-        panel.setBackdrop(Backdrop(glass, 0f, 0f, width.toFloat().coerceAtLeast(960f), height.toFloat().coerceAtLeast(480f)))
+        return comp to glass
     }
 
     /** CSS `ellipse RX RY at X Y` with a stop at 70 %: a radial gradient scaled to an ellipse. */
