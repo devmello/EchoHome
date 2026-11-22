@@ -12,7 +12,7 @@ import kotlin.math.sqrt
 import kotlin.math.tan
 
 /**
- * SVG path data (the `d` attributes in design/*.dc.html) → absolute segments → android Path.
+ * SVG path data (the `d` attributes in the design files) → absolute segments → android Path.
  * No AndroidX, so no PathParser: this handles M L H V C S Q T A Z, relative forms and implicit
  * repeats. Arcs become cubic Béziers. The segment list is plain Kotlin so it's unit-testable.
  */

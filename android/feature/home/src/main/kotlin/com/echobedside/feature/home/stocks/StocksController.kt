@@ -1,7 +1,7 @@
 package com.echobedside.feature.home.stocks
 
 import com.echobedside.core.model.SettingsStore
-import com.echobedside.feature.home.HomeSettings
+import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -10,40 +10,39 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+object StockSettings {
+    /** Watchlist, comma-separated, up to 5 (default AAPL,NVDA,TSLA,MSFT,AMZN). */
+    const val SYMBOLS = "stocks.symbols"
+    /** Featured row index. */
+    const val FEATURED = "stocks.featured"
+}
+
 /**
  * Keeps the watchlist fresh only while the Stocks screen is visible ([start]/[stop]).
- * Market open: quotes every 5 min, intraday series every 15 min, never both in one minute.
- * Market closed: one fetch for the last session, then nothing until the next open.
- * Without an API key it serves [DemoStocks].
+ * Market open: every 5 min. Closed: one fetch after the session ended, then nothing until the
+ * next open. [source] null = the design's demo data.
  */
 class StocksController(
-    private val source: TwelveDataSource?,
+    private val source: QuoteSource?,
     private val settings: SettingsStore,
     private val scope: CoroutineScope,
     private val clock: () -> Long = System::currentTimeMillis,
-    private val quoteEveryMs: Long = 5 * 60_000L,
-    private val seriesEveryMs: Long = 15 * 60_000L,
-    /** Twelve Data's free plan allows 8 credits a minute; a 5-symbol batch is 5. */
-    private val batchGapMs: Long = 61_000L,
+    private val everyMs: Long = 5 * 60_000L,
 ) {
     private val _state = MutableStateFlow<Watchlist?>(null)
     val state: StateFlow<Watchlist?> = _state.asStateFlow()
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
-
-    private var quotes: Map<String, TwelveDataSource.QuoteData> = emptyMap()
-    private var series: Map<String, List<Pair<java.time.LocalDateTime, Double>>> = emptyMap()
-    private var quotesAt = 0L
-    private var seriesAt = 0L
-    private var lastBatchAt = 0L
+    private var fetchedAt = 0L
+    private var fetchedSymbols: List<String> = emptyList()
     private var job: Job? = null
 
-    val symbols: List<String> get() = HomeSettings.list(settings, HomeSettings.STOCK_SYMBOLS)?.map { it.uppercase() }?.take(5)
-        ?: listOf("AAPL", "NVDA", "TSLA", "MSFT", "AMZN")
+    val symbols: List<String> get() = settings.getString(StockSettings.SYMBOLS, "").split(',').map { it.trim().uppercase() }
+        .filter { it.isNotEmpty() }.take(5).ifEmpty { listOf("AAPL", "NVDA", "TSLA", "MSFT", "AMZN") }
 
     var featured: Int
-        get() = settings.getString(HomeSettings.STOCK_FEATURED, "1").toIntOrNull() ?: 1
-        set(v) = settings.putString(HomeSettings.STOCK_FEATURED, v.toString())
+        get() = (settings.getString(StockSettings.FEATURED, "1").toIntOrNull() ?: 1).coerceIn(0, 4)
+        set(v) = settings.putString(StockSettings.FEATURED, v.toString())
 
     fun start() {
         if (job != null) return
@@ -51,18 +50,18 @@ class StocksController(
         job = scope.launch {
             while (true) {
                 val now = clock()
-                val open = MarketHours.isOpen(now)
-                val session = MarketHours.lastSession(now).atTime(MarketHours.OPEN).atZone(MarketHours.ZONE).toInstant().toEpochMilli()
-                // Closed: data fetched after the last session opened is final.
-                val quotesStale = quotesAt == 0L || (if (open) now - quotesAt >= quoteEveryMs else quotesAt < session || needsCloseRefresh(now))
-                val seriesStale = seriesAt == 0L || (if (open) now - seriesAt >= seriesEveryMs else seriesAt < session || needsCloseRefresh(now, seriesAt))
-                if (quotesStale) batch { quotes = source.quotes(symbols); quotesAt = clock() }
-                else if (seriesStale) batch { series = source.series(symbols); seriesAt = clock() }
-                publish()
+                if (stale(now)) {
+                    try {
+                        _state.value = Watchlist(source.quotes(symbols), clock(), demo = false, source = source.name)
+                        fetchedAt = clock(); fetchedSymbols = symbols; _error.value = null
+                    } catch (_: IOException) {
+                        _error.value = "Couldn’t update quotes"
+                    }
+                }
                 delay(when {
-                    _error.value != null -> 5 * 60_000L // back off (bad key, limit, offline)
-                    open || quotesStale || seriesStale -> 30_000L
-                    else -> (MarketHours.nextOpen(now) - now).coerceIn(60_000L, 6 * 3_600_000L)
+                    _error.value != null -> everyMs
+                    MarketHours.isOpen(now) -> everyMs
+                    else -> (MarketHours.nextOpen(now) - now).coerceIn(60_000L, 3 * 3_600_000L)
                 })
             }
         }
@@ -70,41 +69,12 @@ class StocksController(
 
     fun stop() { job?.cancel(); job = null }
 
-    /** After today's close, refresh once so the closing prices replace intraday ones. */
-    private fun needsCloseRefresh(now: Long, at: Long = quotesAt): Boolean {
-        if (MarketHours.phase(now) != MarketHours.Phase.AFTER_CLOSE) return false
+    /** Open: older than 5 min. Closed: fetched before the last session ended (+20 min for final prints). */
+    fun stale(now: Long): Boolean {
+        if (fetchedAt == 0L || fetchedSymbols != symbols) return true
+        if (MarketHours.isOpen(now)) return now - fetchedAt >= everyMs
         val d = MarketHours.lastSession(now)
-        val close = d.atTime(MarketHours.closeTime(d)).atZone(MarketHours.ZONE).toInstant().toEpochMilli()
-        return at < close + 20 * 60_000L && now > close + 20 * 60_000L
-    }
-
-    private suspend fun batch(block: suspend () -> Unit) {
-        val wait = lastBatchAt + batchGapMs - clock()
-        if (wait > 0) delay(wait)
-        lastBatchAt = clock()
-        try { block(); _error.value = null }
-        catch (e: TwelveDataSource.QuoteError) { _error.value = if (e.rateLimited) "Quote limit reached · retrying" else "Couldn’t update quotes" }
-        catch (e: java.io.IOException) { _error.value = "Couldn’t update quotes" }
-    }
-
-    private fun publish() {
-        if (quotes.isEmpty()) return
-        val now = clock()
-        val day = MarketHours.lastSession(now)
-        val bars = if (MarketHours.isEarlyClose(day)) 42 else 78
-        val list = symbols.mapNotNull { s ->
-            val q = quotes[s] ?: return@mapNotNull null
-            val pts = series[s].orEmpty().filter { TwelveDataSource.barIndex(it.first) in 0 until bars }.map { it.second }
-            Quote(s, shortName(q.name), q.close, q.change, q.percent, q.previousClose,
-                // Until the series arrives, a flat line at the price.
-                pts.ifEmpty { listOf(q.previousClose ?: q.close, q.close) }, bars)
-        }
-        _state.value = Watchlist(list, quotesAt, demo = false, source = "Twelve Data")
-    }
-
-    companion object {
-        /** "Apple Inc." → "Apple", "NVIDIA Corporation" → "NVIDIA" (as in the design). */
-        fun shortName(n: String): String = n.replace(Regex(",?\\s+(Inc\\.?|Corporation|Corp\\.?|Co\\.?|Ltd\\.?|plc|Holdings|Company|Class [A-C]|N\\.V\\.|S\\.A\\.)$", RegexOption.IGNORE_CASE), "")
-            .replace(Regex(",?\\s+(Inc\\.?|Corporation|Corp\\.?)$", RegexOption.IGNORE_CASE), "").trim().ifEmpty { n }
+        val settled = d.atTime(MarketHours.closeTime(d)).atZone(MarketHours.ZONE).toInstant().toEpochMilli() + 20 * 60_000L
+        return fetchedAt < settled && now >= settled
     }
 }

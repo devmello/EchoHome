@@ -1,19 +1,13 @@
 package com.echobedside.feature.home.stocks
 
+import com.echobedside.feature.home.glance.Net
 import java.io.IOException
-import java.time.LocalDate
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
-import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.json.JSONObject
 
-/** One watchlist row. [series] = the last session's closes, 5-minute bars from 9:30 (≤ 78 points). */
+/** One watchlist row. [series] = the session's 5-minute closes from 9:30 (≤ [sessionBars] points). */
 data class Quote(
     val symbol: String,
     val name: String,
@@ -22,7 +16,7 @@ data class Quote(
     val percent: Double,
     val previousClose: Double?,
     val series: List<Double>,
-    /** Bars the full session would have (78 for 9:30–16:00), so a partial day draws partway across. */
+    /** Bars the full session has (78 for 9:30–16:00), so a partial day draws partway across. */
     val sessionBars: Int = 78,
     /** Watchlist sparkline points (the design's demo uses a separate 40-point walk). */
     val spark: List<Double> = series,
@@ -33,84 +27,75 @@ data class Quote(
 
 data class Watchlist(val quotes: List<Quote>, val asOfMillis: Long, val demo: Boolean, val source: String)
 
+/** Where quotes come from (swappable: the free source is unofficial). */
+interface QuoteSource {
+    val name: String
+    /** One quote per symbol that loaded; throws IOException if none did. */
+    suspend fun quotes(symbols: List<String>): List<Quote>
+}
+
 /**
- * Twelve Data (https://twelvedata.com/docs) — chosen for its free "Basic" plan: 800 API credits a
- * day, 8 a minute, US equities, batch requests (one credit per symbol), personal use.
- *
- *  - `/quote?symbol=A,B,…` → price, change, percent_change, previous_close, name (1 credit/symbol)
- *  - `/time_series?symbol=A,B,…&interval=5min&outputsize=78` → the session's 5-minute closes
- *
- * Budget with 5 symbols, only while the Stocks screen is on and the market is open:
- * quotes every 5 min + series every 15 min ≈ 5 × (78 + 26) = 520 credits a day worst case.
- * The two batches are never sent in the same minute (8 credits/min).
+ * Yahoo Finance's public chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<SYM>?range=1d&interval=5m`):
+ * no key, no account; price, previous close, name and the day's 5-minute bars in one request per symbol.
+ * It is not an official, documented API: Yahoo's terms allow personal, non-commercial use, quotes
+ * may be delayed (~15 min for some exchanges), and it can change or rate-limit without notice —
+ * hence [QuoteSource]. We ask only while the Stocks screen is on and the market is open
+ * (5 requests every 5 minutes), plus once after the close.
  */
-class TwelveDataSource(
-    private val apiKey: String,
-    private val http: OkHttpClient = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build(),
-    private val base: HttpUrl = "https://api.twelvedata.com/".toHttpUrl(),
-) {
-    class QuoteError(message: String, val rateLimited: Boolean = false) : IOException(message)
+class YahooChartSource(
+    private val client: OkHttpClient = Net.http,
+    private val base: HttpUrl = "https://query1.finance.yahoo.com/v8/finance/chart/".toHttpUrl(),
+) : QuoteSource {
+    override val name = "Yahoo Finance"
 
-    data class QuoteData(val name: String, val close: Double, val change: Double, val percent: Double, val previousClose: Double?)
-
-    suspend fun quotes(symbols: List<String>): Map<String, QuoteData> =
-        parseQuotes(get("quote", symbols, emptyMap()), symbols)
-
-    suspend fun series(symbols: List<String>): Map<String, List<Pair<LocalDateTime, Double>>> =
-        parseSeries(get("time_series", symbols, mapOf("interval" to "5min", "outputsize" to "78", "timezone" to "America/New_York")), symbols)
-
-    private suspend fun get(path: String, symbols: List<String>, params: Map<String, String>): JSONObject = withContext(Dispatchers.IO) {
-        val url = base.newBuilder().addPathSegment(path)
-            .addQueryParameter("symbol", symbols.joinToString(","))
-            .apply { params.forEach { (k, v) -> addQueryParameter(k, v) } }
-            .build()
-        // The key goes in a header, so it never shows up in URLs or logs.
-        val req = Request.Builder().url(url).header("Authorization", "apikey $apiKey").build()
-        http.newCall(req).execute().use { res ->
-            if (res.code == 429) throw QuoteError("Rate limited", rateLimited = true)
-            if (!res.isSuccessful) throw QuoteError("HTTP ${res.code}")
-            val body = JSONObject(res.body!!.string())
-            if (body.optString("status") == "error") throw QuoteError(body.optString("message", "error"), body.optInt("code") == 429)
-            body
+    override suspend fun quotes(symbols: List<String>): List<Quote> {
+        var error: IOException? = null
+        val out = symbols.mapNotNull { s ->
+            try {
+                val url = base.newBuilder().addPathSegment(s).addQueryParameter("range", "1d").addQueryParameter("interval", "5m").build()
+                parse(JSONObject(Net.getText(client, url.toString())), s)
+            } catch (e: IOException) { error = e; null } catch (e: org.json.JSONException) { error = IOException(e.message); null }
         }
+        if (out.isEmpty() && symbols.isNotEmpty()) throw error ?: IOException("No quotes")
+        return out
     }
 
     companion object {
-        /** One symbol → a flat object; several → keyed by symbol. Errors per symbol are skipped. */
-        private fun perSymbol(body: JSONObject, symbols: List<String>): Map<String, JSONObject> =
-            if (symbols.size == 1) mapOf(symbols[0] to body)
-            else symbols.mapNotNull { s -> body.optJSONObject(s)?.takeIf { it.optString("status") != "error" }?.let { s to it } }.toMap()
-
-        fun parseQuotes(body: JSONObject, symbols: List<String>): Map<String, QuoteData> =
-            perSymbol(body, symbols).mapNotNull { (s, q) ->
-                val close = q.optString("close").toDoubleOrNull() ?: return@mapNotNull null
-                s to QuoteData(
-                    name = q.optString("name", s),
-                    close = close,
-                    change = q.optString("change").toDoubleOrNull() ?: 0.0,
-                    percent = q.optString("percent_change").toDoubleOrNull() ?: 0.0,
-                    previousClose = q.optString("previous_close").toDoubleOrNull(),
-                )
-            }.toMap()
-
-        private val TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-
-        /** Values come newest first; returns oldest first, only the latest day's bars. */
-        fun parseSeries(body: JSONObject, symbols: List<String>): Map<String, List<Pair<LocalDateTime, Double>>> =
-            perSymbol(body, symbols).mapValues { (_, o) ->
-                val v = o.optJSONArray("values") ?: return@mapValues emptyList()
-                val bars = (0 until v.length()).mapNotNull { i ->
-                    val b = v.optJSONObject(i) ?: return@mapNotNull null
-                    val t = runCatching { LocalDateTime.parse(b.optString("datetime"), TS) }.getOrNull() ?: return@mapNotNull null
-                    val c = b.optString("close").toDoubleOrNull() ?: return@mapNotNull null
-                    t to c
-                }.sortedBy { it.first }
-                val day: LocalDate? = bars.lastOrNull()?.first?.toLocalDate()
-                bars.filter { it.first.toLocalDate() == day }
+        fun parse(body: JSONObject, symbol: String): Quote? {
+            val r = body.optJSONObject("chart")?.optJSONArray("result")?.optJSONObject(0) ?: return null
+            val meta = r.optJSONObject("meta") ?: return null
+            val price = meta.optDouble("regularMarketPrice").takeUnless { it.isNaN() } ?: return null
+            val prev = meta.optDouble("previousClose").takeUnless { it.isNaN() } ?: meta.optDouble("chartPreviousClose").takeUnless { it.isNaN() }
+            val ts = r.optJSONArray("timestamp")
+            val closes = r.optJSONObject("indicators")?.optJSONArray("quote")?.optJSONObject(0)?.optJSONArray("close")
+            val regular = meta.optJSONObject("currentTradingPeriod")?.optJSONObject("regular")
+            val start = regular?.optLong("start") ?: 0L
+            val end = regular?.optLong("end") ?: Long.MAX_VALUE
+            val all = ArrayList<Pair<Long, Double>>()
+            if (ts != null && closes != null) for (i in 0 until minOf(ts.length(), closes.length())) {
+                val c = closes.optDouble(i)
+                if (!c.isNaN()) all += ts.optLong(i) to c
             }
+            // Regular session only; if the period Yahoo reports isn't the one charted, keep all bars.
+            val pts = all.filter { it.first in start until end }.ifEmpty { all }.map { it.second }
+            val bars = if (end != Long.MAX_VALUE && start > 0) ((end - start) / 300).toInt().coerceIn(1, 78) else 78
+            val change = if (prev != null) price - prev else 0.0
+            return Quote(
+                symbol = symbol,
+                name = shortName(meta.optString("shortName").ifEmpty { meta.optString("longName").ifEmpty { symbol } }),
+                price = price,
+                change = change,
+                percent = if (prev != null && prev != 0.0) change / prev * 100 else 0.0,
+                previousClose = prev,
+                series = pts.ifEmpty { listOfNotNull(prev, price) },
+                sessionBars = bars,
+            )
+        }
 
-        /** Index of a 5-minute bar from 9:30 ET (0 … 77). */
-        fun barIndex(t: LocalDateTime): Int = ((t.hour * 60 + t.minute) - (9 * 60 + 30)) / 5
+        /** "Apple Inc." → "Apple", "NVIDIA Corporation" → "NVIDIA", "Amazon.com, Inc." → "Amazon.com". */
+        fun shortName(n: String): String =
+            n.replace(Regex(",?\\s+(Inc\\.?|Corporation|Corp\\.?|Co\\.?|Ltd\\.?|plc|Holdings|Company|N\\.V\\.|S\\.A\\.)$", RegexOption.IGNORE_CASE), "")
+                .trim().ifEmpty { n }
     }
 }
 
