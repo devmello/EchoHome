@@ -52,11 +52,13 @@ fun demoSections(actionLog: MutableList<String> = mutableListOf()): List<Setting
         SettingSpec("clock.color.digital", "Colour", SettingType.COLOR, "#FF9F0A"),
         SettingSpec("clock.night", "Night mode", SettingType.CHOICE, "auto", options = listOf("auto" to "Auto", "on" to "On", "off" to "Off"),
             help = "Auto turns the screen red and dim when the room is dark."),
+        SettingSpec("clock.night.start", "Night: from", SettingType.TIME, "22:00"),
+        SettingSpec("clock.night.end", "Night: until", SettingType.TIME, "07:00"),
         SettingSpec("clock.nightLux", "Night below", SettingType.FLOAT, "4", min = 0f, max = 40f, step = 0.5f, advanced = true, help = "Lux"),
     )),
     SettingsSection("alarm", "Alarms & timers", 40, listOf(
         SettingSpec("alarm.snooze", "Snooze minutes", SettingType.INT, "9", min = 1f, max = 20f, step = 1f),
-        SettingSpec("alarm.sunrise", "Sunrise before alarm", SettingType.TIME, "00:20", help = "How long the screen brightens before the alarm."),
+        SettingSpec("alarm.sunrise.minutes", "Sunrise minutes", SettingType.INT, "20", min = 5f, max = 60f, step = 5f, help = "How long the screen brightens before the alarm."),
         SettingSpec("alarm.volume", "Alarm volume", SettingType.FLOAT, "0.7", min = 0f, max = 1f, step = 0.05f),
         SettingSpec("alarm.sound", "Alarm sound", SettingType.CHOICE, "system", options = listOf("system" to "Default alarm sound", "chime" to "Soft chime", "beeps" to "Beeps")),
     )),
@@ -64,6 +66,7 @@ fun demoSections(actionLog: MutableList<String> = mutableListOf()): List<Setting
         SettingSpec("weather.location", "Location", SettingType.LOCATION, "", help = "Leave on automatic to use the Echo's internet location."),
         SettingSpec("stocks.symbols", "Stocks", SettingType.TEXT_LIST, "AAPL,MSFT", help = "Ticker symbols for the Stocks screen."),
         SettingSpec("weather.units", "Units", SettingType.CHOICE, "c", options = listOf("c" to "°C", "f" to "°F")),
+        SettingSpec("calendar.color.0", "Colour of calendar 1", SettingType.COLOR, "", help = "Empty: the default palette."),
     )),
     SettingsFeature.accountsSection(),
 )
