@@ -37,6 +37,7 @@ enum class ActivityKind(val priority: Int, val alertByDefault: Boolean) {
     MUSIC(50, false),
     TIMER(40, false),
     AIRPLAY_CONNECTED(30, false),
+    BLUETOOTH_CONNECTED(29, false),
 }
 
 /** What the island shows. The renderer lays out compact (44 px) and expanded forms per type. */
@@ -69,9 +70,16 @@ sealed interface LiveContent {
 
     data class Doorbell(val camera: String, val snapshot: Bitmap? = null) : LiveContent
 
+    /**
+     * Incoming call. From the iPhone (ANCS) calls are answered on the phone: the producer offers
+     * only Decline/Silence actions and [subtitle] says e.g. "Answer on iPhone".
+     */
     data class Call(val caller: String, val subtitle: String, val video: Boolean) : LiveContent
 
     data class AirPlayConnected(val deviceName: String) : LiveContent
+
+    /** A phone is connected over Bluetooth (audio and/or notifications). */
+    data class BluetoothConnected(val deviceName: String, val audio: Boolean, val notifications: Boolean) : LiveContent
 }
 
 enum class AssistantPhase { LISTENING, WORKING, SPEAKING }

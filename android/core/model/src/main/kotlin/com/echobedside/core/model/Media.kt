@@ -7,7 +7,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-enum class MediaSourceKind { AIRPLAY, SPOTIFY, OTHER_APP }
+/** BLUETOOTH = a phone streaming to the Echo as a Bluetooth speaker (A2DP sink + AVRCP), `:feature:phone`. */
+enum class MediaSourceKind { AIRPLAY, BLUETOOTH, SPOTIFY, OTHER_APP }
 
 /**
  * One source's now-playing state. Position is a snapshot: use [positionNow] to extrapolate

@@ -55,8 +55,10 @@ data class Banner(
     val critical: Boolean = false,
     /** The one tinted action in the expanded view ("Reply by voice", "Show camera", "Join call"). */
     val primaryAction: IslandAction? = null,
-    /** Package of the Android notification, if it came from one. */
+    /** Package of the Android notification, or the iOS bundle id for iPhone (ANCS) notifications. */
     val sourcePackage: String? = null,
+    /** The phone it came from, e.g. "Maya's iPhone"; null = the Echo itself. */
+    val sourceDevice: String? = null,
 )
 
 interface NotificationFeed {

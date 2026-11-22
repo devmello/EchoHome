@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
  *
  * Every `:feature:*` module exposes one `object XxxFeature : EchoFeature`. `:app` lists them once
  * (FeatureList) and calls [install] on each at process start, in this order:
- * system, airplay, media, alarm, home, assistant, camera, photos, clock.
+ * system, phone, airplay, media, alarm, home, assistant, camera, photos, clock.
  *
  * Rules:
  *  - In [install], only *register* things and *bind* services you implement
