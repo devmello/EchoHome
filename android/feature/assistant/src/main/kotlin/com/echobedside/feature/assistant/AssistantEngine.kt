@@ -314,12 +314,10 @@ class AssistantEngine(
         }
         emit(t, TurnEvent.Heard(query))
         if (echoOnly) {
-            // On-device round trip (STT → TTS) without Claude, for measuring the voice models.
-            // Spoken only when answers are (never in night mode unless allowed).
-            val speak = shouldSpeak()
-            if (speak) withContext(voiceThread) { voice.speaker().prepare() }
+            // Transcription only, without Claude (measuring STT; a wake word without a key): the
+            // transcript is shown, never spoken. TTS is measured silently with synthTest.
             emit(t, TurnEvent.Answer(query))
-            finishTurn(t, query, speak)
+            finishTurn(t, query, ttsReady = false)
             return false
         }
         val a = agent() ?: run { emit(t, TurnEvent.Failed("no-key")); return false }
@@ -415,7 +413,7 @@ class AssistantEngine(
     private fun wakeWanted() = started &&
         (wakeOverride ?: wakeSetting.value) &&
         (_availability.value == Availability.READY ||
-            // Measuring without a key (`wake=1`): a wake word then runs the STT → TTS echo.
+            // Measuring without a key (`wake=1`): a wake word then shows the transcript (STT only).
             (_availability.value == Availability.NO_KEY && wakeOverride == true && permission.value && voice.sttAvailable)) &&
         voice.wakeAvailable &&
         !turnActive.value && demoJob?.isActive != true && !micTest
@@ -449,10 +447,22 @@ class AssistantEngine(
                     Log.w(TAG, "wake word load failed: ${e.javaClass.simpleName}"); null
                 } ?: return@withContext false
                 val gate = VoiceGate()
+                var total = 0; var decoded = 0; var decodeNs = 0L
                 try {
                     for (chunk in ch) {
-                        for (b in gate.process(chunk, Pcm.dbfs(chunk))) {
-                            if (session.accept(b) != null) return@withContext true
+                        val out = gate.process(chunk, Pcm.dbfs(chunk))
+                        for (b in out) {
+                            val t0 = System.nanoTime()
+                            val hit = session.accept(b) != null
+                            decodeNs += System.nanoTime() - t0
+                            if (hit) return@withContext true
+                        }
+                        decoded += out.size
+                        if (++total == WAKE_STATS_CHUNKS) {
+                            // Levels and counts only (never audio or words): how much the gate lets through.
+                            Log.i(TAG, "wake: decoded $decoded/$total chunks, ${decodeNs / 1_000_000} ms decoding, " +
+                                "floor ${gate.noiseFloorDb.toInt()} dB, gate ${if (gate.open) "open" else "shut"}")
+                            total = 0; decoded = 0; decodeNs = 0
                         }
                     }
                     false
@@ -517,7 +527,7 @@ class AssistantEngine(
 
     val micTesting: Boolean get() = micTest
 
-    /** Listens and repeats what it heard (STT → TTS, no Claude), for measuring the voice models. */
+    /** Listens and shows what it heard (STT only, no Claude, nothing spoken), for measuring speech recognition. */
     fun echoTest() {
         val a = _availability.value
         if (a == Availability.MUTED || a == Availability.DISABLED || !voice.sttAvailable || !hasMicPermission()) return
@@ -658,5 +668,7 @@ class AssistantEngine(
         /** 16 s of 40 ms chunks: covers the STT model load. */
         const val LISTEN_BUFFER_CHUNKS = 400
         const val WAKE_BUFFER_CHUNKS = 50
+        /** Wake word stats in the log every 10 s of audio. */
+        const val WAKE_STATS_CHUNKS = 250
     }
 }
