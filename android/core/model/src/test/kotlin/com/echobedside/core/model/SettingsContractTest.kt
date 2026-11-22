@@ -3,6 +3,7 @@ package com.echobedside.core.model
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import kotlinx.coroutines.launch
 import org.junit.Test
 
 class SettingsContractTest {
@@ -30,5 +31,29 @@ class SettingsContractTest {
         assertFalse(store.isSet(Secrets.ANTHROPIC_API_KEY))
         assertEquals("built", built.overriddenBy(store).anthropicApiKey)
         assertFalse(s.toString().contains("runtime"))
+    }
+}
+
+class Round2ContractTest {
+    @Test fun alarmJsonRoundTripsAndRejectsBadTimes() {
+        val a = Alarm("x", 6, 45, setOf(java.time.DayOfWeek.MONDAY, java.time.DayOfWeek.FRIDAY), "Work", true, false, 20, 5, "maya")
+        assertEquals(a, AlarmJson.fromJson(AlarmJson.toJson(a)))
+        assertEquals(null, AlarmJson.fromJson(org.json.JSONObject().put("id", "y").put("hour", 25)))
+        assertEquals(null, AlarmJson.fromJson(org.json.JSONObject().put("hour", 7)))
+    }
+
+    @Test fun userDismissalsOnlyForExplicitDismiss() = kotlinx.coroutines.test.runTest {
+        val feed = DefaultNotificationFeed()
+        val seen = mutableListOf<String>()
+        val job = launch(kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler)) { feed.userDismissals.collect { seen += it } }
+        feed.post(Banner("a", "App", 0, title = "t", body = "b")); feed.post(Banner("b", "App", 0, title = "t", body = "b"))
+        feed.dismiss("a"); feed.dismiss("b", byUser = true)
+        assertEquals(listOf("b"), seen); assertTrue(feed.banners.value.isEmpty())
+        job.cancel()
+    }
+
+    @Test fun micButtonDoesNotBlockCamera() {
+        assertFalse(SystemState(micMutedHardware = true).cameraBlocked)
+        assertTrue(SystemState(shutterClosed = true).cameraBlocked)
     }
 }

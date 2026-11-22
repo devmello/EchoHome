@@ -116,16 +116,16 @@ Template:
 - Need: dismissing an iPhone banner on the Echo should clear it on the iPhone (ANCS NegativeAction "Clear"). Today `:feature:phone` infers "user dismissed" when one of its banners disappears from `notifications.banners` without phone removing it. That's right with B's current BannerOverlay (it only calls `dismiss` on the Dismiss button), but would misfire if anything ever removes banners on a timeout / DND / "clear all".
 - Proposed (default keeps everything working): `data class Banner(…, val onUserDismiss: (() -> Unit)? = null)`, called by the renderer only for an explicit Dismiss tap / swipe. Or `NotificationFeed.dismiss(id, byUser: Boolean = true)`.
 - Meanwhile: the inference above (AncsPresenter.onFeedChanged), only for negative actions labelled "Clear"-like, never for calls.
-- Status: open
+- Status: accepted (main, "Contracts round 2"): `NotificationFeed.dismiss(id, byUser = false)` + `userDismissals: SharedFlow<String>` (emits only for byUser). B passes `byUser = true` for the Dismiss tap/swipe; J listens to `userDismissals` instead of inferring.
 
 ## 2026-11-22 · J (phone) · banner glyph keys for iPhone apps (to B, no contract change)
 - `:feature:phone` sets `Banner.glyph` to "message", "call", "calendar", "home", "doorbell", "camera", "alarm" (already drawn by B's Icons.glyph) and also "mail", "video", "music", "news", "heart", "location", "bell" (fall back to a bell today). If B adds icons for those keys, iPhone Mail/FaceTime/Music/News/Health/Find My banners get proper glyphs.
-- Status: open
+- Status: forwarded to B (draw mail, video, music, news, heart, location, bell).
 
 ## 2026-11-22 · B (system) · `SystemState.cameraBlocked` shouldn't include `micMutedHardware`
 - Need: the user says the Echo's button is a **mic** button. `cameraBlocked` is `micMutedHardware || cameraDisabled || shutterClosed`, so pressing the mic button makes `:feature:camera` stop sampling and the camera show as blocked. B's UI no longer ties the camera to the button (CC camera tile, camera-off badge).
 - Proposed: `val cameraBlocked get() = cameraDisabled || shutterClosed`.
-- Status: open
+- Status: accepted (main, "Contracts round 2"): `cameraBlocked = cameraDisabled || shutterClosed`. (If the hardware gate also cuts camera power, `:feature:camera`'s error back-off handles it.)
 
 ## 2026-11-22 · E (alarm) · Editing the alarm list from the phone settings page
 - Need: there's no alarm editor on the device (none designed). The phone settings page is the natural place to add, edit, enable/disable and delete alarms.
@@ -137,7 +137,7 @@ Template:
   }
   ```
   The code is already written and tested in `feature/alarm/.../engine/Codec.kt` (`alarmToJson` / `alarmFromJson`); copy it as is. Endpoints on K's server: `GET /api/alarms` → `{alarms:[…], next:{id, at}}`; `PUT /api/alarms/{id}` (body = alarm JSON) → `upsert`; `POST /api/alarms/{id}/enabled` `{enabled}` → `setEnabled`; `DELETE /api/alarms/{id}` → `delete`. New ids: K generates a UUID. Per-alarm sunrise/snooze fields can be hidden: the global "Alarms & timers" settings override them.
-- Status: open
+- Status: accepted (main, "Contracts round 2"): `AlarmJson.toJson/fromJson` in `:core:model` (E's codec, plus range checks). K adds `/api/alarms` on `services.alarms`.
 
 ## From agent F (home), 2026-11-22: GlassPainter shadow is re-blurred every frame
 `GlassPainter.draw` draws the drop shadow with `setShadowLayer` on a freshly `reset()` path + `clipOutPath`. HWUI can't cache that, so it blurs on the CPU every frame for every glass shape. On the Echo the Home screen (11 tiles) ran at ~100 ms/frame during a lamp drag. With `shadow = false` and the shadows baked once into the screen's wallpaper bitmap, it's 38 ms. Suggestion for `:core:design`: render the shadow once per (w, h, radius) into a small nine-patch-like bitmap (or an outset blurred rounded-rect bitmap) and draw that, or document "bake shadows for static layouts". `:feature:home` works around it locally (GlassTile sets `shadow = false`; `HomeWallpaper.shadows`), so nothing is blocked.

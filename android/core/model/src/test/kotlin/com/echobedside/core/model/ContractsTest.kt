@@ -69,7 +69,7 @@ class ContractsTest {
     }
 
     @Test fun systemStateDerivedFlags() {
-        assertEquals(true, SystemState(micMutedHardware = true).cameraBlocked)
+        assertEquals(false, SystemState(micMutedHardware = true).cameraBlocked) // mic-only button
         assertEquals(true, SystemState(micMutedSoftware = true).micMuted)
         assertEquals(false, SystemState().cameraBlocked)
     }

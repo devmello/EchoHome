@@ -79,3 +79,32 @@ interface TimerStore {
 
     companion object { const val MAX_TIMERS = 3 }
 }
+
+/** JSON form of [Alarm] for the web settings page (same format as `:feature:alarm`'s store). */
+object AlarmJson {
+    fun toJson(a: Alarm): org.json.JSONObject = org.json.JSONObject().apply {
+        put("id", a.id); put("hour", a.hour); put("minute", a.minute)
+        put("days", org.json.JSONArray().apply { a.days.sorted().forEach { put(it.value) } })
+        put("label", a.label); put("enabled", a.enabled); put("sunrise", a.sunrise)
+        put("sunriseMinutes", a.sunriseMinutes); put("snoozeMinutes", a.snoozeMinutes)
+        a.profileId?.let { put("profileId", it) }
+    }
+
+    /** null when [o] has no id or an out-of-range time. */
+    fun fromJson(o: org.json.JSONObject?): Alarm? {
+        o ?: return null
+        val id = o.optString("id").ifEmpty { return null }
+        val hour = o.optInt("hour", 7); val minute = o.optInt("minute", 0)
+        if (hour !in 0..23 || minute !in 0..59) return null
+        val days = o.optJSONArray("days")?.let { arr ->
+            (0 until arr.length()).mapNotNull { i -> arr.optInt(i).takeIf { it in 1..7 }?.let(java.time.DayOfWeek::of) }.toSet()
+        } ?: emptySet()
+        return Alarm(
+            id = id, hour = hour, minute = minute, days = days,
+            label = o.optString("label", "Alarm"), enabled = o.optBoolean("enabled", true),
+            sunrise = o.optBoolean("sunrise", true), sunriseMinutes = o.optInt("sunriseMinutes", 30).coerceIn(0, 120),
+            snoozeMinutes = o.optInt("snoozeMinutes", 9).coerceIn(1, 60),
+            profileId = if (o.has("profileId") && !o.isNull("profileId")) o.getString("profileId") else null,
+        )
+    }
+}

@@ -65,12 +65,20 @@ interface NotificationFeed {
     /** Newest last. */
     val banners: StateFlow<List<Banner>>
     fun post(banner: Banner)
-    fun dismiss(id: String)
+    /** [byUser] = an explicit Dismiss tap / swipe (not a timeout, DND or clear-all): the source may then clear it on the phone. */
+    fun dismiss(id: String, byUser: Boolean = false)
+    /** Ids of banners the user dismissed (see [dismiss]). */
+    val userDismissals: kotlinx.coroutines.flow.SharedFlow<String>
 }
 
 class DefaultNotificationFeed : NotificationFeed {
     private val _banners = MutableStateFlow<List<Banner>>(emptyList())
     override val banners: StateFlow<List<Banner>> = _banners.asStateFlow()
     override fun post(banner: Banner) = _banners.update { l -> l.filterNot { it.id == banner.id } + banner }
-    override fun dismiss(id: String) = _banners.update { l -> l.filterNot { it.id == id } }
+    private val _userDismissals = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 16)
+    override val userDismissals: kotlinx.coroutines.flow.SharedFlow<String> = _userDismissals
+    override fun dismiss(id: String, byUser: Boolean) {
+        _banners.update { l -> l.filterNot { it.id == id } }
+        if (byUser) _userDismissals.tryEmit(id)
+    }
 }

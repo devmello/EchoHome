@@ -12,4 +12,5 @@ dependencies {
     api(libs.coroutines.android)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.json)
 }

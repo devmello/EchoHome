@@ -38,7 +38,8 @@ data class SystemState(
 ) {
     val micMuted: Boolean get() = micMutedHardware || micMutedSoftware
     /** Camera must not be used: the button, the toggle or the shutter says so. */
-    val cameraBlocked: Boolean get() = micMutedHardware || cameraDisabled || shutterClosed
+    /** The mic button is mic-only (user, Nov 22, 2026), so it doesn't block the camera. */
+    val cameraBlocked: Boolean get() = cameraDisabled || shutterClosed
 }
 
 enum class NightMode { AUTO, ON, OFF }
