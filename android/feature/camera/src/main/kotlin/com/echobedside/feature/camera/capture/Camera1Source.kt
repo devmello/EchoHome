@@ -85,7 +85,7 @@ class Camera1Source(
                     if (restartedAt != 0L) { restartLatencyMs = now - restartedAt; restartedAt = 0L }
                     if (running && now - lastDelivered >= minIntervalMs) {
                         lastDelivered = now
-                        listener.onFrame(YPlane(wrap, sz.first, sz.second, sz.first, 1, SystemClock.elapsedRealtimeNanos()))
+                        listener.onFrame(YPlane(wrap, sz.first, sz.second, sz.first, 1, SystemClock.elapsedRealtimeNanos(), uvOffset = sz.first * sz.second))
                         if (dutyCycle && running) {
                             c.addCallbackBuffer(data)
                             h.post { if (running && previewOn) { try { c.stopPreview() } catch (_: Exception) {}; previewOn = false } }

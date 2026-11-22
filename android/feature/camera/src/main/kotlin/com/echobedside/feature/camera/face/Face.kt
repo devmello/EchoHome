@@ -7,8 +7,26 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/** A detected face in frame pixels: eye midpoint, eye distance, detector confidence (0..1). */
-data class FaceBox(val cx: Float, val cy: Float, val eyeDist: Float, val confidence: Float)
+/**
+ * A detected face in frame pixels: eye midpoint, eye distance, detector confidence (0..1), and
+ * (BlazeFace) six landmarks as x,y pairs in frame pixels: [Landmark] order.
+ */
+class FaceBox(
+    val cx: Float,
+    val cy: Float,
+    val eyeDist: Float,
+    val confidence: Float,
+    val landmarks: FloatArray? = null,
+) {
+    fun copy(cx: Float = this.cx, cy: Float = this.cy, eyeDist: Float = this.eyeDist, confidence: Float = this.confidence) =
+        FaceBox(cx, cy, eyeDist, confidence, landmarks)
+    fun lx(i: Int) = landmarks!![2 * i]
+    fun ly(i: Int) = landmarks!![2 * i + 1]
+    override fun toString() = "FaceBox(cx=$cx, cy=$cy, eyeDist=$eyeDist, conf=$confidence, landmarks=${landmarks != null})"
+}
+
+/** BlazeFace keypoints, in model order. "Right" is the subject's right (image left, unmirrored). */
+object Landmark { const val RIGHT_EYE = 0; const val LEFT_EYE = 1; const val NOSE = 2; const val MOUTH = 3; const val RIGHT_EAR = 4; const val LEFT_EAR = 5 }
 
 /** Stage 3 (NOTES §6.6): a tiny detector. Runs on the camera thread. */
 interface FaceFinder {
