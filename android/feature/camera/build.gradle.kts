@@ -12,4 +12,5 @@ dependencies {
     implementation(project(":core:design"))
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.json)
 }
