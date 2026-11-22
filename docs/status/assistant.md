@@ -97,8 +97,9 @@ Setup, models, settings and privacy: [docs/assistant-setup.md](../assistant-setu
   two-sentence streamed answer with Piper fp32. It played; 8.3 s of speech took 19 s, first
   sound 3.6 s after synthesis began. Ducking and the speaking-level droplet weren't judged.
 - **No real-time voice yet.** No sherpa-onnx voice reaches RTF < 0.8 on the Echo (best: Piper amy
-  fp32 at 3 threads, RTF 1.22), so speaking is off by default. Next step: an eSpeak NG engine
-  APK (needs the user's OK to download; see Needs from the user).
+  fp32 at 3 threads, RTF 1.22), so speaking is off by default. **User decision (Nov 22, 2026):
+  text only.** No TTS engine app is installed; answers show as text, and Piper stays available
+  as an opt-in setting. Revisit with eSpeak NG / RHVoice from F-Droid if the user wants speech.
 - **Wake word not tried with a real voice** (quiet hours): only on test WAVs and room noise.
 - **The mic button** sends KEY_POWER; mapping it to `navigator.show("assistant", listen = 1)`
   belongs to `:app` / system (see Contract requests).

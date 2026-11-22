@@ -310,7 +310,7 @@ Design rule: **the expensive step runs at most once per person arriving, never c
   - After this reboot the Echo offered plain adb on `:5555` instead of wireless debugging; `scripts/echo-connect.sh` falls back to it.
 - [ ] Camera: detected by both camera APIs. Test a real preview/capture. Apply the camera patch only if capture fails.
 - [ ] Slide the camera shutter during `getevent -l` and record the `SW_CAMERA_LENS_COVER` values.
-- [ ] Does pressing the mic button currently put the screen to sleep? Does it cut the mics in hardware?
+- [ ] Does pressing the mic button currently put the screen to sleep? Does it cut the mics in hardware? (Since the remap it's KEYCODE_MUTE, so it shouldn't sleep; see the hands-on list below.)
 - [ ] Does `adb connect 192.168.10.136:5555` work, and does it survive a reboot?
 - [ ] CPU/RAM headroom with the AirPlay receiver + our launcher + mic streaming running together.
 - [x] Compose vs Views: **Views** chosen; Views + pre-blurred glass hold 59 fps with 7 ms frames (§8.1).
@@ -318,6 +318,17 @@ Design rule: **the expensive step runs at most once per person arriving, never c
 - [x] Wireless adb pairing from the Mac works (Nov 22, 2026). IP 192.168.10.136. Give it a DHCP reservation.
 - [ ] Profile pipeline: measure presence-check and face-detection cost (CPU %, ms per frame) on the device before building the full flow.
 - [ ] Overlay window (island over other apps) behaviour and performance on Android 11.
+
+### 7.1 Hands-on tests (need someone at the Echo; deferred Nov 22, 2026, user away)
+
+Run these the next time the user is next to the Echo. Each needs a physical action or a phone.
+- [ ] **Mic button polarity:** press the mic button once. Does the red LED come on? Read `./scripts/echo-adb.sh logcat -d -s EchoSystem | grep gating` before and after. With mics on it reads 0 today; the code assumes `GATING_MUTED_VALUE = 1` (`:feature:system`). If the LED is on and the value is still 0, flip the constant.
+- [ ] **Camera shutter:** slide it closed and open; the camera status chip and presence should follow (`SW_CAMERA_LENS_COVER`).
+- [ ] **Alarm after a reboot:** set an alarm 3 minutes out, reboot, check it rings (wireless adb may need `./scripts/echo-connect.sh` again).
+- [ ] **iPhone pairing:** Settings › Bluetooth on the iPhone first (nRF Connect only as a fallback), then a notification banner (ANCS), a call, and Now Playing from any app (AMS, with iTunes artwork). See `docs/status/phone.md`.
+- [ ] **AirPlay from the iPhone:** "Echo Show" in the AirPlay list, audio plays, the assistant ducks it.
+- [ ] **Face enrolment** in daylight from the settings page, then recognition from across the room.
+- [ ] **Listen:** alarm sunrise ramp and timer chime at a normal volume.
 
 ---
 
