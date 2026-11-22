@@ -482,6 +482,7 @@ private class SkyView(context: Context) : View(context) {
             .apply { setLocalMatrix(Matrix().apply { setScale(1f, ry / rx); postTranslate(w / 2f, 0f) }) }
     }
     override fun onDraw(c: Canvas) = c.drawRect(0f, 0f, width.toFloat(), height.toFloat(), p)
+    override fun hasOverlappingRendering() = false
     fun drawSky(c: Canvas, w: Float, h: Float, a: Float) {
         if (p.shader == null) build(w, h)
         p.alpha = (255 * a).toInt(); c.drawRect(0f, 0f, w, h, p); p.alpha = 255
@@ -517,6 +518,8 @@ private class SunView(context: Context) : View(context) {
     }
 
     override fun onDraw(c: Canvas) = c.drawOval(0f, 0f, width.toFloat(), height.toFloat(), p)
+    // One draw op: view alpha goes straight onto the paint instead of a 1440×900 offscreen layer per frame.
+    override fun hasOverlappingRendering() = false
 
     fun to(a: Float, s: Float, breathe: Boolean) {
         val t = Triple(a, s, breathe)
@@ -536,7 +539,12 @@ private class SunView(context: Context) : View(context) {
             repeatMode = ValueAnimator.REVERSE
             repeatCount = ValueAnimator.INFINITE
             interpolator = AccelerateDecelerateInterpolator()
+            var last = 0L
             addUpdateListener {
+                // 30 fps is plenty for a 2 s breath; skipped updates change nothing, so no frame is drawn.
+                val t = it.currentPlayTime
+                if (t - last in 0 until 33) return@addUpdateListener
+                last = t
                 val f = it.animatedValue as Float
                 val s = 1.06f - 0.09f * f
                 scaleX = s; scaleY = s

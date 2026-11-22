@@ -32,7 +32,7 @@ import kotlinx.coroutines.withContext
 /**
  * The assistant screen (Assistant.dc.html): a blurred snapshot of the screen it opened over, the
  * voice light, the content and the droplet. Animates on the Choreographer only while shown
- * (30 fps when idle, 60 while listening / working / answering); nothing runs while hidden.
+ * (15 fps when idle, 60 while listening / working / answering); nothing runs while hidden.
  *
  * Screen args (adb `--es screen assistant --es <key> <value>`): `script` a|b|c plays a demo,
  * `at` <ms> freezes it there (screenshots), `mictest` 1 captures the mic without models,
@@ -127,8 +127,9 @@ class AssistantScreen(context: Context, private val services: EchoServices, priv
             if (!shown) return
             val now = System.currentTimeMillis()
             val active = state.phase != Phase.IDLE || engine.speaking.value || engine.micTesting
-            // Idle breathing at 30 fps is enough (and half the cost).
-            if (active || now - lastFrame >= 32) {
+            // Idle breathing at 15 fps: the droplet moves slowly, and 30 fps idle cost 36 % of a
+            // core on the Echo (full-system check, Nov 22).
+            if (active || now - lastFrame >= 64) {
                 lastFrame = now
                 frame(now)
             }

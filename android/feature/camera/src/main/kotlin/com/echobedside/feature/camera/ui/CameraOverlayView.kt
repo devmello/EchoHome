@@ -227,6 +227,10 @@ class CameraOverlayView(context: Context, private val services: EchoServices, pr
         glowPaint.setShadowLayer(8f, 0f, 0f, withAlpha(green, 0.8f))
         glowPaint.color = green
         canvas.drawCircle(dotCx, dotCy, 4.5f, glowPaint)
+        // The steady "Presence · 2 fps" label is drawn on StandBy only (the Profiles board); other
+        // screens put their own content in that corner (Timers' button, the clocks), so they get
+        // the green dot alone. The transient states (Face check, Recognized, Enrolling) keep their text.
+        if (phase == CameraPhase.PRESENCE && screen != "standby") return
         val tw = label.width(text)
         label.draw(canvas, text, right - 9f - 6f - tw, label.baselineIn(top, rowH), c(withAlpha(Color.WHITE, 0.7f)))
     }
