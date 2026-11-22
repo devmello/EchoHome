@@ -2,61 +2,82 @@
 
 All models are in `src/main/assets/models/`. `:app` stores `.tflite` files uncompressed, so they are memory-mapped (`ModelFiles.load`).
 
-The weights were downloaded only from each project's own release. Each checksum below was checked against a hash published by the server: GitHub's blob `Content-MD5`, and Google Cloud Storage's `x-goog-hash`.
+The weights were downloaded only from each project's own official location. Each checksum below was checked against a hash published by the server: GitHub's git blob SHA-1 (contents API), and Google Cloud Storage's `x-goog-hash`.
 
 Licence decision, made by the user and recorded in NOTES §6.6: *"This is non commercial open source use so you can use the common face recognition models."*
 
-## Face embedding: InsightFace MobileFaceNet `w600k_mbf`
+## Face embedding: Idiap EdgeFace (XXS default, XS option)
 
-| | |
-|---|---|
-| File | `mobilefacenet_w600k_int8.tflite` (3,629,496 B) |
-| sha256 (shipped file) | `148b58cf1f6d9c9f7ad6bfae9c70f3ee660a1df627eafc2eade24fd085c116e3` |
-| Source | `https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_sc.zip` (InsightFace model pack `buffalo_sc`, release v0.7), file `w600k_mbf.onnx` |
-| sha256 (`buffalo_sc.zip`, 14,969,382 B) | `57d31b56b6ffa911c8a73cfc1707c73cab76efe7f13b675a05223bf42de47c72` (MD5 matches GitHub's `Content-MD5` `Ub31GrEoruwsGRE67lIsXg==`) |
-| sha256 (`w600k_mbf.onnx`, 13,616,099 B) | `9cc6e4a75f0e2bf0b1aed94578f144d15175f357bdc05e815e5c4a02b319eb4f` |
-| What | MobileFaceNet ("MBF"; 3.4 M weights, 440 M MACs), trained with ArcFace loss on WebFace600K. Input is 112×112 RGB, aligned to the ArcFace 5-point template, with values (x − 127.5) / 127.5. Output is a 512-d embedding, L2-normalised in `TfliteEmbedder`. |
-| Licence | InsightFace code is MIT. Its pretrained models are released **for non-commercial research use only**, and the WebFace260M/600K training data has the same restriction. This project may use them only because it is non-commercial and open source (the user decision above). Commercial use needs a licence from InsightFace or a different model. |
-| Embedder id | `mbf-w600k-int8-v1`. It is stored with every template, so a model change means re-enrolling. |
-| Runtime options | TFLite built-in kernels with **XNNPACK off**, 2 threads (see "Why int8" below). |
+Two models ship. The advanced setting **Face model** (`camera.embedder`) picks one: `edgeface-xxs` (default) or `edgeface-xs`. Each has its own embedder id, which is stored with every template, so switching models (or upgrading from the MobileFaceNet build) means re-enrolling.
+
+| | EdgeFace-XXS (default) | EdgeFace-XS γ = 0.6 |
+|---|---|---|
+| File | `edgeface_xxs_fp16.tflite` (2,642,176 B) | `edgeface_xs_fp16.tflite` (3,750,728 B) |
+| sha256 (shipped file) | `27bdb20e18153220ac561413150f189b674ffce5af666c142a2b6231e390859e` | `f108780ad0f4bb3e18681a4ad22c06d4c6228291fce34c3253756dc314beffd0` |
+| Source | `https://github.com/otroshi/edgeface/raw/main/checkpoints/edgeface_xxs.pt` | `https://github.com/otroshi/edgeface/raw/main/checkpoints/edgeface_xs_gamma_06.pt` |
+| Checkpoint size, git blob SHA-1 | 5,032,125 B, `9cd55d480a4e60c3ccb8d0e33730b89c6932c6f0` | 7,170,425 B, `af5f8c5cf75e8b90d82d08f7a07ee10677327bfd` |
+| Checkpoint sha256 | `5b6bac48ea660aca185be8a8ac934db2093b51259461721da53c468230bc24c9` | `5ae7504cd9aee0a5d52c2115fd2eb66b0985dd1730f40134b5854e0cb658ce16` |
+| Size | 1.24 M params, 47 M MACs | 1.77 M params, 76 M MACs |
+| Published accuracy (EdgeFace README / paper) | LFW 99.57 % | LFW 99.73 %, IJB-C TAR 94.85 % at FAR 1e-4 |
+| Embedder id | `edgeface-xxs-fp16-v1` | `edgeface-xs-g06-fp16-v1` |
+| Runtime options | XNNPACK on, 2 threads | XNNPACK on, 2 threads |
+
+- **What:** EdgeFace (George, Ecabert, Otroshi Shahreza, Kotwal, Marcel; IEEE T-BIOM 2024), winner of the compact track of the IJCB 2023 efficient face recognition competition. EdgeNeXt backbone with low-rank linear layers (LoRaLin), trained with CosFace loss on WebFace4M/12M. Input is 112×112 RGB aligned to the ArcFace 5-point template, values (x − 127.5) / 127.5. Output is a 512-d embedding, L2-normalised in `TfliteEmbedder`. Same input and output as MobileFaceNet, so alignment and matching didn't change.
+- **Checksums:** each downloaded checkpoint's git blob SHA-1 (`sha1("blob <size>\0" + bytes)`) was checked against the blob SHA GitHub's contents API publishes for `checkpoints/` on `main`.
+- **Licence:** the EdgeFace code and checkpoints are in a BSD-3-Clause repository (repo `LICENSE`). The training data (WebFace4M/12M, subsets of WebFace260M) is released for **non-commercial research only**. This project may use the models because it is non-commercial and open source (the user decision above, which allows non-commercial open-source weights). Commercial use needs another model or a data licence.
+- The model code used for the export is the repo's own `backbones/` + `timmfr.py` (reviewed, run from the scratch dir; timm 1.0.31).
 
 ### Conversion
 
-Done on desktop, in an isolated Python 3.11 venv.
-- Tools: `onnx` 1.17.0, `onnxsim` 0.4.36, `onnx2tf` 1.27.10, TensorFlow 2.19.0, `onnxruntime` 1.21.0.
+Done on desktop, in isolated Python 3.11 venvs.
+- Tools: `torch` 2.15.0, `timm` 1.0.31 (export); `onnx` 1.17.0, `onnxsim` 0.4.36, `onnx2tf` 1.27.10, TensorFlow 2.19.0 (conversion).
 
 Steps:
-1. Set the ONNX batch dimension to a static 1, then run `onnxsim`.
-2. Run `onnx2tf -i mbf_static.onnx -o out` to convert NCHW → NHWC. This writes a SavedModel plus fp32 and fp16 `.tflite` files. onnx2tf's own test-image download was skipped: it is a pickled file, so local random inputs were used instead.
-3. Run `tf.lite.TFLiteConverter.from_saved_model(out)` with `optimizations = [tf.lite.Optimize.DEFAULT]` and no representative dataset. This gives dynamic-range quantisation: int8 weights per channel, float activations.
+1. Load the checkpoint with `torch.load(…, weights_only=True)` (tensors only, no pickled code) into the official `get_model(name)`.
+2. Switch every `nn.GELU` to `approximate="tanh"`. The exact (erf) GELU becomes an `Erf` op that TFLite only has as a Flex (TF select) op. The tanh form is within ~1e-3 of erf and costs nothing measurable (cos below).
+3. `torch.onnx.export`, opset 17, batch 1, then `onnxsim`.
+4. `onnx2tf` with `output_signaturedefs=True` (NCHW → NHWC). It writes fp32 and fp16-weight `.tflite`. onnx2tf's own test-data download was skipped (it is a pickled file); local random inputs were used. A dynamic-range int8 file was also made (`TFLiteConverter`, `Optimize.DEFAULT`) for comparison.
 
-Checks against the original ONNX (cosine of the output embeddings):
+**Checks against the original PyTorch model** (exact erf GELU; cosine of the embeddings, min over 4 random inputs / the drawn test face):
 
-| Model | Random inputs | Drawn test face |
+| Variant | XXS | XS |
 |---|---|---|
-| fp16 | 0.99999 | 0.99999 |
-| int8 (desktop) | ~0.988 | 0.9917 |
+| fp32 | 0.99997 / 0.99999 | 0.99993 / 0.99999 |
+| **fp16 (shipped)** | **0.99995 / 0.99998** | **0.99994 / 0.99997** |
+| dynamic int8 | 0.99216 / 0.99672 | 0.97874 / 0.98945 |
 
-On the Echo, the camera-bench `selftest` stage embeds the same drawn face and compares it with `selftest_drawn112_onnx.txt`, the original model's output (see docs/status/camera.md).
+On the Echo, the camera-bench `selftest` stage embeds the same drawn face with each shipped model and compares it with `selftest_drawn112_edgeface_<xxs|xs>.txt` (the PyTorch output). See "Measured on the Echo" below.
 
-### Why int8 and not fp16
+### Measured on the Echo
 
-Each variant was measured on the Echo in a fresh process with `tools/variants.sh`. The table below shows the results.
-- None of them is faster: the network is compute-bound at roughly 1.5 GMAC/s on the A53.
-- fp16 and fp32 on XNNPACK repack the weights into a second fp32 copy.
-- XNNPACK can't run the dynamic-range int8 convolutions.
-- int8 on the built-in kernels is the only variant inside the +20 MB budget.
+`tools/variants.sh`, one fresh process per variant, camera off, 2 threads unless noted. Other agents were still using the device a little (MobileFaceNet measured 437 ms here vs 303–346 ms in phase 2), so these are on the slow side.
 
-| Variant | ms / embedding | PSS added while loaded |
+| Variant | ms / embedding | cos vs PyTorch on the device |
 |---|---|---|
-| fp16, XNNPACK, 2 threads | 283 | +38.8 MB |
-| fp16, XNNPACK, 4 threads | 300 | +39.2 MB |
-| fp32, XNNPACK, 4 threads | 300 | +32.7 MB |
-| fp32, built-in, 4 threads | 265 | +22.2 MB |
-| int8, XNNPACK (partial), 4 threads | 335 | +15.0 MB |
-| **int8, built-in, 4 threads** | **303** | **+13.8 MB** |
+| **XXS fp16, XNNPACK (default)** | **68.4** | **1.0000** |
+| XXS fp32, XNNPACK | 73.6 | 1.0000 |
+| XXS int8, built-in | 157.2 | 0.9955 |
+| **XS fp16, XNNPACK (option)** | **112.2** | **1.0000** |
+| XS fp32, XNNPACK | 118.3 | 1.0000 |
+| XS fp32, XNNPACK, 4 threads | 118.0 | |
+| XS int8, built-in | 253.8 | 0.9924 |
+| MobileFaceNet int8, built-in (old default) | 436.7 | 0.9887 |
 
-`ModelSelfTest.variant` can still compare other files: drop them into the assets folder as `mobilefacenet_w600k_<name>.tflite` and pass `--es model <name>`.
+- **fp16 on XNNPACK** is the fastest form of both models. On armv7 the fp16 weights are unpacked to fp32 at load, so it runs like fp32 with a smaller file. XNNPACK takes all but 24 nodes, in 19 partitions (XXS fp32: 444 of 468; the final run on the Echo logged 862 of 886).
+- **int8 is slower** here: dynamic-range int8 runs on the built-in kernels (XNNPACK can't take it), and EdgeFace is small enough that XNNPACK's fp32 kernels win. It also costs accuracy (XS desktop cos 0.979, under the 0.98 bar).
+- **4 threads gained nothing** over 2 (118.0 vs 118.3 ms), so 2 stays.
+- **Final run** (13:01, after a 10 s settle):
+  - XXS: **61.0 ms**, PSS +16.8 MB while loaded.
+  - XS: **102.2 ms**, +22.9 MB.
+  - Both at cos 1.0000 against PyTorch.
+  - Live on the camera, XXS took 56.4 ms per embedding.
+  - docs/status/camera.md has the details.
+
+### Why MobileFaceNet was dropped
+
+EdgeFace-XS is ~4× faster (112 vs 303–437 ms) and better on LFW (99.73 vs MobileFaceNet-class ~99.5 %), so the MobileFaceNet option would never be the right pick. Keeping it would cost 3.6 MB of APK for nothing. Its files (`mobilefacenet_w600k_int8.tflite`, `selftest_drawn112_onnx.txt`) are deleted. Templates enrolled with `mbf-w600k-int8-v1` are ignored and the person re-enrols. Its source and checksums are in git history (this file, before the EdgeFace change).
+
+`ModelSelfTest.variant` can still compare other files: drop `models/<name>.tflite` into the assets with a reference `models/selftest_drawn112_<family>.txt` (family = name without its last `_part`), and pass `--es model <name>` (`tools/variants.sh <name>:<threads>[:xnnpack]`).
 
 ## Face detection: MediaPipe BlazeFace short-range
 
@@ -69,9 +90,9 @@ Each variant was measured on the Echo in a fresh process with `tools/variants.sh
 | Licence | Apache-2.0 (MediaPipe; BlazeFace model card) |
 | Runtime options | XNNPACK on, 2 threads. All 164 nodes are delegated. |
 
-## Self-test reference
+## Self-test references
 
-`selftest_drawn112_onnx.txt` (4,870 B; sha256 `27ae237a9f1f3d6a11bca9ac86055e081c545b79694f1c349327426ef36c3a18`) holds 512 floats. It is the original ONNX model's normalised embedding of the drawn 112×112 cartoon face from `SyntheticFace.rgb(112, 112, 56, 56, 30)`. There's no real face in it.
+`selftest_drawn112_edgeface_xxs.txt` (4,852 B; sha256 `9f86b1ce238212b719e888b91789bb372d0e2691e0cff408749a9de1cb708300`) and `selftest_drawn112_edgeface_xs.txt` (4,866 B; sha256 `63c702a03f860c37ca30704fd05668644315262eb91f6ef152452eb7ad0a6535`) each hold 512 floats. Each is the original PyTorch model's (exact GELU) normalised embedding of the drawn 112×112 cartoon face from `SyntheticFace.rgb(112, 112, 56, 56, 30)`. There's no real face in them.
 
 ## Runtime
 
@@ -82,5 +103,5 @@ Each variant was measured on the Echo in a fresh process with `tools/variants.sh
 ## Not models
 
 `LbpEmbedder` (uniform LBP histograms) and `android.media.FaceDetector` need no model files. They are the fallbacks:
-- `LbpEmbedder` is used if the embedding model can't be loaded.
+- `LbpEmbedder` is used if the embedding model can't be loaded or run (and `camera.embedder=lbp`, debug, forces it).
 - `android.media.FaceDetector` is used if BlazeFace can't be loaded, or when `camera.detector=legacy` is set.

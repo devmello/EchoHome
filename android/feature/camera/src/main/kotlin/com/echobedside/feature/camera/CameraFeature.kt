@@ -8,7 +8,7 @@ import com.echobedside.core.model.ScreenSpec
 import com.echobedside.core.model.SettingSpec
 import com.echobedside.core.model.SettingType
 import com.echobedside.core.model.SettingsSection
-import com.echobedside.feature.camera.face.MatchPolicy
+import com.echobedside.feature.camera.face.ModelFiles
 import com.echobedside.feature.camera.capture.CaptureProbeView
 import com.echobedside.feature.camera.profiles.FaceProfileManager
 import com.echobedside.feature.camera.profiles.SecretBox
@@ -57,7 +57,10 @@ object CameraFeature : EchoFeature {
                 help = "Stop the camera between presence samples: about a third less CPU, slower to notice motion.", advanced = true),
             SettingSpec(FaceProfileManager.KEY_AUTO, "Auto by face", SettingType.BOOLEAN, "true",
                 help = "Switch to a person's profile when the camera recognises them."),
-            SettingSpec(CameraPipeline.KEY_THRESHOLD, "Match threshold", SettingType.FLOAT, MatchPolicy.NEURAL.floor.toString(),
+            SettingSpec(CameraPipeline.KEY_EMBEDDER, "Face model", SettingType.CHOICE, ModelFiles.EMBEDDERS[0].key,
+                help = "Which on-device model recognises faces. Changing it means adding each person's face again.",
+                options = ModelFiles.EMBEDDERS.map { it.key to it.title }, advanced = true),
+            SettingSpec(CameraPipeline.KEY_THRESHOLD, "Match threshold", SettingType.FLOAT, ModelFiles.EMBEDDERS[0].policy.floor.toString(),
                 help = "Lowest similarity that counts as a match. Each person's own threshold comes from their enrolment and is never below this. " +
                     "Higher means fewer wrong matches and more \"Who's there?\".",
                 min = 0.25f, max = 0.6f, step = 0.01f, advanced = true),

@@ -8,20 +8,43 @@ import java.nio.ByteOrder
 import java.nio.channels.FileChannel
 import org.tensorflow.lite.Interpreter
 
+/**
+ * One face-embedding model in the assets (MODELS.md). [id] goes into every template, so
+ * switching models means enrolling again.
+ */
+class EmbedderModel(
+    /** Value of the `camera.embedder` setting. */
+    val key: String,
+    val title: String,
+    val id: String,
+    val path: String,
+    val xnnpack: Boolean,
+    val policy: MatchPolicy,
+    val threads: Int = 2,
+) {
+    /** The original framework's embedding of the drawn 112×112 face (self-test). */
+    val reference: String
+        get() = "models/selftest_drawn112_" + path.substringAfterLast('/').substringBeforeLast('.').substringBeforeLast('_') + ".txt"
+}
+
 /** The model files in this module's assets (android/feature/camera/MODELS.md). */
 object ModelFiles {
     /**
-     * Dynamic-range int8 weights, run by TFLite's built-in kernels. Measured on the Echo it was as
-     * fast as fp16/fp32 on XNNPACK (~0.3 s, the network is 440 M MACs) at a third of the memory:
-     * XNNPACK can't run its int8 convs, and it repacks fp16/fp32 weights into a second copy
-     * (docs/status/camera.md).
+     * Idiap EdgeFace-XXS (47 M MACs, LFW 99.57 %), fp16 weights on XNNPACK: ~70 ms per embedding on
+     * the Echo, the default.
      */
-    const val EMBEDDER = "models/mobilefacenet_w600k_int8.tflite"
-    const val EMBEDDER_ID = "mbf-w600k-int8-v1"
-    const val EMBEDDER_XNNPACK = false
+    val EDGEFACE_XXS = EmbedderModel("edgeface-xxs", "EdgeFace-XXS (fastest)", "edgeface-xxs-fp16-v1", "models/edgeface_xxs_fp16.tflite",
+        xnnpack = true, policy = MatchPolicy.NEURAL)
+    /**
+     * Idiap EdgeFace-XS γ = 0.6 (76 M MACs, LFW 99.73 %, IJB-C 94.85 % at FAR 1e-4): ~110 ms,
+     * the "more accurate" option. Faster and better on LFW than the MobileFaceNet it replaced (~0.3–0.44 s).
+     */
+    val EDGEFACE_XS = EmbedderModel("edgeface-xs", "EdgeFace-XS (more accurate)", "edgeface-xs-g06-fp16-v1", "models/edgeface_xs_fp16.tflite",
+        xnnpack = true, policy = MatchPolicy.NEURAL)
+    val EMBEDDERS = listOf(EDGEFACE_XXS, EDGEFACE_XS)
+    fun embedder(key: String): EmbedderModel = EMBEDDERS.firstOrNull { it.key == key } ?: EMBEDDERS[0]
+
     const val DETECTOR = "models/blaze_face_short_range.tflite"
-    /** The original ONNX model's embedding of the drawn 112×112 face, for the self-test. */
-    const val SELFTEST_REF = "models/selftest_drawn112_onnx.txt"
 
     /**
      * Memory-maps an asset (the app keeps .tflite uncompressed, so pages are shared and dropped
@@ -39,7 +62,7 @@ object ModelFiles {
 }
 
 /**
- * InsightFace MobileFaceNet (w600k_mbf, ArcFace loss): aligned 112×112 RGB in, (x − 127.5)/127.5,
+ * A 512-d face model from [ModelFiles.EMBEDDERS] (EdgeFace, CosFace loss): aligned 112×112 RGB in, (x − 127.5)/127.5,
  * 512-d out, L2-normalised here. The interpreter is created on first use and freed by [release].
  */
 class TfliteEmbedder(

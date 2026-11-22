@@ -77,7 +77,7 @@ class EnrolSample(val box: FaceBox?, val frameW: Int, val frameH: Int, val issue
  *  4. Quality filter. 5. Recognition (≤3 tries, 2 consecutive matches). 6. Greeting + switch.
  *
  * Detection is BlazeFace (or `android.media.FaceDetector`, setting `camera.detector`); the face is
- * aligned on its landmarks and embedded by MobileFaceNet on TFLite, with LBP as the fallback if
+ * aligned on its landmarks and embedded by EdgeFace (setting `camera.embedder`) on TFLite, with LBP as the fallback if
  * the model can't be loaded. The models are loaded on the first detection frame and freed
  * whenever the camera stops (end of a burst, enrolment, screen off).
  *
@@ -94,12 +94,20 @@ class CameraPipeline(
     private val _ui = MutableStateFlow(CameraUi())
     val ui: StateFlow<CameraUi> = _ui.asStateFlow()
 
-    /** MobileFaceNet, or LBP for good once the model fails to load (`camera.embedder` = lbp forces it). */
-    val embedder = FallbackEmbedder(
-        if (settings.getString(KEY_EMBEDDER, "neural") == "lbp") null
-        else TfliteEmbedder(ModelFiles.EMBEDDER_ID, { ModelFiles.load(context, ModelFiles.EMBEDDER) }, xnnpack = ModelFiles.EMBEDDER_XNNPACK),
-        LbpEmbedder(),
-    ) { t -> Log.w(TAG, "face model failed, using LBP: $t") }
+    /**
+     * The face model picked in settings (`camera.embedder`: edgeface-xxs | edgeface-xs; debug: lbp),
+     * or LBP for good once the model fails to load. Swapped live when the setting changes.
+     */
+    @Volatile var embedder: FallbackEmbedder = buildEmbedder(); private set
+
+    private fun buildEmbedder(): FallbackEmbedder {
+        val key = settings.getString(KEY_EMBEDDER, ModelFiles.EMBEDDERS[0].key)
+        val m = ModelFiles.embedder(key)
+        return FallbackEmbedder(
+            if (key == "lbp") null else TfliteEmbedder(m.id, { ModelFiles.load(context, m.path) }, m.threads, m.xnnpack),
+            LbpEmbedder(),
+        ) { t -> Log.w(TAG, "face model ${m.id} failed, using LBP: $t") }
+    }
     @Volatile var stats = Stats()
 
     private var source: FrameSource? = null
@@ -167,7 +175,12 @@ class CameraPipeline(
             services.system.state.map { it.cameraBlocked }.distinctUntilChanged().collect { evaluate() }
         }
         services.scope.launch { profiles.autoByFace.collect { evaluate() } }
-        services.scope.launch { settings.changes.collect { k -> if (k.startsWith("camera.stage.") || k == KEY_DUTY) evaluate() } }
+        services.scope.launch {
+            settings.changes.collect { k ->
+                if (k.startsWith("camera.stage.") || k == KEY_DUTY) evaluate()
+                if (k == KEY_EMBEDDER) synchronized(modelLock) { embedder.release(); embedder = buildEmbedder(); Log.i(TAG, "face model: ${embedder.id}") }
+            }
+        }
     }
 
     /** Our window became visible / invisible (screen off, another app in front). */
@@ -318,7 +331,7 @@ class CameraPipeline(
     /** The match rule: the embedder's, with the user's minimum threshold for the neural model. */
     private fun policy(): MatchPolicy {
         val p = embedder.policy
-        if (p != MatchPolicy.NEURAL) return p
+        if (p == MatchPolicy.LBP) return p
         val floor = settings.getFloat(KEY_THRESHOLD, p.floor).coerceIn(0.2f, 0.9f)
         return p.copy(floor = floor, ceiling = maxOf(p.ceiling, floor))
     }
@@ -518,7 +531,7 @@ class CameraPipeline(
         const val KEY_DUTY = "camera.presence.duty"
         const val KEY_DETECTOR = "camera.detector"
         const val DETECTOR_DEFAULT = "blazeface"
-        /** Debug: "lbp" forces the LBP embedder (read at start). */
+        /** The face model: [ModelFiles.EMBEDDERS] keys (debug: "lbp" forces LBP). */
         const val KEY_EMBEDDER = "camera.embedder"
         /** The neural model's minimum match threshold ([MatchPolicy.floor]). */
         const val KEY_THRESHOLD = "camera.match.threshold"

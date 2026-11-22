@@ -27,8 +27,9 @@ data class MatchPolicy(val floor: Float, val ceiling: Float, val slack: Float, v
         /** LBP histograms: everything is fairly similar (impostors ~0.6-0.7), so a high floor. */
         val LBP = MatchPolicy(floor = 0.5f, ceiling = 1f, slack = 0.01f, margin = 0.02f)
         /**
-         * ArcFace-trained MobileFaceNet: impostor cosines centre on ~0 (sd ~0.08), the same person
-         * scores ~0.45-0.8 across angles and lighting.
+         * Margin-loss (CosFace / ArcFace) 512-d embedders, here EdgeFace (CosFace, WebFace4M/12M):
+         * different people's cosines centre on ~0 (sd ~0.06–0.10), the same person scores
+         * ~0.45–0.8 across angles and light. See docs/status/camera.md "Thresholds".
          */
         val NEURAL = MatchPolicy(floor = 0.36f, ceiling = 0.55f, slack = 0.10f, margin = 0.05f)
     }
@@ -68,7 +69,7 @@ class FallbackEmbedder(
  * Classical, model-free embedding: uniform LBP(8,1) histograms on a 7×7 grid of the 112×112
  * crop (Ahonen et al. 2004, the "LBPH" recogniser), Hellinger-mapped (sqrt) and L2-normalised so
  * cosine similarity works. No model file and no licence question; much weaker than a
- * MobileFaceNet-class network, so it's a **baseline** for a small household with "Not me" as the
+ * neural (EdgeFace) network, so it's a **baseline** for a small household with "Not me" as the
  * safety net. Now the fallback for [TfliteEmbedder] when the model can't be loaded.
  */
 class LbpEmbedder(private val grid: Int = 7) : FaceEmbedder {
