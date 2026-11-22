@@ -46,7 +46,7 @@ object AssistantSettings {
                 help = "Off: the microphone is never used by the assistant."),
             SettingSpec(KEY_WAKE, "Wake word", SettingType.BOOLEAN, "false",
                 help = "Listen for “Hey Nova” while idle. The microphone and a small keyword model then run " +
-                    "all the time, on this display only (about 4 MB more memory and a few percent of the CPU)."),
+                    "all the time, on this display only (about 40 MB more memory and a few percent of the CPU)."),
             SettingSpec(KEY_WAKE_SENSITIVITY, "Wake word sensitivity", SettingType.CHOICE, SENSITIVITY_DEFAULT,
                 help = "Higher reacts more easily, but wakes by mistake more often.",
                 options = listOf("low" to "Low", "normal" to "Normal", "high" to "High")),
@@ -70,9 +70,9 @@ object AssistantSettings {
             SettingSpec(KEY_NAME, "Assistant name", SettingType.TEXT, "Nova", advanced = true,
                 help = "What Claude calls itself. The wake phrase is set separately (kws/keywords.txt)."),
             SettingSpec(KEY_KEEP_STT, "Keep speech recognition loaded", SettingType.BOOLEAN, "false", advanced = true,
-                help = "Starts listening faster, but keeps about 30 MB in memory."),
+                help = "Starts listening faster, but keeps about 40 MB in memory."),
             SettingSpec(KEY_KEEP_TTS, "Keep the voice loaded", SettingType.BOOLEAN, "false", advanced = true,
-                help = "Starts speaking faster, but keeps about 40 MB in memory."),
+                help = "Starts speaking faster (the voice takes about 35 s to load), but keeps about 70 MB in memory."),
         ),
     )
 }
