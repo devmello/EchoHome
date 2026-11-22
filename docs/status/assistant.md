@@ -21,7 +21,7 @@ Setup, models, settings and privacy: [docs/assistant-setup.md](../assistant-setu
   `tools/fetch-voice.sh` from the official releases, SHA-256 pinned):
   - Streaming zipformer STT with endpoint rules. Loaded per turn while the mic buffers, and
     freed after the transcript.
-  - Piper TTS (amy low **fp32**, 2 threads, with the official `lexicon-en-us.txt`). Loaded on its
+  - Piper TTS (amy low **fp32**, 3 threads, with the official `lexicon-en-us.txt`). Loaded on its
     own thread while Claude works, freed after speaking. The droplet follows the speech level.
     Off by default (slower than real time here, see the measurements). Numbers, times and units
     are spelled out for speech (`SpeechText`).
@@ -97,7 +97,7 @@ Setup, models, settings and privacy: [docs/assistant-setup.md](../assistant-setu
   two-sentence streamed answer with Piper fp32. It played; 8.3 s of speech took 19 s, first
   sound 3.6 s after synthesis began. Ducking and the speaking-level droplet weren't judged.
 - **No real-time voice yet.** No sherpa-onnx voice reaches RTF < 0.8 on the Echo (best: Piper amy
-  fp32 at 2 threads, RTF 1.43), so speaking is off by default. Next step: an eSpeak NG engine
+  fp32 at 3 threads, RTF 1.22), so speaking is off by default. Next step: an eSpeak NG engine
   APK (needs the user's OK to download; see Needs from the user).
 - **Wake word not tried with a real voice** (quiet hours): only on test WAVs and room noise.
 - **The mic button** sends KEY_POWER; mapping it to `navigator.show("assistant", listen = 1)`
@@ -121,7 +121,7 @@ core, frames from gfxinfo). All of it was silent: no sound was played.
 | Mic capture alone (`mictest`) | 53.5 MB | 39.4% (at 60 fps; mostly drawing) | |
 | STT loaded (during a turn) | 133–136 MB | RTF 0.49–0.61 on 2 threads | |
 | After the turn (STT freed) | 95.6 MB | | |
-| TTS Piper amy fp32, 2 threads (installed) | 161–186 MB | RTF 1.43, load 20 s (+10 s lexicon) | |
+| TTS Piper amy fp32, 3 threads (installed) | 157–166 MB | RTF 1.22, load 20 s (+10 s lexicon) | |
 | After speaking a streamed answer (fp32) | 150.3 MB | | |
 | TTS Piper amy int8, 2 / 4 threads (before) | 120–164 MB | RTF 3.4 / 3.8, load 28–38 s | |
 
@@ -139,15 +139,15 @@ Per model:
 
   | Voice | Threads | Load | First sentence | RTF | PSS |
   |---|---|---|---|---|---|
-  | Piper amy low fp32 (installed) | 2 | 20 s | 3.3 s | **1.43** | 161–186 MB |
-  | Piper amy low fp32 | 1 / 4 | 20 / 23 s | 5.1 / 5.3 s | 2.27 / 2.08 | 158–186 MB |
+  | Piper amy low fp32 (installed) | 3 | 20 s | 3.0 s | **1.22** | 157–166 MB |
+  | Piper amy low fp32 | 1 / 2 / 4 | 20 / 20 / 23 s | 5.1 / 3.3 / 5.3 s | 2.27 / 1.43 / 2.08 | 158–186 MB |
   | Piper amy low int8 | 2 / 4 | 35 / 28–38 s | – / 9.3 s | 3.40 / 3.8 | 120–164 MB |
   | Matcha ljspeech + HiFiGAN v2 | 2 | 25 s | 6.7 s | 2.33 | 164–181 MB |
   | icefall VITS ljspeech low | 2 | 8.7 s | 5.1 s | 2.44 | 126–150 MB |
   | Supertonic int8, 4 / 2 steps | 2 / 4 | 11–12 s | 23–25 s | 2.04 / 1.88 | 193–222 MB |
 
   - int8 is 2.7× slower than fp32 on armv7 (and 2× on the Mac).
-  - 4 threads are slower than 2: the screen's animation and the system share the cores.
+  - 3 threads are best; 4 are slower than 2 (the screen's animation and the system need a core).
   - The full lexicon adds about 10 s and 40 MB to the load.
   - lessac-low and ryan-low are the same network as amy-low (same size and speed on the Mac).
   - On the Mac, amy fp32 runs at RTF 0.055, so the Echo is about 26× slower.
@@ -194,7 +194,9 @@ with `design/Assistant.dc.html`:
   adapter for an Android TTS engine is built (System voice). The options are:
   1. eSpeak NG from F-Droid (fast, robotic; GPL-3.0; a separate app, not linked);
   2. RHVoice from F-Droid (more natural, heavier; not measured);
-  3. keep Piper with "Keep TTS loaded" and accept pauses (RTF 1.43, about 70 MB kept).
+  3. keep Piper with "Keep TTS loaded" and accept pauses (RTF 1.22, about 70 MB kept). Without
+     it the 20–30 s load is never done within the 1.5 s an answer waits, so Piper only speaks
+     with Keep TTS loaded on.
   Until then answers are shown, not spoken.
 - Follow-up listening opens the mic without a tap when Claude asks a question. It's on by
   default; turn it off if that's unwelcome at night.

@@ -91,7 +91,8 @@ answer (about 12 s of speech):
 
 | Voice (sherpa-onnx v2.0.1) | Threads | Load | First sentence | RTF | PSS (app) |
 |---|---|---|---|---|---|
-| Piper amy low **fp32** (installed) | **2** | 20 s (+10 s with the full lexicon) | 3.3 s | **1.43** | 161–186 MB |
+| Piper amy low **fp32** (installed) | **3** | 20 s (+10 s with the full lexicon) | 3.0 s | **1.22** | 157–166 MB |
+| Piper amy low fp32 | 2 | 20 s | 3.3 s | 1.43 | 161–186 MB |
 | Piper amy low fp32 | 1 | 20 s | 5.1 s | 2.27 | 158–180 MB |
 | Piper amy low fp32 | 4 | 23 s | 5.3 s | 2.08 | 167–186 MB |
 | Piper amy low int8 (before) | 2 | 35 s | – | 3.40 | 139–164 MB |
@@ -102,8 +103,8 @@ answer (about 12 s of speech):
 | Supertonic int8 (2 steps) | 4 | 12 s | 23 s | 1.88 | 193–202 MB |
 
 lessac-low and ryan-low are the same network as amy-low (same size and speed on the Mac), so
-they're no faster. Four threads are slower than two: the screen's animation and the system share
-the four cores. None of these reaches real time, so **speaking stays off by default** with Piper.
+they're no faster. Four threads are slower than three: the screen's animation and the system
+need a core. None of these reaches real time, so **speaking stays off by default** with Piper.
 
 What's in place anyway:
 - **Sentence streaming.** Claude's answer is cut into sentences as it streams (the first piece may

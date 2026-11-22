@@ -343,7 +343,7 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
                         model = from, tokens = f(ttsDir, "tokens.txt"),
                         lexicon = lexicon.absolutePath,
                     ),
-                    numThreads = threads,
+                    numThreads = TTS_THREADS,
                 ),
                 maxNumSentences = 1,
             ))
@@ -526,5 +526,7 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
         /** sherpa-onnx tts-models release `lexicon-en-us.txt` (word to espeak phones). */
         const val LEXICON = "lexicon-en-us.txt"
         const val MAX_DECODES_PER_CHUNK = 8
+        /** Piper on the Echo: RTF 2.27 / 1.43 / 1.22 / 2.08 at 1 / 2 / 3 / 4 threads (the UI needs a core). */
+        const val TTS_THREADS = 3
     }
 }
