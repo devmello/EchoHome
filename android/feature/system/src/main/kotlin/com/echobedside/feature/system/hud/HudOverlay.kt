@@ -71,6 +71,11 @@ internal class HudOverlay(context: Context, private val ui: SystemUi) : View(con
         isFocusable = false
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         observeWhileAttached(ui.hud) { post(it) }
+        // launch / new-intent debug extras (`--es island story`, `--es cc open`, `--es banner 0`): same path as the broadcast
+        if (ui.debugBuild) observeWhileAttached(ui.services.intents) { i ->
+            val ex = i.extras ?: return@observeWhileAttached
+            if (DEBUG_KEYS.any { ex.containsKey(it) }) ui.debug.value = android.os.Bundle(ex).apply { putLong("_t", System.nanoTime()) }
+        }
         observeWhileAttached(ui.services.system.state) { s ->
             val badgesBefore = badges(state)
             state = s
@@ -235,12 +240,12 @@ internal class HudOverlay(context: Context, private val ui: SystemUi) : View(con
         }
     }
 
-    private data class Badges(val mic: Boolean, val cam: Boolean, val inUse: Boolean)
+    /** The camera overlay (`:feature:camera`, z 250) owns the camera-in-use indicator; B draws only the red privacy badges. */
+    private data class Badges(val mic: Boolean, val cam: Boolean)
 
     private fun badges(s: SystemState) = Badges(
-        mic = s.micMuted,
+        mic = s.micMuted || s.micMutedHardware,
         cam = s.cameraDisabled || s.shutterClosed || s.micMutedHardware,
-        inUse = s.cameraInUse && !s.cameraBlocked,
     )
 
     /** right 22, top 18, 34 px circles, gap 8, ring 0 0 0 3px rgba(0,0,0,.5). */
@@ -249,7 +254,6 @@ internal class HudOverlay(context: Context, private val ui: SystemUi) : View(con
         val list = buildList {
             if (b.mic && !queue.showing(MessageKind.Subject.MIC)) add(Icons.micOff to EchoRed)
             if (b.cam && !queue.showing(MessageKind.Subject.CAMERA)) add(Icons.camOff to EchoRed)
-            if (b.inUse) add(Icons.cam to EchoGreen)
         }
         if (list.isEmpty()) return
         val night = state.nightActive
@@ -272,6 +276,7 @@ internal class HudOverlay(context: Context, private val ui: SystemUi) : View(con
     }
 
     companion object {
+        val DEBUG_KEYS = arrayOf("island", "look", "cc", "banner", "hud")
         const val HIDDEN_Y = -90f
         const val SHOWN_Y = 16f
         val DROP = bezier(0.3f, 1.45f, 0.5f, 1f)

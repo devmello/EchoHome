@@ -59,7 +59,6 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         ui.backHandlers += back
-        if (ui.debugBuild && (context as? Activity)?.intent?.getStringExtra("cc") == "open") post { openNow() }
     }
 
     override fun onDetachedFromWindow() { ui.backHandlers -= back; super.onDetachedFromWindow() }

@@ -100,7 +100,6 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         ui.backHandlers += backHandler
-        if (ui.debugBuild) (context as? Activity)?.intent?.getStringExtra("banner")?.toIntOrNull()?.let { i -> post { postDemo(i) } }
     }
 
     override fun onDetachedFromWindow() { ui.backHandlers -= backHandler; handler.removeCallbacksAndMessages(null); super.onDetachedFromWindow() }

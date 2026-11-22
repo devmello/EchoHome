@@ -143,10 +143,6 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         ui.backHandlers += back
-        // `--es island <scene>` on the launch intent (debug builds)
-        if (ui.debugBuild) (context as? android.app.Activity)?.intent?.getStringExtra("island")?.let { scene ->
-            post { demo.play(scene); if (scene == "nowplaying") post { setLayout(model.tapMain()) } }
-        }
     }
 
     override fun onDetachedFromWindow() {

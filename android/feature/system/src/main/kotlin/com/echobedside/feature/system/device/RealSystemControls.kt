@@ -93,10 +93,9 @@ internal class RealSystemControls(private val ui: SystemUi) : SystemControls {
 
     val canWriteSettings get() = Settings.System.canWrite(app)
 
-    override fun setBrightness(value: Float): Boolean = setBrightness(value, showHud = false)
-
-    /** [showHud]: automation and voice show the capsule; the Control Center slider doesn't (it's on screen). */
-    fun setBrightness(value: Float, showHud: Boolean): Boolean {
+    /** [showHud]: keys and voice show the capsule; automation (sunrise ramp) doesn't. The Control Center slider
+     *  passes false: the HUD (z 500) would animate unseen under the open Control Center (z 600). */
+    override fun setBrightness(value: Float, showHud: Boolean): Boolean {
         val v = value.coerceIn(0f, 1f)
         store.update { it.copy(brightness = v) }
         if (showHud) ui.showHud(Hud.Level(LevelKind.BRIGHTNESS, v))
