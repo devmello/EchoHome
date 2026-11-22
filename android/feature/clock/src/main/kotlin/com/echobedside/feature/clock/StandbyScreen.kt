@@ -137,10 +137,12 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
     }
 
     private fun create(spec: FaceSpec): Slot {
+        val t0 = SystemClock.uptimeMillis()
         val f = spec.factory(context)
         f.setConfig(configFor(spec))
         stage.addView(f.view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         f.onTimeChanged()
+        if (services.config.debug) Log.d("EchoClock", "created face ${spec.id} in ${SystemClock.uptimeMillis() - t0} ms")
         return Slot(spec, f)
     }
 
@@ -335,9 +337,11 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
     }
 
     private fun finishEdit(on: Boolean) {
+        // The layer only pays off while the scale changes; at rest it would be re-rendered on
+        // every frame of a face swipe.
+        stage.setLayerType(LAYER_TYPE_NONE, null)
         if (on) return
         stage.clipToOutline = false
-        stage.setLayerType(LAYER_TYPE_NONE, null)
         overlay?.let { removeView(it) }
         overlay = null
         applyDim(animate = true)
