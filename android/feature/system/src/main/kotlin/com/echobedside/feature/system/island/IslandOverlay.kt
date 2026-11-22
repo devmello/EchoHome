@@ -490,16 +490,21 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(
                 val accept = a.actions.firstOrNull { it.style == IslandAction.Style.ACCEPT }
                 // From the iPhone (ANCS) calls are answered on the phone: no Accept → Decline only, at the end
                 val textL = 24f + 76f + 16f
-                val acc = bw - 24f - 68f; val dec = if (accept != null) acc - 16f - 68f else acc
+                val acc = bw - 24f - 68f
+                // an iPhone call whose notification has no negative action: no buttons at all (answer on the phone)
+                val anyButton = decline != null || accept != null
+                val dec = if (accept != null) acc - 16f - 68f else if (anyButton) acc else bw - 24f + 16f
                 val lh1 = tCallSub.normalLineHeight; val lh2 = tCallName.normalLineHeight
                 val top = cy - (lh1 + lh2) / 2f
                 tCallSub.draw(c, tCallSub.ellipsize(ct.subtitle, dec - 16f - textL), textL, tCallSub.baselineIn(top, lh1), ink(withAlpha(Color.WHITE, 0.65f), alpha))
                 tCallName.draw(c, tCallName.ellipsize(ct.caller, dec - 16f - textL), textL, tCallName.baselineIn(top + lh1, lh2), ink(Color.WHITE, alpha))
-                circleButton(c, dec, cy - 34f, 68f, 0xFFFF453A.toInt(), alpha)
-                c.save(); c.rotate(135f, dec + 34f, cy)
-                Icons.phone.drawCentered(c, dec + 34f, cy, 30f, if (night) withAlpha(Color.BLACK, alpha) else withAlpha(Color.WHITE, alpha), paint)
-                c.restore()
-                button(ox + dec, oy + cy - 34f, 68f, 68f) { if (decline != null) invoke(decline, true) else setLayout(model.collapse()) }
+                if (anyButton) {
+                    circleButton(c, dec, cy - 34f, 68f, 0xFFFF453A.toInt(), alpha)
+                    c.save(); c.rotate(135f, dec + 34f, cy)
+                    Icons.phone.drawCentered(c, dec + 34f, cy, 30f, if (night) withAlpha(Color.BLACK, alpha) else withAlpha(Color.WHITE, alpha), paint)
+                    c.restore()
+                    button(ox + dec, oy + cy - 34f, 68f, 68f) { if (decline != null) invoke(decline, true) else setLayout(model.collapse()) }
+                }
                 if (accept != null) {
                     circleButton(c, acc, cy - 34f, 68f, GREEN, alpha)
                     (if (ct.video) Icons.video else Icons.phone).drawCentered(c, acc + 34f, cy, 30f, if (night) withAlpha(Color.BLACK, alpha) else withAlpha(Color.WHITE, alpha), paint)

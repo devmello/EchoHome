@@ -197,10 +197,11 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
         }
     }
 
-    private fun close(dismiss: Boolean) {
+    /** [byUser]: the explicit Dismiss button (the iPhone clears it too); an invoked action just consumes it. */
+    private fun close(dismiss: Boolean, byUser: Boolean = false) {
         val b = q.current
         if (dismiss && b != null) {
-            s.notifications.dismiss(b.id)
+            s.notifications.dismiss(b.id, byUser)
             BannerListenerService.cancel(b)
         }
         q.close(SystemClock.uptimeMillis())
@@ -394,7 +395,7 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
                             try { act?.onInvoke?.invoke() } catch (ex: Exception) { android.util.Log.w("EchoSystem", "banner action", ex) }
                             close(dismiss = true)
                         }
-                        dismissRect.contains(e.x, e.y) -> close(dismiss = true)
+                        dismissRect.contains(e.x, e.y) -> close(dismiss = true, byUser = true)
                         else -> close(dismiss = false)
                     }
                 }

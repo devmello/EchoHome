@@ -88,6 +88,12 @@ object Icons {
     val message by lazy { Icon("M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 20.5l1.7-5A8.5 8.5 0 1 1 21 11.5z") }
     val bell by lazy { Icon("M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0") }
     val washer by lazy { Icon("M5 3h14a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM12 9a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9zM7.5 6h.01M10.5 6h.01") }
+    // banner glyphs for iPhone apps (`:feature:phone` AppCatalog keys), same 24 grid and 2.2 stroke
+    val mail by lazy { Icon("M4.5 6h15A1.5 1.5 0 0 1 21 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 16.5v-9A1.5 1.5 0 0 1 4.5 6zM3.5 7l8.5 6 8.5-6") }
+    val music by lazy { Icon("M9 18V5.5l11-2V16M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z") }
+    val news by lazy { Icon("M4 5h12v14H6a2 2 0 0 1-2-2zM16 9h4v8a2 2 0 0 1-2 2h-2M7.5 9h5M7.5 12.5h5M7.5 16h3") }
+    val heart by lazy { Icon("M12 20s-7-4.4-9-8.6C1.6 8.3 3.6 5 7 5c2 0 3.3 1.1 5 3 1.7-1.9 3-3 5-3 3.4 0 5.4 3.3 4 6.4C19 15.6 12 20 12 20z") }
+    val location by lazy { Icon("M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21zM12 7a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z") }
     val calendar by lazy { Icon("M4 5h16a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM16 3v4M8 3v4M3 10h18") }
 
     /** Banner glyph key → icon ("message", "doorbell", "home", "calendar"; anything else: a bell). */
@@ -100,6 +106,13 @@ object Icons {
         "timer" -> timer
         "alarm" -> alarm
         "camera" -> cam
+        "mail", "email" -> mail
+        "video", "facetime" -> video
+        "music", "podcast" -> music
+        "news" -> news
+        "heart", "health" -> heart
+        "location", "map", "maps" -> location
+        "bell" -> bell
         else -> bell
     }
 }
