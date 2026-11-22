@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.RenderNode
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -193,9 +194,48 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
 
     private var lastBreakdown = ""
 
+    // --- one RenderNode per tile ---
+    // Each glass tile is two nodes (its glass, then what's on it), recorded only when their key
+    // changes: a new backdrop re-records the glass alone, a new value only that tile's content.
+    // Opening/closing replays them (the slide itself is the panel's translationY).
+    private class Rec(name: String) {
+        val node = RenderNode(name).apply { setClipToBounds(false); setPosition(0, 0, 960, 480) }
+        var key: Any? = Unit
+    }
+    private val recs = HashMap<String, Rec>()
+    private var records = 0
+    private val warmNode = RenderNode("cc-warm")
+
+    /** Draws [body] through the node [name], re-recording it only when [key] changed. */
+    private inline fun rec(c: Canvas, name: String, key: Any?, body: (Canvas) -> Unit) {
+        if (!c.isHardwareAccelerated) { body(c); return }
+        val r = recs.getOrPut(name) { Rec(name) }
+        if (r.key != key || !r.node.hasDisplayList()) {
+            r.key = key
+            val rc = r.node.beginRecording(960, 480)
+            try { body(rc) } finally { r.node.endRecording() }
+            records++
+        }
+        c.drawRenderNode(r.node)
+    }
+
+    /**
+     * Records the tiles while Control Center is closed (at the edge pull's touch-down and after
+     * attach), so the first frames of the reveal only replay nodes.
+     */
+    fun prewarm() {
+        if (shown) return
+        val t0 = System.nanoTime()
+        records = 0
+        val rc = warmNode.beginRecording(960, 480)
+        try { drawPanel(rc) } finally { warmNode.endRecording(); warmNode.discardDisplayList() }
+        if (ui.debugBuild) android.util.Log.d("EchoPerf", "cc prewarm ${(System.nanoTime() - t0) / 100_000 / 10f} ms records=$records")
+    }
+
     private fun drawPanel(canvas: Canvas) {
         val now = Tween.now()
         val running = brightFill.step(now) or volFill.step(now)
+        records = 0
         var t = System.nanoTime(); val sb = if (ui.debugBuild) StringBuilder() else null
         fun lap(n: String) { if (sb != null) { val x = System.nanoTime(); sb.append(n).append('=').append((x - t) / 100_000 / 10f).append(' '); t = x } }
         drawHeader(canvas); lap("header")
@@ -206,7 +246,7 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         drawWides(canvas); lap("wides")
         drawSquares(canvas); lap("squares")
         drawPeople(canvas); lap("people")
-        lastBreakdown = sb?.toString() ?: ""
+        lastBreakdown = (sb?.toString() ?: "") + "records=$records"
         // grabber: 40×5 at top 4 of a 100×22 button at the bottom centre
         paint.color = ink(withAlpha(Color.WHITE, 0.6f)); paint.style = Paint.Style.FILL; paint.shader = null
         r.set(460f, 462f, 500f, 467f); canvas.drawRoundRect(r, 3f, 3f, paint)
@@ -220,37 +260,56 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
     private fun drawHeader(c: Canvas) {
         val now = LocalDateTime.now()
         val hour = now.hour % 12; val clock = "${if (hour == 0) 12 else hour}:%02d".format(now.minute)
-        val date = now.format(DateTimeFormatter.ofPattern("EEEE, MMM d", Locale.US))
-        val base = tClock.baselineIn(16f)
-        val x = tClock.draw(c, clock, 28f, base, ink(Color.WHITE))
-        tDate.draw(c, date, x + 12f, base, ink(withAlpha(Color.WHITE, 0.75f)))
+        val date = now.format(DATE_FMT)
+        val n = night
+        rec(c, "clock", listOf(clock, date, n)) { rc ->
+            val base = tClock.baselineIn(16f)
+            val x = tClock.draw(rc, clock, 28f, base, ink(Color.WHITE))
+            tDate.draw(rc, date, x + 12f, base, ink(withAlpha(Color.WHITE, 0.75f)))
+        }
         // settings 44 round glass button (right 24, top 14)
         val sr = hits[Hit.SETTINGS]!!
         c.save(); pressScale(c, Hit.SETTINGS, sr)
-        roundBtn.draw(c, sr.left, sr.top, sr.right, sr.bottom, -1f)
-        Icons.gear.drawCentered(c, sr.centerX(), sr.centerY(), 22f, ink(Color.WHITE), paint)
+        rec(c, "settings", listOf(n, roundBtn.backdrop)) { rc ->
+            roundBtn.draw(rc, sr.left, sr.top, sr.right, sr.bottom, -1f)
+            Icons.gear.drawCentered(rc, sr.centerX(), sr.centerY(), 22f, ink(Color.WHITE), paint)
+        }
         c.restore()
-        if (state.micMuted) {
+        if (state.micMuted) rec(c, "chip", n) { rc ->
             val tw = tChip.width("Mic off")
             val w = 14f + 8f + 7f + tw + 14f
             val l = sr.left - 10f - w
-            chip.draw(c, l, 14f, l + w, 58f, 22f)
+            chip.draw(rc, l, 14f, l + w, 58f, 22f)
             paint.color = ink(Color.WHITE); paint.style = Paint.Style.FILL
-            c.drawCircle(l + 14f + 4f, 36f, 4f, paint)
-            tChip.draw(c, "Mic off", l + 14f + 8f + 7f, tChip.baselineCentered(36f), ink(Color.WHITE))
+            rc.drawCircle(l + 14f + 4f, 36f, 4f, paint)
+            tChip.draw(rc, "Mic off", l + 14f + 8f + 7f, tChip.baselineCentered(36f), ink(Color.WHITE))
         }
     }
 
+    /** A glass tile's node: its look only changes with Night mode, the backdrop and a fill tint. */
+    private fun glassTile(c: Canvas, name: String, l: Float, t: Float, r: Float, b: Float, radius: Float, fill: Int? = null) =
+        rec(c, name, listOf(night, tile.backdrop, fill)) { rc ->
+            tile.fillOverride = fill
+            tile.draw(rc, l, t, r, b, radius)
+            tile.fillOverride = null
+        }
+
+    /** [pressed] when it's one of [these] (sub-buttons that scale inside a tile's content). */
+    private fun pressedIn(vararg these: Hit): Hit? = pressed?.takeIf { dragSlider == null && it in these }
+
     private fun drawConnectivity(c: Canvas) {
-        tile.draw(c, 24f, 76f, 324f, 256f, 32f)
+        glassTile(c, "radios-glass", 24f, 76f, 324f, 256f, 32f)
         val wifiLabel = when { !radios.wifiOn -> "Wi-Fi"; radios.wifiName != null -> radios.wifiName!!; radios.wifiConnected -> "Connected"; else -> "Wi-Fi" }
         val airplayOn = s.settings.getBoolean(KEY_AIRPLAY, true)
         val spotifyOn = s.settings.getBoolean(KEY_SPOTIFY, false)
-        radio(c, Hit.WIFI, wifiLabel, Icons.wifi, radios.wifiOn, BLUE)
-        // a connected phone (`:feature:phone` publishes BLUETOOTH_CONNECTED) names the cell
-        radio(c, Hit.BT, btDevice ?: "Bluetooth", Icons.bluetooth, radios.bluetoothOn || btDevice != null, BLUE, enabled = radios.bluetoothAvailable || btDevice != null)
-        radio(c, Hit.AIRPLAY, "AirPlay", Icons.airplay, airplayOn, GREEN)
-        radio(c, Hit.SPOTIFY, "Spotify", Icons.spotify, spotifyOn, GREEN)
+        val pr = pressedIn(Hit.WIFI, Hit.BT, Hit.AIRPLAY, Hit.SPOTIFY)
+        rec(c, "radios", listOf(night, radios, btDevice, wifiLabel, airplayOn, spotifyOn, pr)) { rc ->
+            radio(rc, Hit.WIFI, wifiLabel, Icons.wifi, radios.wifiOn, BLUE)
+            // a connected phone (`:feature:phone` publishes BLUETOOTH_CONNECTED) names the cell
+            radio(rc, Hit.BT, btDevice ?: "Bluetooth", Icons.bluetooth, radios.bluetoothOn || btDevice != null, BLUE, enabled = radios.bluetoothAvailable || btDevice != null)
+            radio(rc, Hit.AIRPLAY, "AirPlay", Icons.airplay, airplayOn, GREEN)
+            radio(rc, Hit.SPOTIFY, "Spotify", Icons.spotify, spotifyOn, GREEN)
+        }
     }
 
     private fun radio(c: Canvas, h: Hit, label: String, icon: Icon, on: Boolean, color: Int, enabled: Boolean = true) {
@@ -271,7 +330,11 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
     }
 
     private fun drawMedia(c: Canvas) {
-        tile.draw(c, 24f, 272f, 324f, 456f, 32f)
+        glassTile(c, "media-glass", 24f, 272f, 324f, 456f, 32f)
+        rec(c, "media", listOf(night, media?.state, pressedIn(Hit.PREV, Hit.PLAY, Hit.NEXT))) { rc -> drawMediaContent(rc) }
+    }
+
+    private fun drawMediaContent(c: Canvas) {
         val m = media?.state
         val title = m?.title?.ifBlank { null } ?: if (ui.demo) "Low Tide Radio" else "Not playing"
         val sub = if (m != null) listOf(m.artist, when (m.source) {
@@ -299,13 +362,14 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
 
     private fun drawSlider(c: Canvas, h: Hit, x: Float, value: Float, icon: Icon) {
         val rr = hits[h]!!
-        tile.draw(c, x, 76f, x + 92f, 456f, 46f)
+        glassTile(c, "glass-$h", x, 76f, x + 92f, 456f, 46f)
+        // the fill and icon move with every drag frame: drawn live over the recorded glass (two draws)
         // white fill rising from the bottom (plain fill on glass), clipped to the capsule
         val v = value.coerceIn(0f, 1f)
         if (v > 0f) {
             c.save()
-            val clip = android.graphics.Path().apply { addRoundRect(rr, 46f, 46f, android.graphics.Path.Direction.CW) }
-            c.clipPath(clip)
+            sliderClip.rewind(); sliderClip.addRoundRect(rr, 46f, 46f, android.graphics.Path.Direction.CW)
+            c.clipPath(sliderClip)
             paint.style = Paint.Style.FILL; paint.shader = null
             paint.color = if (night) Night.COLOR else withAlpha(Color.WHITE, 0.94f)
             c.drawRect(x, 456f - 380f * v, x + 92f, 456f, paint)
@@ -315,9 +379,11 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         icon.drawCentered(c, x + 46f, 456f - 26f - 15f, 30f, iconInk, paint)
     }
 
+    private val sliderClip = android.graphics.Path()
+
     private fun drawWides(c: Canvas) {
         val dnd = state.doNotDisturb
-        val until = nextAlarm?.let { "On until " + Instant.ofEpochMilli(it.triggerAtMillis).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("h:mm a", Locale.US)) }
+        val until = nextAlarm?.let { "On until " + Instant.ofEpochMilli(it.triggerAtMillis).atZone(ZoneId.systemDefault()).format(UNTIL_FMT) }
         wide(c, Hit.DND, "Do Not Disturb", if (dnd) until ?: "On" else "Off", Icons.moon, dnd, 0xFF5E5CE6.toInt())
         val nm = state.nightMode
         wide(c, Hit.NIGHT, "Night mode", when (nm) { NightMode.AUTO -> "Auto · in the dark"; NightMode.ON -> "On"; NightMode.OFF -> "Off" }, Icons.night, nm != NightMode.OFF, Night.COLOR)
@@ -326,7 +392,12 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
     private fun wide(c: Canvas, h: Hit, name: String, st: String, icon: Icon, on: Boolean, color: Int) {
         val rr = hits[h]!!
         c.save(); pressScale(c, h, rr)
-        tile.draw(c, rr.left, rr.top, rr.right, rr.bottom, 30f)
+        glassTile(c, "glass-$h", rr.left, rr.top, rr.right, rr.bottom, 30f)
+        rec(c, "content-$h", listOf(night, name, st, on)) { rc -> wideContent(rc, rr, name, st, icon, on, color) }
+        c.restore()
+    }
+
+    private fun wideContent(c: Canvas, rr: RectF, name: String, st: String, icon: Icon, on: Boolean, color: Int) {
         val cy = rr.centerY()
         paint.style = Paint.Style.FILL; paint.shader = null
         paint.color = ink(if (on) color else withAlpha(Color.WHITE, 0.2f))
@@ -342,7 +413,6 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         for (l in nameLines) { tWideName.draw(c, l, tx, tWideName.baselineIn(top, lh1), ink(Color.WHITE)); top += lh1 }
         top += 2f
         for (l in stLines) { tWideState.draw(c, l, tx, tWideState.baselineIn(top, lh2), ink(withAlpha(Color.WHITE, 0.72f))); top += lh2 }
-        c.restore()
     }
 
     private fun wrapWords(t: SpecText, text: String, maxW: Float, maxLines: Int): List<String> {
@@ -375,9 +445,12 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
     private fun square(c: Canvas, h: Hit, name: String, st: String, icon: Icon, off: Boolean, color: Int, iconBgAlways: Int? = null) {
         val rr = hits[h]!!
         c.save(); pressScale(c, h, rr)
-        tile.fillOverride = if (off && !night) Color.argb(71, 255, 69, 58) else null
-        tile.draw(c, rr.left, rr.top, rr.right, rr.bottom, 30f)
-        tile.fillOverride = null
+        glassTile(c, "glass-$h", rr.left, rr.top, rr.right, rr.bottom, 30f, if (off && !night) Color.argb(71, 255, 69, 58) else null)
+        rec(c, "content-$h", listOf(night, name, st, icon, off)) { rc -> squareContent(rc, rr, name, st, icon, off, color, iconBgAlways) }
+        c.restore()
+    }
+
+    private fun squareContent(c: Canvas, rr: RectF, name: String, st: String, icon: Icon, off: Boolean, color: Int, iconBgAlways: Int?) {
         paint.style = Paint.Style.FILL; paint.shader = null
         paint.color = ink(iconBgAlways ?: if (off) color else withAlpha(Color.WHITE, 0.2f))
         val ccx = rr.left + 14f + 21f; val ccy = rr.top + 14f + 21f
@@ -388,12 +461,15 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         val tw = rr.width() - 28f
         tSqName.draw(c, tSqName.ellipsize(name, tw), rr.left + 14f, tSqName.baselineIn(top, lh1), ink(Color.WHITE))
         tSqState.draw(c, tSqState.ellipsize(st, tw), rr.left + 14f, tSqState.baselineIn(top + lh1, lh2), ink(withAlpha(Color.WHITE, 0.72f)))
-        c.restore()
     }
 
     private fun drawPeople(c: Canvas) {
+        glassTile(c, "people-glass", 556f, 334f, 936f, 456f, 30f)
+        rec(c, "people", listOf(night, active, profiles, autoByFace, pressedIn(Hit.AUTO))) { rc -> peopleContent(rc) }
+    }
+
+    private fun peopleContent(c: Canvas) {
         val l = 556f; val t = 334f
-        tile.draw(c, l, t, l + 380f, t + 122f, 30f)
         val name = if (active.id == Profile.SHARED_ID) "everyone’s stuff" else "${active.name}’s stuff"
         // top row: centred on the 30 px Auto button
         val rowCy = t + 14f + 15f
@@ -551,5 +627,8 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         val RED_DOT = 0xFFFF453A.toInt()
         /** cubic-bezier(0.3, 1.2, 0.5, 1) */
         val FILL_SPRING = bezier(0.3f, 1.2f, 0.5f, 1f)
+        // ofPattern parses the pattern each call (~2 ms on the Echo): build them once
+        private val DATE_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("EEEE, MMM d", Locale.US)
+        private val UNTIL_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
     }
 }

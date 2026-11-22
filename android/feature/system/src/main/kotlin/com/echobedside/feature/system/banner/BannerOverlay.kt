@@ -238,8 +238,22 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
         var running = false
         for (t in arrayOf(y, scale, opacity, backY, backOpacity, expandA)) running = t.step(now) or running
 
-        if (expandA.value > 0.004f) drawExpanded(canvas, expandedBanner ?: q.current, expandA.value)
-        else if (!running && expandedBg != null) {
+        if (expandA.value > 0.004f) {
+            val eb = expandedBanner ?: q.current
+            if (canvas.isHardwareAccelerated) {
+                // Recorded once (full opacity); the 0.4 s fade is the node's alpha (CSS opacity on the view).
+                val node = expandedNode
+                if (!node.hasDisplayList() || expNodeFor !== eb || expNodeNight != night || expNodeBg !== expandedBg || expNodeBd !== btnGlass.backdrop) {
+                    expNodeFor = eb; expNodeNight = night; expNodeBg = expandedBg; expNodeBd = btnGlass.backdrop
+                    node.setPosition(0, 0, 960, 480)
+                    val rc = node.beginRecording(960, 480)
+                    try { drawExpanded(rc, eb, 1f) } finally { node.endRecording() }
+                }
+                node.setAlpha(expandA.value)
+                canvas.drawRenderNode(node)
+            } else drawExpanded(canvas, eb, expandA.value)
+        } else if (!running && expandedBg != null) {
+            expandedNode.discardDisplayList(); expNodeFor = null; expNodeBg = null; expNodeBd = null
             expandedBg?.recycle(); expandedBg = null
             btnGlass.backdrop?.bitmap?.recycle(); btnGlass.backdrop = null; primaryGlass.backdrop = null
         }
@@ -292,6 +306,11 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
     private var nodeFor: Banner? = null
     private var nodeNight = false
     private var nodeBackdrop: Any? = null
+    private val expandedNode = android.graphics.RenderNode("banner-expanded")
+    private var expNodeFor: Banner? = null
+    private var expNodeNight = false
+    private var expNodeBg: Bitmap? = null
+    private var expNodeBd: Any? = null
 
     private fun drawCompact(c: Canvas, b: Banner, a: Float, windowY: Float) {
         val l = 170f; val t = 14f

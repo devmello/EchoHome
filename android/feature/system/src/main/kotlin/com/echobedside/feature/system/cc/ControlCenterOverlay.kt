@@ -59,9 +59,13 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         ui.backHandlers += back
+        // the first open would record every tile (~40 ms): do it once the screen has settled
+        postDelayed(warm, 4000)
     }
 
-    override fun onDetachedFromWindow() { ui.backHandlers -= back; super.onDetachedFromWindow() }
+    private val warm = Runnable { if (!open && isAttachedToWindow) panel.prewarm() }
+
+    override fun onDetachedFromWindow() { removeCallbacks(warm); ui.backHandlers -= back; super.onDetachedFromWindow() }
 
     // --- the edge pull (closed) ---
 
@@ -74,6 +78,8 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
                 tracking = true; dragging = false; startY = e.y
                 velocity = VelocityTracker.obtain().also { it.addMovement(e) }
                 takeSnapshot()
+                // record the tiles now, while nothing moves, so the reveal only replays them
+                panel.prewarm()
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -177,6 +183,7 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
         if (open) return
         open = true
         // copy the screen first, so the copy can't contain the panel itself
+        panel.prewarm()
         takeSnapshot {
             panel.alpha = 0f; bg.alpha = 0f; panel.translationY = -480f
             beginReveal()

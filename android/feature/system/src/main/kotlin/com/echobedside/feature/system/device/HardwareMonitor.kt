@@ -130,6 +130,8 @@ internal class HardwareMonitor(private val ui: SystemUi) {
     private fun applyGating(muted: Boolean, announce: Boolean) {
         val was = lastGating
         lastGating = muted
+        // the raw latch value, to confirm GATING_MUTED_VALUE against the red light
+        Log.i(TAG, "gating ${HardwareProbes.GATING_STATE}=${try { java.io.File(HardwareProbes.GATING_STATE).readText().trim() } catch (_: Exception) { "?" }} → micMutedHardware=$muted (was $was)")
         main.post {
             ui.services.system.update { it.copy(micMutedHardware = muted) }
             if (announce && was != null) {
