@@ -37,7 +37,7 @@ root_echo() {
     echo_connect >/dev/null 2>&1 || continue
     [ "$(adb_echo shell id -u 2>/dev/null | tr -d '\r')" = 0 ] && return 0
   done
-  echo "adb root failed" >&2; return 1
+  echo "adb root failed: on the Echo, turn on Settings > System > Developer options > Rooted debugging (LineageOS)" >&2; return 1
 }
 
 # Wait for the Echo to come back after a reboot (wireless debugging gets a new port).

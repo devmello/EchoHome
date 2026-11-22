@@ -304,7 +304,8 @@ Design rule: **the expensive step runs at most once per person arriving, never c
 
 - [x] Mic/camera button emits an event: yes, `KEY_POWER` on `gating`. Needs a key-layout remap (§5.3).
 - [x] Ambient light sensor: yes.
-- [x] Build type: **userdebug** (adb root, remount, SystemUI plugins possible). No `su`.
+- [x] Build type: **userdebug** (adb root, remount, SystemUI plugins possible). No `su`. **`adb root` needs LineageOS's "Rooted debugging" toggle** (Developer options); it's off, and it's a security setting for the user to switch on. Without it `adb root` only restarts adbd (the wireless port changes).
+- [x] System setup approved by the user (Nov 22, 2026): Camera app disabled (`pm disable-user com.android.camera2`) and lock screen disabled (`locksettings set-disabled true`): **done**. Priv-app install + mic key layout (`scripts/echo-backup.sh` then `scripts/echo-system-install.sh`): **waiting on Rooted debugging**.
 - [ ] Camera: detected by both camera APIs. Test a real preview/capture. Apply the camera patch only if capture fails.
 - [ ] Slide the camera shutter during `getevent -l` and record the `SW_CAMERA_LENS_COVER` values.
 - [ ] Does pressing the mic button currently put the screen to sleep? Does it cut the mics in hardware?
