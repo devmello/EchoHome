@@ -10,11 +10,10 @@ android {
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:design"))
+    // Claude (Anthropic Messages API, streaming SSE).
+    implementation(libs.okhttp)
     testImplementation(libs.junit)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.json)
-    // End-to-end tests drive the real HomeAssistantClient against a fake HA (MockWebServer).
-    testImplementation(project(":core:data"))
-    testImplementation(libs.okhttp)
     testImplementation(libs.okhttp.mockwebserver)
 }
