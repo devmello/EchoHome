@@ -15,8 +15,8 @@ import kotlinx.coroutines.flow.SharedFlow
  *
  * Slots start as in-memory defaults or fakes (core.model.fake) so each feature runs alone.
  * The feature that owns a contract replaces its slot in [EchoFeature.install]:
- *   system → systemControls · alarm → alarms, timers · home → weather, calendar ·
- *   camera → profiles (face switching) · `:app` → homeAssistant, settings, config.
+ *   system → systemControls · alarm → alarms, timers · home → weather (Open-Meteo), calendar (iCal URLs) ·
+ *   camera → profiles (face switching) · `:app` → homeAssistant (optional), settings, config.
  * Read slots lazily (in view factories / on attach), never cache them during install.
  */
 class EchoServices(
@@ -53,20 +53,29 @@ data class EchoConfig(
     val secrets: Secrets,
 )
 
-/** From android/secrets.properties via `:core:data`. [toString] never prints values. */
+/**
+ * From android/secrets.properties via `:core:data`. Everything is optional: the app must work
+ * with none of it (Home Assistant is NOT required — NOTES §4.1). [toString] never prints values.
+ */
 class Secrets(
+    /** Optional smart-home integration only (Home screen, doorbell). */
     val haUrl: String = "",
     val haToken: String = "",
     val immichUrl: String = "",
     val immichApiKey: String = "",
+    /** Claude for the voice assistant. */
     val anthropicApiKey: String = "",
+    /** Unused by default: stocks use a free keyless API. Kept for an optional keyed provider. */
     val stocksApiKey: String = "",
+    /** Calendar subscriptions: private iCal (.ics) / webcal URLs, e.g. Google's "secret address in iCal format". */
+    val calendarIcsUrls: List<String> = emptyList(),
 ) {
     val haConfigured get() = haUrl.isNotBlank() && haToken.isNotBlank()
     val immichConfigured get() = immichUrl.isNotBlank() && immichApiKey.isNotBlank()
-    val stocksConfigured get() = stocksApiKey.isNotBlank()
+    val anthropicConfigured get() = anthropicApiKey.isNotBlank()
+    val calendarConfigured get() = calendarIcsUrls.isNotEmpty()
     override fun toString() =
-        "Secrets(ha=${haConfigured}, immich=${immichConfigured}, anthropic=${anthropicApiKey.isNotBlank()}, stocks=${stocksConfigured})"
+        "Secrets(ha=$haConfigured, immich=$immichConfigured, anthropic=$anthropicConfigured, calendars=${calendarIcsUrls.size})"
 }
 
 /**

@@ -156,6 +156,16 @@ Fully round shapes (capsules and circles). Inner radii are concentric with outer
 
 **Alternative noted:** TECHO5 (github.com/HuskerMinion/techo5) is open firmware that replaces Android with Alpine Linux and a single Go daemon, turning the Show into a Home Assistant voice satellite with its own touch screen. It works on checkers, but we'd lose Android apps (AirPlay and so on). Not chosen.
 
+### 4.1 No Home Assistant dependency (user decision, Nov 22, 2026)
+
+The app must work on its own, with **no Home Assistant**. Every feature talks to free public services or runs on the device:
+- **Weather:** Open-Meteo (free, no key). Location comes from settings (`weather.lat`, `weather.lon`, `weather.place`).
+- **Calendar:** private iCal (.ics) URLs, e.g. Google Calendar's "secret address in iCal format" (`calendar.icsUrls` in secrets.properties).
+- **Stocks:** a free keyless quote API (delayed quotes).
+- **Commute:** a free routing service (no key). Traffic may not be available.
+- **Voice assistant:** runs on the device plus Claude (§6).
+- **Home Assistant** stays an *optional* integration, used only for smart-home controls (Home screen tiles, doorbell). Those parts hide themselves when it isn't configured. The client in `:core:data` stays for that.
+
 ---
 
 ## 5. Implementation notes for the app
@@ -202,7 +212,7 @@ There's no camera cutout in the screen, so the island is pure software: one live
   - Our launcher owns every screen, so the island is the top layer of our own UI.
   - For when another app is in front, run it in an overlay service (`SYSTEM_ALERT_WINDOW`).
   - Model each item as a `LiveActivity` {id, kind, priority, compact leading/trailing, expanded layout, actions, staleAfter} that services publish to an IslandManager.
-  - Sources: our timer, alarm and assistant services; the AirPlay receiver; Home Assistant events (doorbell); and other apps' media through `NotificationListenerService` + `MediaSessionManager.getActiveSessions()`.
+  - Sources: our timer, alarm and assistant services; the AirPlay receiver; Home Assistant events (doorbell, only if HA is configured); and other apps' media through `NotificationListenerService` + `MediaSessionManager.getActiveSessions()`.
   - For the glass look, use a pre-blurred snapshot of the region behind the island, re-taken only when the background changes. Never blur live.
 
 ### 5.5 Control Center, banners, system indicators
@@ -218,18 +228,18 @@ There's no camera cutout in the screen, so the island is pure software: one live
   - **Night mode:** auto / off.
   - **Profiles:** manual avatars + "Auto by face".
 - **Banners:**
-  - Sources: Android notifications via `NotificationListenerService`, Home Assistant events, and our own services.
+  - Sources: Android notifications via `NotificationListenerService`, our own services, and Home Assistant events if configured (optional).
   - Do Not Disturb hides banners except doorbell, alarm and calls (configurable).
   - Tap expands to the StandBy-size view. "Reply by voice" hands off to the assistant.
 - **Indicators:** see §5.3. The persistent red mic/camera badges sit top-right. The island uses the top-centre, so they don't collide.
 
 ### 5.6 Data sources for the glance screens
 
-- **Calendar:** Home Assistant calendar entities (CalDAV / Google) or direct CalDAV.
+- **Calendar:** private iCal (.ics) URLs fetched directly (Google "secret address in iCal format", iCloud public links), refreshed every ~15 min, cached on disk. CalDAV later if needed. No Home Assistant.
 - **Photos:** the Immich server API (API key; album assets). Download 960-px previews, cache them on disk, prefetch the next photo. The slow zoom is a scale transform only (cheap).
-- **Commute:** Home Assistant travel-time integration (e.g. Waze travel time) or a routing API. The "Leave in N min" countdown is computed from the next calendar event's location and travel time.
-- **Stocks:** pick a quote API (delayed quotes are fine). Everything shown now is demo data.
-- **Weather:** Home Assistant weather entity.
+- **Commute:** a free routing service with no key (drive time between the saved home location and the next calendar event's location; traffic only if a free source has it). The "Leave in N min" countdown is computed from the next calendar event's start time and the travel time.
+- **Stocks:** a free keyless quote API (delayed quotes are fine).
+- **Weather:** Open-Meteo (free, no key): current, hourly, daily high/low, sunrise/sunset, precipitation. Location from settings.
 
 ### 5.7 Clock face details worth keeping
 - Analog dial: for an angle θ, point = centre + d·t with d=(sin θ, −cos θ) and t = (|dx/a|^5 + |dy/b|^5)^(−1/5). Minute track a=446,b=222; numerals a=380,b=172. Ticks are rotated to the superellipse normal (see `Analog.dc.html → ring()`).
@@ -244,10 +254,10 @@ There's no camera cutout in the screen, so the island is pure software: one live
 |---|---|
 | **AirPlay receiver (audio only)** | **Scope: AirPlay audio only. No screen mirroring or video.** That keeps CPU and RAM low and skips all video decoding. We need: the device appearing as an AirPlay 2 speaker, audio playback, metadata (title/artist/album/artwork/progress) for Now Playing and the island, remote control (play/pause/skip/volume back to the sender), and ideally multi-room sync. Options, in order of preference: (1) **shairplay** Rust library (docs.rs/crate/shairplay): AirPlay 1 + AirPlay 2 audio with metadata and remote control; video is a separate opt-in feature, so build it audio-only and call it from Kotlin via JNI (verify it cross-compiles to armv7 Android). (2) **android-airplay-server** (github.com/jqssun/android-airplay-server, UxPlay-based): a ready-made Android app, but it's built around mirroring, so check whether its audio-only mode is light enough. (3) **shairport-sync** is audio-only and the most mature, but it's built for Linux, so on Android it would need a rooted chroot/Termux setup with mDNS and an audio bridge. Treat this as a last resort. Whichever we pick, run it as a foreground service that publishes a MediaSession, so Now Playing, the island and Control Center all read from one place. |
 | **Spotify** | Spotify Connect via the Spotify app or librespot (to verify on Android/armv7). |
-| **AI assistant (replaces Alexa)** | Use **Home Assistant's Assist pipeline**: wake word, then speech-to-text, then intent, then text-to-speech. Run **openWakeWord on the HA server** (it's too heavy for low-power devices) with the Echo streaming mic audio. Speech-to-text: Whisper or Speech-to-Phrase (local) or cloud. Conversation agent: **Claude** (Haiku for speed), with HA's "prefer handling commands locally" so simple commands skip the LLM. Text-to-speech: **Piper**. Expose home control through HA's LLM tools / MCP. |
-| **Quick start for voice** | **View Assist** (dinki.github.io/View-Assist) already supports Echo Show 5 Gen 1 as an HA voice satellite and display. Use it to prove the voice path, then replace its UI with ours. |
-| **Home control** | Home Assistant WebSocket/REST API (lights, climate, scenes, locks, covers, cameras). The Home screen maps to HA entities. |
-| **Weather / calendar** | From HA (weather and calendar entities) or direct APIs. |
+| **AI assistant (replaces Alexa)** | **No Home Assistant** (§4.1). Wake word, speech-to-text and text-to-speech run **on the device**. The suggested library is sherpa-onnx (Apache-2.0, armv7 Android builds), which covers keyword spotting, streaming STT and Piper voices for TTS; the Android `TextToSpeech` engine can be used if one is installed. The conversation agent is **Claude** through the Anthropic API (Haiku for speed), with tool use for local actions: timers, alarms, media, weather, Home controls if HA is configured. RAM is the risk: measure each model and keep the whole app under ~200 MB. Fall back to tap-to-talk if an always-on wake word costs too much. |
+| **Quick start for voice** | Tap-to-talk first (tap the droplet), then add the on-device wake word ("Hey Nova" is a placeholder) once its CPU/RAM is measured. |
+| **Home control** | **Optional.** Home Assistant WebSocket/REST API (lights, climate, scenes, locks, covers, cameras) when configured. Without it, the Home screen isn't shown. |
+| **Weather / calendar** | Open-Meteo and iCal URLs, directly (§4.1, §5.6). |
 | **Alarms** | Our own alarm engine (AlarmManager, exact alarms), with a sunrise ramp (screen brightness + warm colour ~30 min before), snooze of 9 min, and a Good-morning summary. |
 | **Photos** | Photo frame face from the Immich server. |
 | **Profiles** | Per-person content via face recognition on the server (see camera). |
@@ -258,7 +268,7 @@ There's no camera cutout in the screen, so the island is pure software: one live
   1. Presence: wake on motion, dim when the room is empty (low-res frame differencing).
   2. Distance-based layout: big clock when far, controls when near.
   3. Video calls / intercom between Echos (WebRTC).
-  4. Expose it as a Home Assistant camera (RTSP/MJPEG), respecting the mute button.
+  4. Optionally expose it as a Home Assistant camera (RTSP/MJPEG) if HA is used, respecting the mute button.
   5. Face recognition for profiles, on the server.
   6. QR scanning for setup and pairing.
   7. Simple motion-zone "gestures" (a wave to snooze). Full hand tracking is likely too heavy for this CPU.
@@ -275,7 +285,7 @@ Design rule: **the expensive step runs at most once per person arriving, never c
 5. **Recognition (once per arrival, ≤3 tries):** crop to 112×112 and compute an embedding with a MobileFaceNet-class **int8** TFLite model, then cosine-compare to the enrolled templates (3–5 per person).
    - Switch only after **2 consecutive matches** above threshold.
    - Don't re-run while the same person stays in view. Switch back to "shared" after N minutes with no presence.
-   - Option: send only the 112×112 crop to the Home Assistant server over the LAN for the embedding step if on-device is too slow. Nothing is stored either way.
+   - Option: send only the 112×112 crop to a server on the LAN for the embedding step if on-device is too slow. Nothing is stored either way.
 6. **Act:** show the "Hi Maya" sheet with "Not me". A rejection blocks that person for a few minutes. Apply that person's face, colour, alarm, calendar and music.
 - **Privacy:**
   - No frames or crops are saved. Only embeddings are stored, encrypted on the device.
@@ -310,8 +320,8 @@ Design rule: **the expensive step runs at most once per person arriving, never c
 2. **System layer:** volume keys handled in-app (no system panel), the `gating` power-key remap for the mic/camera button, the shutter switch, indicators (HUDs), Control Center, and the island framework (§5.4) with its LiveActivity model.
 3. **Audio AirPlay receiver** (§6) as a foreground service with a MediaSession, then Now Playing and the island music state.
 4. **Alarms + timers** (exact alarms, sunrise ramp, snooze), then the Alarm and Timers screens.
-5. **Home Assistant link:** Home screen, Weather, Calendar, Commute, banners from HA events (doorbell).
-6. **Voice assistant** via the HA Assist pipeline + Claude, then the Assistant screen.
+5. **Glances without Home Assistant:** Weather (Open-Meteo), Calendar (iCal), Commute (free routing), Stocks (free API). Optional HA Home screen + doorbell.
+6. **Voice assistant:** on-device wake word/STT/TTS + Claude API, then the Assistant screen.
 7. **Camera:** presence (wake/dim) first, then profile switching (§6.6) once the cost is measured.
 8. **Photos (Immich), Stocks,** then the remaining screens in §2.2.
 

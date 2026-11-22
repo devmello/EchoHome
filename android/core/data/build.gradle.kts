@@ -6,10 +6,9 @@ plugins {
 apply(from = rootProject.file("gradle/echo-library.gradle"))
 
 /**
- * Secrets come from android/secrets.properties (git-ignored), e.g.
- *   ha.url=http://homeassistant.local:8123
- *   ha.token=...
- * Missing keys become "" and the app falls back to demo data (debug builds) or empty states.
+ * Secrets come from android/secrets.properties (git-ignored; see secrets.properties.example).
+ * All optional. Missing keys become "" and the app falls back to demo data (debug builds) or
+ * empty states.
  */
 val secrets = Properties().apply {
     val f = rootProject.file("secrets.properties")
@@ -27,6 +26,7 @@ android {
         buildConfigField("String", "IMMICH_API_KEY", secret("immich.apiKey"))
         buildConfigField("String", "ANTHROPIC_API_KEY", secret("anthropic.apiKey"))
         buildConfigField("String", "STOCKS_API_KEY", secret("stocks.apiKey"))
+        buildConfigField("String", "CALENDAR_ICS_URLS", secret("calendar.icsUrls"))
     }
 }
 

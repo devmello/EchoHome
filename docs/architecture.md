@@ -9,14 +9,14 @@ Read this after `CLAUDE.md` and `NOTES.md`. The Android project is in `android/`
 | `:app` | lead | HOME activity (`MainActivity`), `EchoApp` (builds `EchoServices`, installs features), `ScreenPager`, navigator, debug `bench` screen |
 | `:core:model` | lead | Contracts: `EchoFeature`/`FeatureHost`, `EchoServices`, `LiveActivity`/`IslandManager`, `MediaHub`/`MediaState`/`MediaControls`, `SystemState`/`SystemControls`, `AlarmStore`/`TimerStore`, `Profile`/`ProfileManager`, `NotificationFeed`/`Banner`, `FaceSpec`/`FaceRegistry`, `WeatherProvider`/`CalendarProvider`, `HomeAssistant`, `SettingsStore`. Fakes in `core.model.fake`. `observeWhileAttached` helper. |
 | `:core:design` | lead | `Fonts` (Inter variable), `SpecText` (CSS text layout 1:1), tokens (`EchoColors`, `Night`, `Motion`, `GlassTokens`), `PreBlur` + `Backdrop`, `GlassPainter`, `GlassLayout`, `GlassSlider`, `GlassTracker` |
-| `:core:data` | lead | `HomeAssistantClient` (OkHttp WebSocket + REST), `PrefsSettingsStore`, `loadSecrets()` |
+| `:core:data` | lead | `PrefsSettingsStore`, `loadSecrets()`, and the optional `HomeAssistantClient` (OkHttp WebSocket + REST) |
 | `:feature:clock` | A | faces, edit mode, Night mode |
 | `:feature:system` | B | volume/mic/shutter, HUDs, Control Center, banners, island renderer |
 | `:feature:airplay` | C | AirPlay audio receiver |
 | `:feature:media` | D | Now Playing, media island states, other apps' sessions |
 | `:feature:alarm` | E | alarms, timers |
-| `:feature:home` | F | HA Home screen, weather/calendar providers, commute, stocks, doorbell |
-| `:feature:assistant` | G | voice assistant |
+| `:feature:home` | F | weather (Open-Meteo) + calendar (iCal) providers, commute, stocks (free keyless API), optional HA Home screen + doorbell |
+| `:feature:assistant` | G | voice assistant: on-device wake word/STT/TTS + Claude API |
 | `:feature:camera` | H | presence, profiles |
 | `:feature:photos` | I | Immich photo frame |
 
@@ -59,7 +59,8 @@ Screens and overlays may implement `EchoScreen` to get `onScreenShown(args)` / `
 
 - `docs/contract-requests.md` — need a `:core` change? Append a request (who, what, why, proposed signature) and keep going with a local stub in your module. The lead updates `:core` on main and tells you to rebase.
 - `docs/status/<agent>.md` — your status: done, left, device measurements, open questions, needs-from-user.
-- Secrets: `android/secrets.properties` (git-ignored; see `secrets.properties.example`). Read via `services.config.secrets`. Never log or commit them.
+- **No Home Assistant dependency** (NOTES §4.1): every feature must work without HA. `services.homeAssistant` is `NotConfiguredHomeAssistant` unless the user configures it; only optional smart-home parts may use it.
+- Secrets (all optional): `android/secrets.properties` (git-ignored; see `secrets.properties.example`): Anthropic key, calendar iCal URLs, Immich, optional HA. Read via `services.config.secrets`. Never log or commit them.
 - Tests: JVM unit tests in `src/test` (`./gradlew :feature:x:testDebugUnitTest`). Android's `org.json` is stubbed in unit tests; add `testImplementation(libs.json)` if you parse JSON.
 
 ## Build

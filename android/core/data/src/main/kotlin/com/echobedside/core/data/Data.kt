@@ -16,6 +16,7 @@ fun loadSecrets(): Secrets = Secrets(
     immichApiKey = BuildConfig.IMMICH_API_KEY,
     anthropicApiKey = BuildConfig.ANTHROPIC_API_KEY,
     stocksApiKey = BuildConfig.STOCKS_API_KEY,
+    calendarIcsUrls = BuildConfig.CALENDAR_ICS_URLS.split(',', ' ', '\n').map { it.trim() }.filter { it.isNotEmpty() },
 )
 
 /** [SettingsStore] on one SharedPreferences file. */
