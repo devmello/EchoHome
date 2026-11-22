@@ -117,22 +117,28 @@ internal class WebSettings(private val app: Context, private val services: EchoS
     private val mdnsHost: String? = null
 
     private fun advertise() {
+        val p = port // not inside apply{}: there `port` would be NsdServiceInfo's own (0)
+        if (p <= 0) return
         registration?.let { try { nsd.unregisterService(it) } catch (e: IllegalArgumentException) {} }
-        val name = DeviceName.get(services.settings)
-        val info = NsdServiceInfo().apply {
-            serviceName = name
-            serviceType = "_http._tcp"
-            setPort(port)
-            setAttribute("path", "/")
-        }
+        registration = null
+        val info = NsdServiceInfo()
+        info.serviceName = DeviceName.get(services.settings)
+        info.serviceType = "_http._tcp"
+        info.port = p
+        info.setAttribute("path", "/")
         val l = object : NsdManager.RegistrationListener {
-            override fun onServiceRegistered(i: NsdServiceInfo) { Log.i(TAG, "mDNS _http._tcp registered as ${i.serviceName} :$port") }
+            override fun onServiceRegistered(i: NsdServiceInfo) { Log.i(TAG, "mDNS _http._tcp registered as ${i.serviceName} :$p") }
             override fun onRegistrationFailed(i: NsdServiceInfo, code: Int) { Log.w(TAG, "mDNS registration failed: $code") }
             override fun onServiceUnregistered(i: NsdServiceInfo) {}
             override fun onUnregistrationFailed(i: NsdServiceInfo, code: Int) {}
         }
-        registration = l
-        nsd.registerService(info, NsdManager.PROTOCOL_DNS_SD, l)
+        try {
+            nsd.registerService(info, NsdManager.PROTOCOL_DNS_SD, l)
+            registration = l
+        } catch (e: RuntimeException) {
+            // The page still works by IP; never take the launcher down over mDNS.
+            Log.w(TAG, "mDNS registration refused: ${e.javaClass.simpleName}")
+        }
     }
 
     // --- live sync to open pages ---

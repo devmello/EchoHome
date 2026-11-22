@@ -97,6 +97,9 @@ internal class CodeOverlayView(context: Context, private val services: EchoServi
         val s = 0.92f + 0.08f * appear
         canvas.save()
         canvas.scale(s, s, cx, height / 2f)
+        // An almost opaque base: the pair sheet (QR, URL) behind would otherwise show through
+        // the glass and fight the code for attention.
+        Draw.roundRect(canvas, L, T, R, B, 40f, withAlpha(if (night) Color.BLACK else BASE, 0.9f * a))
         glass.alpha = a
         glass.draw(canvas, L, T, R, B, 40f)
 
@@ -139,6 +142,7 @@ internal class CodeOverlayView(context: Context, private val services: EchoServi
 
     private companion object {
         const val L = 200f
+        val BASE = Color.rgb(22, 22, 26)
         const val T = 84f
         const val R = 760f
         const val B = 396f
