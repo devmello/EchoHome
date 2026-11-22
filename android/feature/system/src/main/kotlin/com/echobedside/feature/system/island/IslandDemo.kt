@@ -16,7 +16,8 @@ import com.echobedside.core.model.MediaSourceKind
  * Debug-only demo activities for the island (the producers are other agents' features), matching
  * Island.dc.html's scenes. Launch with `--es island <scene>` or
  * `adb shell am broadcast -a com.echobedside.system.DEBUG --es island <scene>`:
- * story · timer · music+timer · assistant · doorbell · call · nowplaying · off.
+ * story · timer · music+timer · assistant · doorbell · call · iphonecall · bluetooth · nowplaying · off.
+ * (`iphonecall`/`bluetooth` stand in for `:feature:phone`: an ANCS call has Decline/Silence only.)
  */
 internal class IslandDemo(private val island: IslandManager) {
     private val handler = Handler(Looper.getMainLooper())
@@ -50,6 +51,8 @@ internal class IslandDemo(private val island: IslandManager) {
             "assistant" -> listOf(assistant(), timer())
             "doorbell" -> listOf(music(), doorbell())
             "call" -> listOf(music(), call())
+            "iphonecall" -> listOf(bluetooth(), iphoneCall())
+            "bluetooth", "bt" -> listOf(bluetooth())
             "nowplaying", "music" -> listOf(music(), timer())
             else -> emptyList()
         }
@@ -79,6 +82,15 @@ internal class IslandDemo(private val island: IslandManager) {
             IslandAction("decline", "Decline", IslandAction.Style.DESTRUCTIVE) { island.end("${PREFIX}call") },
             IslandAction("accept", "Accept", IslandAction.Style.ACCEPT) { island.end("${PREFIX}call") },
         ))
+
+    private fun iphoneCall() = LiveActivity("${PREFIX}iphonecall", ActivityKind.CALL, LiveContent.Call("Maya", "Answer on iPhone", false),
+        actions = listOf(
+            IslandAction("decline", "Decline", IslandAction.Style.DESTRUCTIVE) { island.end("${PREFIX}iphonecall") },
+            IslandAction("silence", "Silence") { Log.i("EchoSystem", "demo: silence") },
+        ))
+
+    private fun bluetooth() = LiveActivity("${PREFIX}bluetooth", ActivityKind.BLUETOOTH_CONNECTED,
+        LiveContent.BluetoothConnected("Maya’s iPhone", audio = true, notifications = true))
 
     companion object { const val PREFIX = "demo:" }
 }

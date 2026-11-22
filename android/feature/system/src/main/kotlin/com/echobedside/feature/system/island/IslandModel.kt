@@ -85,15 +85,16 @@ class IslandModel {
     }
 
     companion object {
-        /** Assistant and "AirPlay connected" have no expanded form in the design. */
-        fun canExpand(a: LiveActivity) = a.kind != ActivityKind.ASSISTANT && a.kind != ActivityKind.AIRPLAY_CONNECTED
+        /** Assistant and "AirPlay / Bluetooth connected" have no expanded form in the design. */
+        fun canExpand(a: LiveActivity) = a.kind != ActivityKind.ASSISTANT && a.kind != ActivityKind.AIRPLAY_CONNECTED &&
+            a.kind != ActivityKind.BLUETOOTH_CONNECTED
 
         /** Compact, 44 tall: timer 230, music 250, assistant 220 (design); the rest sized like them. */
         fun compactBox(kind: ActivityKind) = when (kind) {
             ActivityKind.TIMER -> IslandBox(230f, 44f, 22f)
             ActivityKind.MUSIC -> IslandBox(250f, 44f, 22f)
             ActivityKind.ASSISTANT -> IslandBox(220f, 44f, 22f)
-            ActivityKind.AIRPLAY_CONNECTED -> IslandBox(250f, 44f, 22f)
+            ActivityKind.AIRPLAY_CONNECTED, ActivityKind.BLUETOOTH_CONNECTED -> IslandBox(250f, 44f, 22f)
             ActivityKind.TIMER_DONE, ActivityKind.ALARM_RINGING -> IslandBox(230f, 44f, 22f)
             ActivityKind.DOORBELL, ActivityKind.CALL -> IslandBox(250f, 44f, 22f)
         }
@@ -104,7 +105,7 @@ class IslandModel {
             ActivityKind.TIMER, ActivityKind.TIMER_DONE, ActivityKind.ALARM_RINGING -> IslandBox(460f, 120f, 44f)
             ActivityKind.DOORBELL -> IslandBox(640f, 196f, 50f)
             ActivityKind.CALL -> IslandBox(580f, 116f, 58f)
-            ActivityKind.ASSISTANT, ActivityKind.AIRPLAY_CONNECTED -> compactBox(kind)
+            ActivityKind.ASSISTANT, ActivityKind.AIRPLAY_CONNECTED, ActivityKind.BLUETOOTH_CONNECTED -> compactBox(kind)
         }
     }
 }

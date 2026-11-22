@@ -351,6 +351,11 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(
                 Icons.airplay.drawCentered(c, 23f, cy, 22f, ink(Color.WHITE, alpha), paint)
                 tLabel.drawRight(c, tLabel.ellipsize(ct.deviceName, bw - 60f), right, tLabel.baselineCentered(cy), ink(withAlpha(Color.WHITE, 0.85f), alpha))
             }
+            is LiveContent.BluetoothConnected -> {
+                // like "AirPlay connected": glyph + device name
+                Icons.bluetooth.drawCentered(c, 23f, cy, 22f, ink(BLUE, alpha), paint)
+                tLabel.drawRight(c, tLabel.ellipsize(ct.deviceName, bw - 60f), right, tLabel.baselineCentered(cy), ink(withAlpha(Color.WHITE, 0.85f), alpha))
+            }
         }
         return false to false
     }
@@ -372,6 +377,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(
             is LiveContent.Doorbell -> Icons.bell.drawCentered(c, cx, cy, 22f, ink(ORANGE, alpha), paint)
             is LiveContent.Call -> Icons.phone.drawCentered(c, cx, cy, 22f, ink(GREEN, alpha), paint)
             is LiveContent.AirPlayConnected -> Icons.airplay.drawCentered(c, cx, cy, 22f, ink(Color.WHITE, alpha), paint)
+            is LiveContent.BluetoothConnected -> Icons.bluetooth.drawCentered(c, cx, cy, 22f, ink(BLUE, alpha), paint)
         }
         return false
     }
@@ -392,6 +398,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(
                 val srcLabel = media?.state?.takeIf { it.title == ct.title }?.sourceLabel?.takeIf { it.isNotBlank() }
                 val sub = ct.artist + " · " + when (ct.source) {
                     com.echobedside.core.model.MediaSourceKind.AIRPLAY -> if (srcLabel != null) "AirPlay from $srcLabel" else "AirPlay from iPhone"
+                    com.echobedside.core.model.MediaSourceKind.BLUETOOTH -> if (srcLabel != null) "Bluetooth from $srcLabel" else "Bluetooth"
                     com.echobedside.core.model.MediaSourceKind.SPOTIFY -> "Spotify"
                     com.echobedside.core.model.MediaSourceKind.OTHER_APP -> srcLabel ?: "Playing"
                 }
@@ -475,24 +482,27 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(
                 paint.color = if (night) withAlpha(Night.COLOR, alpha) else withAlpha(Color.WHITE, alpha)
                 c.drawCircle(24f + 38f, cy, 38f, paint); paint.shader = null
                 tInitial.drawCentered(c, ct.caller.take(1).uppercase(), 24f + 38f, tInitial.baselineCentered(cy), if (night) withAlpha(Color.BLACK, alpha) else withAlpha(Color.WHITE, alpha))
+                val decline = a.actions.firstOrNull { it.style == IslandAction.Style.DESTRUCTIVE }
+                val accept = a.actions.firstOrNull { it.style == IslandAction.Style.ACCEPT }
+                // From the iPhone (ANCS) calls are answered on the phone: no Accept → Decline only, at the end
                 val textL = 24f + 76f + 16f
-                val acc = bw - 24f - 68f; val dec = acc - 16f - 68f
+                val acc = bw - 24f - 68f; val dec = if (accept != null) acc - 16f - 68f else acc
                 val lh1 = tCallSub.normalLineHeight; val lh2 = tCallName.normalLineHeight
                 val top = cy - (lh1 + lh2) / 2f
-                tCallSub.draw(c, ct.subtitle, textL, tCallSub.baselineIn(top, lh1), ink(withAlpha(Color.WHITE, 0.65f), alpha))
+                tCallSub.draw(c, tCallSub.ellipsize(ct.subtitle, dec - 16f - textL), textL, tCallSub.baselineIn(top, lh1), ink(withAlpha(Color.WHITE, 0.65f), alpha))
                 tCallName.draw(c, tCallName.ellipsize(ct.caller, dec - 16f - textL), textL, tCallName.baselineIn(top + lh1, lh2), ink(Color.WHITE, alpha))
                 circleButton(c, dec, cy - 34f, 68f, 0xFFFF453A.toInt(), alpha)
                 c.save(); c.rotate(135f, dec + 34f, cy)
                 Icons.phone.drawCentered(c, dec + 34f, cy, 30f, if (night) withAlpha(Color.BLACK, alpha) else withAlpha(Color.WHITE, alpha), paint)
                 c.restore()
-                circleButton(c, acc, cy - 34f, 68f, GREEN, alpha)
-                (if (ct.video) Icons.video else Icons.phone).drawCentered(c, acc + 34f, cy, 30f, if (night) withAlpha(Color.BLACK, alpha) else withAlpha(Color.WHITE, alpha), paint)
-                val decline = a.actions.firstOrNull { it.style == IslandAction.Style.DESTRUCTIVE }
-                val accept = a.actions.firstOrNull { it.style == IslandAction.Style.ACCEPT }
                 button(ox + dec, oy + cy - 34f, 68f, 68f) { if (decline != null) invoke(decline, true) else setLayout(model.collapse()) }
-                button(ox + acc, oy + cy - 34f, 68f, 68f) { if (accept != null) invoke(accept, true) else setLayout(model.collapse()) }
+                if (accept != null) {
+                    circleButton(c, acc, cy - 34f, 68f, GREEN, alpha)
+                    (if (ct.video) Icons.video else Icons.phone).drawCentered(c, acc + 34f, cy, 30f, if (night) withAlpha(Color.BLACK, alpha) else withAlpha(Color.WHITE, alpha), paint)
+                    button(ox + acc, oy + cy - 34f, 68f, 68f) { invoke(accept, true) }
+                }
             }
-            is LiveContent.Assistant, is LiveContent.AirPlayConnected -> {}
+            is LiveContent.Assistant, is LiveContent.AirPlayConnected, is LiveContent.BluetoothConnected -> {}
         }
         return false
     }
@@ -605,6 +615,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(
         const val AMBIENT_FRAME_MS = 33L
         val ORANGE = 0xFFFF9F0A.toInt()
         val GREEN = 0xFF30D158.toInt()
+        val BLUE = 0xFF0A84FF.toInt()
         val PEACH = 0xFFF4B98A.toInt()
         val ASSIST_BARS = intArrayOf(0xFF64D2FF.toInt(), 0xFFBF5AF2.toInt(), 0xFFFF375F.toInt(), 0xFFFF9F0A.toInt(), 0xFF64D2FF.toInt(), 0xFFBF5AF2.toInt())
     }

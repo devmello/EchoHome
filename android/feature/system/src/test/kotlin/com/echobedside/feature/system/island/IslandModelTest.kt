@@ -100,4 +100,15 @@ class IslandModelTest {
         val stale = timer.copy(staleAfterElapsed = 100)
         assertEquals(IslandMode.HIDDEN, IslandModel().update(visible(stale, now = 200)).mode)
     }
+
+    @Test fun bluetoothConnectedIsCompactOnlyAndBelowTimers() {
+        val bt = LiveActivity("bt", ActivityKind.BLUETOOTH_CONNECTED, LiveContent.BluetoothConnected("Maya’s iPhone", audio = true, notifications = true))
+        val m = IslandModel()
+        val l = m.update(visible(bt, timer))
+        assertEquals("timer:1", l.main?.id)
+        assertEquals("bt", l.bead?.id)
+        assertEquals(IslandBox(250f, 44f, 22f), IslandModel.compactBox(ActivityKind.BLUETOOTH_CONNECTED))
+        assertEquals(IslandMode.COMPACT, m.tapBead().mode)
+        assertEquals(IslandMode.COMPACT, IslandModel().apply { update(visible(bt)) }.tapMain().mode)
+    }
 }

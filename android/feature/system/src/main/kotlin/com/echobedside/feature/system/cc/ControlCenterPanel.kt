@@ -56,6 +56,7 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
 
     private var state = SystemState()
     private var radios = RadioState()
+    private var btDevice: String? = null
     private var media: MediaSession? = null
     private var timers: List<EchoTimer> = emptyList()
     private var profiles: List<Profile> = emptyList()
@@ -120,6 +121,10 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         observeWhileAttached(s.profiles.active) { active = it; if (shown) invalidate() }
         observeWhileAttached(s.profiles.autoByFace) { autoByFace = it; if (shown) invalidate() }
         observeWhileAttached(s.alarms.next) { nextAlarm = it; if (shown) invalidate() }
+        observeWhileAttached(s.island.activities) { list ->
+            val d = list.firstNotNullOfOrNull { (it.content as? com.echobedside.core.model.LiveContent.BluetoothConnected)?.deviceName }
+            if (d != btDevice) { btDevice = d; if (shown) invalidate() }
+        }
         buildHits()
         contentDescription = "Control Center"
     }
@@ -230,7 +235,8 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         val airplayOn = s.settings.getBoolean(KEY_AIRPLAY, true)
         val spotifyOn = s.settings.getBoolean(KEY_SPOTIFY, false)
         radio(c, Hit.WIFI, wifiLabel, Icons.wifi, radios.wifiOn, BLUE)
-        radio(c, Hit.BT, "Bluetooth", Icons.bluetooth, radios.bluetoothOn, BLUE, enabled = radios.bluetoothAvailable)
+        // a connected phone (`:feature:phone` publishes BLUETOOTH_CONNECTED) names the cell
+        radio(c, Hit.BT, btDevice ?: "Bluetooth", Icons.bluetooth, radios.bluetoothOn || btDevice != null, BLUE, enabled = radios.bluetoothAvailable || btDevice != null)
         radio(c, Hit.AIRPLAY, "AirPlay", Icons.airplay, airplayOn, GREEN)
         radio(c, Hit.SPOTIFY, "Spotify", Icons.spotify, spotifyOn, GREEN)
     }
@@ -258,6 +264,7 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         val title = m?.title?.ifBlank { null } ?: if (ui.demo) "Low Tide Radio" else "Not playing"
         val sub = if (m != null) listOf(m.artist, when (m.source) {
             com.echobedside.core.model.MediaSourceKind.AIRPLAY -> "AirPlay"
+            com.echobedside.core.model.MediaSourceKind.BLUETOOTH -> m.sourceLabel.ifBlank { "Bluetooth" }
             com.echobedside.core.model.MediaSourceKind.SPOTIFY -> "Spotify"
             com.echobedside.core.model.MediaSourceKind.OTHER_APP -> m.sourceLabel.ifBlank { "App" }
         }).filter { it.isNotBlank() }.joinToString(" · ") else if (ui.demo) "Marisol Vey · AirPlay" else "AirPlay · Spotify"

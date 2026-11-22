@@ -238,7 +238,7 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
         Icons.glyph(b.glyph).drawCentered(c, r.centerX(), tcy, 28f, if (night) withAlpha(Color.BLACK, a) else withAlpha(Color.WHITE, a), paint)
         val tx = tl + 54f + 14f
         val right = l + 620f - 22f
-        val when_ = ago(b.postedAtMillis)
+        val when_ = b.sourceDevice?.let { tNow.ellipsize(it, 170f) + " · " + ago(b.postedAtMillis) } ?: ago(b.postedAtMillis)
         val nowW = tNow.width(when_)
         val lh1 = tTitle.normalLineHeight; val lh2 = tBody.normalLineHeight
         val top = tcy - (lh1 + 2f + lh2) / 2f
@@ -262,7 +262,8 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
         paint.color = ink(b.appColor or 0xFF000000.toInt(), a)
         c.drawRoundRect(r, 18f, 18f, paint)
         Icons.glyph(b.glyph).drawCentered(c, 96f, 88f, 34f, if (night) withAlpha(Color.BLACK, a) else withAlpha(Color.WHITE, a), paint)
-        tApp.draw(c, "${b.appName} · ${ago(b.postedAtMillis)}", 64f + 64f + 14f, tApp.baselineCentered(88f), ink(withAlpha(Color.WHITE, 0.8f), a))
+        val appLine = listOfNotNull(b.appName, b.sourceDevice, ago(b.postedAtMillis)).joinToString(" · ")
+        tApp.draw(c, tApp.ellipsize(appLine, 960f - 64f - 142f), 64f + 64f + 14f, tApp.baselineCentered(88f), ink(withAlpha(Color.WHITE, 0.8f), a))
         // title 52/800 lh 1.05, margin-top 26; body 30/500 lh 1.25 .88, margin-top 10
         val maxW = 960f - 128f
         var top = 120f + 26f
@@ -362,6 +363,12 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
                 primaryAction = IslandAction("remind", "Remind me in 15 min", IslandAction.Style.PRIMARY) {}),
             Banner("demo:cal", "Calendar", 0xFFFF453A.toInt(), "calendar", "Team sync in 10 minutes", "9:30 AM · Video call · 4 people",
                 primaryAction = IslandAction("join", "Join call", IslandAction.Style.PRIMARY) {}),
+            // 4: as `:feature:phone` posts an iPhone (ANCS) notification: iOS bundle id, no Android icon, no reply
+            Banner("demo:ios", "Messages", 0xFF30D158.toInt(), "message", "Maya", "Running 10 min late, save me a seat!",
+                sourcePackage = "com.apple.MobileSMS", sourceDevice = "Maya’s iPhone"),
+            // 5: an iPhone call banner (answered on the phone)
+            Banner("demo:ioscall", "Phone", 0xFF30D158.toInt(), "call", "Maya", "Incoming call · Answer on iPhone", critical = true,
+                sourcePackage = "com.apple.mobilephone", sourceDevice = "Maya’s iPhone"),
         )
         val b = list[i.coerceIn(0, list.size - 1)].copy(postedAtMillis = System.currentTimeMillis())
         s.notifications.post(b)
