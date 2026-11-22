@@ -6,13 +6,9 @@ import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
-import android.media.MediaDataSource
-import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.os.Process
 import android.util.Log
-import kotlin.coroutines.resume
-import kotlinx.coroutines.suspendCancellableCoroutine
 
 /** The mic, abstracted so the engine runs in JVM tests. */
 interface MicSource {
@@ -20,12 +16,6 @@ interface MicSource {
     /** Starts capture; [onChunk] runs on the audio thread for every 40 ms chunk with its dBFS. */
     fun start(onChunk: (chunk: ByteArray, db: Float) -> Unit): Boolean
     /** Stops capture and releases the mic. Returns once no more chunks will be delivered. */
-    fun stop()
-}
-
-/** Speaks a TTS answer; suspends until it finished (or was stopped). */
-interface SpeechPlayer {
-    suspend fun play(audio: ByteArray, mimeType: String?)
     fun stop()
 }
 
@@ -39,7 +29,7 @@ const val TAG = "EchoAssistant"
 
 /**
  * AudioRecord at 16 kHz mono 16-bit (the Echo's "Built-In Mic" is natively 16 kHz, so no
- * resampling anywhere). VOICE_RECOGNITION gives unprocessed audio, which is what the server's wake
+ * resampling anywhere). VOICE_RECOGNITION gives unprocessed audio, which is what the on-device wake
  * word and STT models want; falls back to MIC.
  */
 class AndroidMic : MicSource {
@@ -105,54 +95,5 @@ class AudioFocusDucker(context: Context) : Ducker {
             .setUsage(AudioAttributes.USAGE_ASSISTANT)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
             .build()
-    }
-}
-
-/** MediaPlayer over the fetched bytes (mp3/wav/flac from Piper), no temp files. */
-class MediaSpeechPlayer : SpeechPlayer {
-    private var player: MediaPlayer? = null
-    private var done: (() -> Unit)? = null
-
-    override suspend fun play(audio: ByteArray, mimeType: String?) = suspendCancellableCoroutine { cont ->
-        stop()
-        val mp = MediaPlayer()
-        player = mp
-        val finish = {
-            if (player === mp) { player = null; done = null }
-            mp.release()
-            if (cont.isActive) cont.resume(Unit)
-        }
-        done = finish
-        try {
-            mp.setAudioAttributes(AudioFocusDucker.SPEECH_ATTRIBUTES)
-            mp.setDataSource(BytesDataSource(audio))
-            mp.setOnPreparedListener { it.start() }
-            mp.setOnCompletionListener { finish() }
-            mp.setOnErrorListener { _, what, extra -> Log.w(TAG, "TTS playback error $what/$extra"); finish(); true }
-            mp.prepareAsync()
-        } catch (e: Exception) {
-            Log.w(TAG, "TTS playback failed", e)
-            finish()
-        }
-        cont.invokeOnCancellation { android.os.Handler(android.os.Looper.getMainLooper()).post { stop() } }
-    }
-
-    override fun stop() {
-        val mp = player ?: return
-        try { mp.stop() } catch (_: Exception) {}
-        done?.invoke() ?: mp.release()
-        player = null
-        done = null
-    }
-
-    private class BytesDataSource(private val data: ByteArray) : MediaDataSource() {
-        override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
-            if (position >= data.size) return -1
-            val n = minOf(size.toLong(), data.size - position).toInt()
-            System.arraycopy(data, position.toInt(), buffer, offset, n)
-            return n
-        }
-        override fun getSize(): Long = data.size.toLong()
-        override fun close() {}
     }
 }

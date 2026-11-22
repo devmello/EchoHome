@@ -66,8 +66,8 @@ class AudioChunker(private val chunkBytes: Int = Pcm.CHUNK_BYTES, private val em
 }
 
 /**
- * On-device voice activity gate for the wake-word stage (HA recommends it: audio streams only when
- * someone speaks, saving network and server CPU). Keeps [prerollMs] of audio so the start of
+ * Voice activity gate in front of the wake-word spotter: the keyword model only decodes around
+ * speech, so a quiet room costs almost no CPU. Keeps [prerollMs] of audio so the start of
  * "Hey Nova" isn't lost, opens when a chunk is [thresholdDb] above the tracked noise floor, and
  * stays open [holdMs] after the last loud chunk. When disabled ([enabled] = false) everything passes.
  *

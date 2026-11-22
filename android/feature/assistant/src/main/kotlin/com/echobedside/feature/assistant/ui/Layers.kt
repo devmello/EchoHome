@@ -96,6 +96,23 @@ class BackgroundLayer(context: Context) : View(context) {
          * `filter: blur(22px) saturate(1.2)`), once, when the assistant opens.
          */
         fun blurSnapshot(small: Bitmap): Bitmap = PreBlur.blur(small, blurPx = 22f, downscale = 1, saturate = 1.2f, brightness = 1f)
+
+        /** What the layer shows, drawn into [out] (any size): the source for the glass backdrop. */
+        fun compose(snapshot: Bitmap?, out: Bitmap): Bitmap {
+            val c = Canvas(out)
+            val w = out.width.toFloat(); val h = out.height.toFloat()
+            c.drawColor(BG)
+            snapshot?.let {
+                val sw = w * 1.06f; val sh = h * 1.06f
+                c.drawBitmap(it, null, RectF((w - sw) / 2, (h - sh) / 2, (w + sw) / 2, (h + sh) / 2),
+                    Paint(Paint.FILTER_BITMAP_FLAG).apply { alpha = (0.32f * 255).toInt() })
+            }
+            c.drawRect(0f, 0f, w, h, Paint().apply {
+                shader = LinearGradient(0f, 0f, 0f, h, intArrayOf(rgba(4, 5, 10, 0.55f), rgba(4, 5, 10, 0.25f), rgba(4, 5, 10, 0.1f)),
+                    floatArrayOf(0f, 0.6f, 1f), Shader.TileMode.CLAMP)
+            })
+            return out
+        }
     }
 }
 

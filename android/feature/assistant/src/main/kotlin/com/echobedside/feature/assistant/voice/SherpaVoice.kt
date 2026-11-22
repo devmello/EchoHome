@@ -1,0 +1,272 @@
+package com.echobedside.feature.assistant.voice
+
+import android.media.AudioFormat
+import android.media.AudioTrack
+import android.os.SystemClock
+import android.util.Log
+import com.echobedside.feature.assistant.audio.AudioFocusDucker
+import com.echobedside.feature.assistant.audio.TAG
+import com.k2fsa.sherpa.onnx.EndpointConfig
+import com.k2fsa.sherpa.onnx.EndpointRule
+import com.k2fsa.sherpa.onnx.FeatureConfig
+import com.k2fsa.sherpa.onnx.KeywordSpotter
+import com.k2fsa.sherpa.onnx.KeywordSpotterConfig
+import com.k2fsa.sherpa.onnx.OfflineTts
+import com.k2fsa.sherpa.onnx.OfflineTtsConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
+import com.k2fsa.sherpa.onnx.OnlineModelConfig
+import com.k2fsa.sherpa.onnx.OnlineRecognizer
+import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
+import com.k2fsa.sherpa.onnx.OnlineTransducerModelConfig
+import java.io.File
+import kotlin.math.sqrt
+
+/**
+ * sherpa-onnx (Apache-2.0) on the CPU, models loaded from files pushed to the app's external
+ * files dir (`/sdcard/Android/data/com.echobedside/files/voice/{kws,stt,tts}`, see
+ * docs/assistant-setup.md):
+ *  - wake word: zipformer keyword spotter (gigaspeech 3.3M, int8), keywords.txt
+ *  - STT: streaming zipformer en 20M (int8), with sherpa's endpoint rules
+ *  - TTS: Piper VITS en_US amy low (int8, 16 kHz), played with a streaming AudioTrack
+ * Without the native libs or the files, every `*Available` is false and the assistant says so.
+ * Never logs transcripts.
+ */
+class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceStack {
+    private val kwsDir = File(root, "kws")
+    private val sttDir = File(root, "stt")
+    private val ttsDir = File(root, "tts")
+
+    private val native: Boolean by lazy {
+        try { System.loadLibrary("sherpa-onnx-jni"); true }
+        catch (e: Throwable) { Log.w(TAG, "sherpa-onnx native libs missing (run tools/fetch-voice.sh): ${e.javaClass.simpleName}"); false }
+    }
+
+    private fun has(dir: File, vararg names: String) = names.all { File(dir, it).isFile }
+
+    override val sttAvailable get() = native && has(sttDir, STT_ENC, STT_DEC, STT_JOIN, "tokens.txt")
+    override val wakeAvailable get() = native && has(kwsDir, KWS_ENC, KWS_DEC, KWS_JOIN, "tokens.txt", "keywords.txt")
+    override val ttsAvailable get() = native && has(ttsDir, TTS_MODEL, "tokens.txt")
+
+    override fun describe() = "native=$native stt=$sttAvailable wake=$wakeAvailable tts=$ttsAvailable root=$root"
+
+    // ---------------- STT ----------------
+
+    private var recognizer: OnlineRecognizer? = null
+
+    private fun recognizer(): OnlineRecognizer = recognizer ?: run {
+        val t0 = SystemClock.elapsedRealtime()
+        OnlineRecognizer(null, OnlineRecognizerConfig(
+            featConfig = FeatureConfig(16000, 80),
+            modelConfig = OnlineModelConfig(
+                transducer = OnlineTransducerModelConfig(f(sttDir, STT_ENC), f(sttDir, STT_DEC), f(sttDir, STT_JOIN)),
+                tokens = f(sttDir, "tokens.txt"),
+                numThreads = threads,
+                modelType = "zipformer",
+            ),
+            endpointConfig = EndpointConfig(
+                rule1 = EndpointRule(false, 4.0f, 0f),   // nothing said: give up after 4 s of silence
+                rule2 = EndpointRule(true, 0.9f, 0f),    // after speech: 0.9 s of silence ends it
+                rule3 = EndpointRule(false, 0f, 15f),    // at most 15 s
+            ),
+            enableEndpoint = true,
+            decodingMethod = "greedy_search",
+        )).also {
+            recognizer = it
+            Log.i(TAG, "STT loaded in ${SystemClock.elapsedRealtime() - t0} ms")
+        }
+    }
+
+    override fun openStt(): SttSession {
+        val r = recognizer()
+        val stream = r.createStream()
+        return object : SttSession {
+            private val buf = FloatArray(640)
+            private var text = ""
+            override var endpoint = false; private set
+
+            override fun accept(pcm: ByteArray): String {
+                val samples = if (pcm.size / 2 == buf.size) pcm16ToFloat(pcm, buf) else pcm16ToFloat(pcm)
+                stream.acceptWaveform(samples, 16000)
+                while (r.isReady(stream)) r.decode(stream)
+                text = r.getResult(stream).text
+                if (r.isEndpoint(stream)) endpoint = true
+                return text
+            }
+
+            override fun finish(): String {
+                stream.inputFinished()
+                while (r.isReady(stream)) r.decode(stream)
+                text = r.getResult(stream).text
+                return text
+            }
+
+            override fun close() = stream.release()
+        }
+    }
+
+    override fun releaseStt() {
+        recognizer?.release()
+        recognizer = null
+    }
+
+    // ---------------- wake word ----------------
+
+    override fun openWakeWord(): WakeWordSession {
+        val t0 = SystemClock.elapsedRealtime()
+        val kws = KeywordSpotter(null, KeywordSpotterConfig(
+            featConfig = FeatureConfig(16000, 80),
+            modelConfig = OnlineModelConfig(
+                transducer = OnlineTransducerModelConfig(f(kwsDir, KWS_ENC), f(kwsDir, KWS_DEC), f(kwsDir, KWS_JOIN)),
+                tokens = f(kwsDir, "tokens.txt"),
+                numThreads = 1,
+                modelType = "zipformer2",
+            ),
+            maxActivePaths = 4,
+            keywordsFile = f(kwsDir, "keywords.txt"),
+            keywordsScore = 2.0f,
+            keywordsThreshold = 0.25f,
+            numTrailingBlanks = 1,
+        ))
+        Log.i(TAG, "wake word loaded in ${SystemClock.elapsedRealtime() - t0} ms")
+        val stream = kws.createStream()
+        return object : WakeWordSession {
+            private val buf = FloatArray(640)
+            override fun accept(pcm: ByteArray): String? {
+                val samples = if (pcm.size / 2 == buf.size) pcm16ToFloat(pcm, buf) else pcm16ToFloat(pcm)
+                stream.acceptWaveform(samples, 16000)
+                var hit: String? = null
+                while (kws.isReady(stream)) {
+                    kws.decode(stream)
+                    val k = kws.getResult(stream).keyword
+                    if (k.isNotEmpty()) { hit = k; kws.reset(stream) }
+                }
+                return hit
+            }
+            override fun reset() = kws.reset(stream)
+            override fun close() { stream.release(); kws.release() }
+        }
+    }
+
+    // ---------------- TTS ----------------
+
+    private val speaker by lazy { PiperSpeaker() }
+    override fun speaker(): Speaker = speaker
+
+    private inner class PiperSpeaker : Speaker {
+        private var tts: OfflineTts? = null
+        @Volatile private var stopped = false
+        @Volatile private var track: AudioTrack? = null
+        /** RMS per 20 ms window of what's been written, indexed by playback position. */
+        private var rms = FloatArray(0)
+        @Volatile private var rmsCount = 0
+        @Volatile private var window = 320
+
+        override fun prepare() {
+            if (tts != null) return
+            val t0 = SystemClock.elapsedRealtime()
+            tts = OfflineTts(null, OfflineTtsConfig(
+                model = OfflineTtsModelConfig(
+                    vits = OfflineTtsVitsModelConfig(
+                        model = f(ttsDir, TTS_MODEL), tokens = f(ttsDir, "tokens.txt"),
+                        dataDir = f(ttsDir, "espeak-ng-data"),
+                    ),
+                    numThreads = threads,
+                ),
+                maxNumSentences = 1,
+            ))
+            Log.i(TAG, "TTS loaded in ${SystemClock.elapsedRealtime() - t0} ms")
+        }
+
+        override fun speak(text: String): Boolean {
+            stopped = false
+            try { prepare() } catch (e: Throwable) { Log.w(TAG, "TTS load failed: ${e.javaClass.simpleName}"); return false }
+            val engine = tts ?: return false
+            val rate = engine.sampleRate()
+            window = rate / 50
+            rms = FloatArray(64); rmsCount = 0
+            val min = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_FLOAT)
+            val t = AudioTrack.Builder()
+                .setAudioAttributes(AudioFocusDucker.SPEECH_ATTRIBUTES)
+                .setAudioFormat(AudioFormat.Builder().setSampleRate(rate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_FLOAT).build())
+                .setBufferSizeInBytes(maxOf(min, rate * 4 / 2)) // ~0.5 s
+                .setTransferMode(AudioTrack.MODE_STREAM)
+                .build()
+            track = t
+            var written = 0L
+            try {
+                t.play()
+                engine.generateWithCallback(text, 0, SPEED) { samples ->
+                    if (stopped) return@generateWithCallback 0
+                    addRms(samples)
+                    var off = 0
+                    while (off < samples.size && !stopped) {
+                        val n = t.write(samples, off, samples.size - off, AudioTrack.WRITE_BLOCKING)
+                        if (n <= 0) break
+                        off += n
+                    }
+                    written += samples.size
+                    if (stopped) 0 else 1
+                }
+                // Let the buffer drain.
+                val deadline = SystemClock.elapsedRealtime() + 2000 + written * 1000 / rate
+                while (!stopped && t.playbackHeadPosition < written && SystemClock.elapsedRealtime() < deadline) Thread.sleep(20)
+                return true
+            } catch (e: Throwable) {
+                Log.w(TAG, "TTS failed: ${e.javaClass.simpleName}")
+                return false
+            } finally {
+                track = null
+                try { t.stop() } catch (_: Exception) {}
+                t.release()
+            }
+        }
+
+        private fun addRms(s: FloatArray) {
+            val w = window
+            var i = 0
+            while (i < s.size) {
+                val end = minOf(s.size, i + w)
+                var sum = 0.0
+                for (j in i until end) sum += s[j] * s[j]
+                if (rmsCount == rms.size) rms = rms.copyOf(rms.size * 2)
+                rms[rmsCount] = sqrt(sum / (end - i)).toFloat()
+                rmsCount++
+                i = end
+            }
+        }
+
+        override val level: Float get() {
+            val t = track ?: return 0f
+            val idx = (t.playbackHeadPosition / window)
+            val r = rms
+            if (idx < 0 || idx >= rmsCount || idx >= r.size) return 0f
+            // Speech RMS is ~0.02..0.25 → 0..1.
+            return ((r[idx] - 0.01f) / 0.2f).coerceIn(0f, 1f)
+        }
+
+        override fun stop() {
+            stopped = true
+            try { track?.pause(); track?.flush() } catch (_: Exception) {}
+        }
+
+        override fun release() {
+            tts?.free()
+            tts = null
+        }
+    }
+
+    private fun f(dir: File, name: String) = File(dir, name).absolutePath
+
+    companion object {
+        const val STT_ENC = "encoder-epoch-99-avg-1.int8.onnx"
+        const val STT_DEC = "decoder-epoch-99-avg-1.onnx"
+        const val STT_JOIN = "joiner-epoch-99-avg-1.int8.onnx"
+        const val KWS_ENC = "encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
+        const val KWS_DEC = "decoder-epoch-12-avg-2-chunk-16-left-64.onnx"
+        const val KWS_JOIN = "joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
+        const val TTS_MODEL = "en_US-amy-low.onnx"
+        const val SPEED = 1.0f
+    }
+}

@@ -3,9 +3,6 @@ package com.echobedside.feature.assistant
 import android.util.Log
 import com.echobedside.core.model.ActivityKind
 import com.echobedside.core.model.AssistantPhase
-import com.echobedside.core.model.HaConnection
-import com.echobedside.core.model.HaException
-import com.echobedside.core.model.HomeAssistant
 import com.echobedside.core.model.IslandAction
 import com.echobedside.core.model.IslandManager
 import com.echobedside.core.model.LiveActivity
@@ -16,23 +13,26 @@ import com.echobedside.core.model.SystemStateStore
 import com.echobedside.feature.assistant.audio.Ducker
 import com.echobedside.feature.assistant.audio.MicSource
 import com.echobedside.feature.assistant.audio.Pcm
-import com.echobedside.feature.assistant.audio.SpeechPlayer
 import com.echobedside.feature.assistant.audio.TAG
 import com.echobedside.feature.assistant.audio.VoiceGate
+import com.echobedside.feature.assistant.llm.AssistantAgent
+import com.echobedside.feature.assistant.llm.ClaudeException
 import com.echobedside.feature.assistant.pipeline.AssistReducer
 import com.echobedside.feature.assistant.pipeline.AssistState
 import com.echobedside.feature.assistant.pipeline.DemoScripts
 import com.echobedside.feature.assistant.pipeline.Phase
-import com.echobedside.feature.assistant.pipeline.PipelineEvent
-import com.echobedside.feature.assistant.pipeline.PipelineEvents
+import com.echobedside.feature.assistant.pipeline.Transcript
+import com.echobedside.feature.assistant.pipeline.TurnEvent
+import com.echobedside.feature.assistant.voice.VoiceStack
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,83 +40,79 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onStart
-import kotlinx.coroutines.flow.transformWhile
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 /** Why the assistant can or can't listen right now (status pill + idle subtitle). */
-enum class Availability { READY, NOT_CONFIGURED, CONNECTING, NO_PERMISSION, MUTED, DISABLED }
+enum class Availability { READY, NO_KEY, NO_MODELS, NO_PERMISSION, MUTED, DISABLED }
 
 /**
- * The voice assistant: Home Assistant's Assist pipeline (wake word → STT → conversation agent → TTS).
+ * The voice assistant (NOTES §6): the wake word, speech-to-text and text-to-speech run on the
+ * device (sherpa-onnx, [voice]); Claude answers through the Messages API with the display's tools
+ * ([agent]). Home Assistant isn't needed.
  *
- * - While HA is connected, the mic isn't muted (software or hardware), the RECORD_AUDIO permission
- *   is granted and the assistant is enabled, it keeps one `assist_pipeline/run` from the
- *   `wake_word` stage open and streams 16 kHz mono PCM to it (openWakeWord runs on the server).
- *   A local voice gate only lets audio through around speech (HA's recommendation).
- * - When the wake word is heard: opens the assistant screen (setting), publishes the ASSISTANT
- *   LiveActivity, ducks other audio, streams the command until HA's VAD ends it, shows the
- *   transcript, the agent's tool steps and the answer, plays the TTS, and starts the next
- *   wake-word run once it's done (or a follow-up run when the agent asks a question).
- * - On mute (software or hardware) the mic stops at once and the run is ended.
+ * - Tap the droplet (or a chip) to talk. The STT model loads per turn (the mic buffers meanwhile)
+ *   and is freed after the final transcript; TTS loads while Claude works and is freed after speaking.
+ * - The wake word ("Hey Nova", placeholder) is optional (`assistant.wakeWord`, off by default):
+ *   while on, the mic and the small keyword spotter run whenever the assistant is idle, behind a
+ *   voice gate so the model only decodes around speech.
+ * - On mute (software or hardware) the mic stops at once and any turn ends.
+ * - Demo mode (demo data on, no Anthropic key): the droplet and chips play the design's scripts.
  *
- * Everything runs on [scope] (main thread); audio chunks are sent from the mic thread.
+ * State lives on [scope] (main thread); audio is decoded on [voiceThread]. Never logs transcripts
+ * or the key.
  */
 class AssistantEngine(
     private val scope: CoroutineScope,
-    private val ha: () -> HomeAssistant,
     private val system: SystemStateStore,
     private val island: IslandManager,
     private val settings: SettingsStore,
     private val navigator: () -> Navigator?,
     private val mic: MicSource,
-    private val player: SpeechPlayer,
     private val ducker: Ducker,
+    private val voice: VoiceStack,
+    private val agent: () -> AssistantAgent?,
     private val hasMicPermission: () -> Boolean,
+    private val voiceThread: CoroutineDispatcher,
     val demoData: Boolean,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val _state = MutableStateFlow(AssistState())
     val state: StateFlow<AssistState> = _state.asStateFlow()
-    private val _availability = MutableStateFlow(Availability.CONNECTING)
+    private val _availability = MutableStateFlow(Availability.NO_KEY)
     val availability: StateFlow<Availability> = _availability.asStateFlow()
     private val _speaking = MutableStateFlow(false)
     val speaking: StateFlow<Boolean> = _speaking.asStateFlow()
-    /** Last error of the background wake-word run (e.g. no wake word engine), null once it works. */
-    private val _wakeError = MutableStateFlow<String?>(null)
-    val wakeError: StateFlow<String?> = _wakeError.asStateFlow()
+    private val _wakeActive = MutableStateFlow(false)
+    /** True while the wake word is being listened for. */
+    val wakeActive: StateFlow<Boolean> = _wakeActive.asStateFlow()
 
     /** Smoothed 0..1 mic level (mic thread writes, UI reads every frame). */
     @Volatile var micLevel = 0f; private set
-    /** Bytes of audio sent to HA since start (for perf notes). */
-    @Volatile var bytesSent = 0L; private set
-
-    val haConnected: Boolean get() = ha().connection.value == HaConnection.CONNECTED
 
     private val permission = MutableStateFlow(false)
     private val enabled = MutableStateFlow(true)
-    private val signals = Channel<Unit>(Channel.CONFLATED)
-    private var nextRequest: Request? = null
-    private var currentRun: Job? = null
+    private val wakeSetting = MutableStateFlow(false)
+    private val turnActive = MutableStateFlow(false)
+
+    @Volatile private var audio: Channel<ByteArray>? = null
+    private var turnJob: Job? = null
+    private var wakeJob: Job? = null
     private var demoJob: Job? = null
     private var dismissJob: Job? = null
     private var islandTicker: Job? = null
     private var started = false
     private var micTest = false
     private var openedByWake = false
+    /** Bumped for every turn; events from an older turn are dropped. */
+    @Volatile private var token = 0
+    private var history: List<JSONObject> = emptyList()
     private var lastAnswerAt = 0L
-    private var pipelineId: String? = null
-
-    private sealed class Request(val startStage: String, val needsMic: Boolean) {
-        data object Wake : Request("wake_word", true)
-        data object PushToTalk : Request("stt", true)
-        data object FollowUp : Request("stt", true)
-        data class Text(val text: String) : Request("intent", false)
-    }
 
     // ---------------- lifecycle ----------------
 
@@ -125,84 +121,93 @@ class AssistantEngine(
         started = true
         refreshPermission()
         enabled.value = settings.getBoolean(KEY_ENABLED, true)
+        wakeSetting.value = settings.getBoolean(KEY_WAKE, false)
+        Log.i(TAG, "voice: ${voice.describe()}")
         scope.launch {
             combine(
-                ha().connection,
                 system.state.map { it.micMuted }.distinctUntilChanged(),
-                permission,
-                enabled,
-            ) { conn, muted, perm, on ->
-                when {
-                    conn == HaConnection.NOT_CONFIGURED -> Availability.NOT_CONFIGURED
-                    muted -> Availability.MUTED
-                    !on -> Availability.DISABLED
-                    !perm -> Availability.NO_PERMISSION
-                    conn != HaConnection.CONNECTED -> Availability.CONNECTING
-                    else -> Availability.READY
+                permission, enabled,
+            ) { muted, perm, on -> availabilityFor(muted, perm, on) }
+                .distinctUntilChanged()
+                .collect { a ->
+                    _availability.value = a
+                    Log.i(TAG, "availability $a")
+                    if (a != Availability.READY) onNotReady(muted = a == Availability.MUTED)
+                    syncWake()
                 }
-            }.distinctUntilChanged().collect { a ->
-                val was = _availability.value
-                _availability.value = a
-                Log.i(TAG, "availability $a")
-                if (a != Availability.READY) onNotReady(muted = a == Availability.MUTED)
-                if (a == Availability.READY && was != Availability.READY) signals.trySend(Unit)
-            }
         }
         scope.launch {
-            settings.changes.onStart { emit(KEY_ENABLED) }.collect { key ->
-                if (key == KEY_ENABLED) enabled.value = settings.getBoolean(KEY_ENABLED, true)
-                if (key == KEY_PIPELINE) pipelineId = null
+            settings.changes.collect { key ->
+                when (key) {
+                    KEY_ENABLED -> enabled.value = settings.getBoolean(KEY_ENABLED, true)
+                    KEY_WAKE -> { wakeSetting.value = settings.getBoolean(KEY_WAKE, false); syncWake() }
+                }
             }
         }
         scope.launch { combine(_state, _speaking) { s, sp -> s to sp }.collect { (s, sp) -> updateIsland(s, sp) } }
-        scope.launch { loop() }
+    }
+
+    private fun availabilityFor(muted: Boolean, perm: Boolean, on: Boolean) = when {
+        muted -> Availability.MUTED
+        !on -> Availability.DISABLED
+        agent() == null -> Availability.NO_KEY
+        !perm -> Availability.NO_PERMISSION
+        !voice.sttAvailable -> Availability.NO_MODELS
+        else -> Availability.READY
     }
 
     fun refreshPermission() { permission.value = hasMicPermission() }
 
-    /** Mic off / HA gone / disabled: stop capturing right away, end any audio run. */
+    /** Mic off / disabled: stop capturing right away and end a turn that's listening. */
     private fun onNotReady(muted: Boolean) {
-        if (!micTest || muted) stopMic()
-        val s = _state.value
-        val audioRun = s.wakeListening || s.phase == Phase.LISTENING
-        if (audioRun && demoJob?.isActive != true) {
-            currentRun?.cancel()
-            nextRequest = null
-            if (s.phase == Phase.LISTENING) _state.value = AssistState()
-        }
+        if (!micTest || muted) { if (micTest) micTest = false; stopMic() }
+        if (muted && (turnActive.value || _speaking.value)) stopAll()
+        else if (_state.value.phase == Phase.LISTENING && demoJob?.isActive != true) stopAll()
     }
+
+    fun useDemo() = demoData && agent() == null
 
     // ---------------- requests from the UI ----------------
 
-    /** The droplet: start listening (push-to-talk, no wake word needed), or stop whatever is going on. */
+    /** The droplet: start listening, or stop whatever is going on. */
     fun tapDroplet() {
         val s = _state.value
-        val busy = s.phase == Phase.LISTENING || s.phase == Phase.WORKING || _speaking.value || demoJob?.isActive == true
+        val busy = turnActive.value || _speaking.value || demoJob?.isActive == true
         when {
             busy -> stopAll()
             useDemo() -> runDemo(DemoScripts.byId(s.demo).id)
-            _availability.value == Availability.READY -> request(Request.PushToTalk)
-            else -> {} // the screen explains why (mic off / not connected / permission)
+            _availability.value == Availability.READY -> startTurn(null, byWake = false)
+            else -> { // the screen explains why; show it as a short error too
+                val code = when (_availability.value) {
+                    Availability.NO_KEY -> "no-key"
+                    Availability.NO_MODELS -> "no-models"
+                    Availability.MUTED -> "muted"
+                    else -> "mic"
+                }
+                if (_availability.value != Availability.MUTED) _state.value = AssistReducer.reduce(AssistState(), TurnEvent.Failed(code))
+            }
         }
     }
 
-    /** A suggestion chip: a scripted demo without HA, else the chip's text sent to the agent. */
-    fun ask(demoId: String) {
-        if (useDemo()) { runDemo(demoId); return }
-        request(Request.Text(DemoScripts.byId(demoId).query))
+    /** A suggestion chip: a scripted demo in demo mode, else the chip's question sent to Claude. */
+    fun ask(text: String, demoId: String? = null) {
+        if (useDemo()) { runDemo(demoId ?: "a"); return }
+        if (agent() == null) return
+        startTurn(text, byWake = false)
     }
 
-    fun useDemo() = demoData && !haConnected
-
     fun stopAll() {
+        token++
         demoJob?.cancel(); demoJob = null
-        player.stop()
-        nextRequest = null
-        currentRun?.cancel()
+        turnJob?.cancel(); turnJob = null
+        voice.speaker().stop()
+        audio = null
+        if (!micTest && wakeJob == null) stopMic()
         _speaking.value = false
+        turnActive.value = false
         ducker.release()
         _state.value = AssistState()
-        signals.trySend(Unit)
+        syncWake()
     }
 
     /** The user touched the screen: don't auto-dismiss it. */
@@ -212,160 +217,144 @@ class AssistantEngine(
     fun screenHidden() {
         if (micTest) setMicTest(false)
         val s = _state.value
-        if ((s.phase == Phase.ANSWER || s.phase == Phase.ERROR) && !_speaking.value) {
-            _state.value = AssistState(wakeListening = s.wakeListening, handlerId = s.handlerId, conversationId = s.conversationId)
-        }
+        if ((s.phase == Phase.ANSWER || s.phase == Phase.ERROR) && !_speaking.value && !turnActive.value) _state.value = AssistState()
         openedByWake = false
     }
 
-    private fun request(r: Request) {
-        demoJob?.cancel(); demoJob = null
-        player.stop()
-        nextRequest = r
-        currentRun?.cancel()
-        signals.trySend(Unit)
+    // ---------------- a turn ----------------
+
+    private fun emit(t: Int, e: TurnEvent) {
+        if (t != token) return
+        _state.update { AssistReducer.reduce(it, e) }
     }
 
-    // ---------------- the run loop ----------------
-
-    private suspend fun loop() {
-        var failures = 0
-        while (true) {
-            val req = nextRequest.also { nextRequest = null }
-                ?: if (_availability.value == Availability.READY && demoJob?.isActive != true && !micTest) Request.Wake else null
-            if (req == null) { signals.receive(); continue }
-            if (req.needsMic && _availability.value != Availability.READY) continue
-            if (!req.needsMic && !haConnected) {
-                _state.value = AssistState(phase = Phase.ERROR, answer = AssistReducer.friendly("not_connected"), errorCode = "not_connected")
-                continue
-            }
-            val startedAt = now()
-            val job = scope.launch { runPipeline(req) }
-            currentRun = job
-            job.join()
-            currentRun = null
-            // A wake-word run that fails at once (e.g. no wake word engine in the pipeline) mustn't spin.
-            val quick = now() - startedAt < 2000 && nextRequest == null
-            val s = _state.value
-            failures = if (quick && (s.errorCode != null || req is Request.Wake)) failures + 1 else 0
-            if (failures > 0) {
-                val wait = (2000L shl (failures - 1).coerceAtMost(5)).coerceAtMost(60_000L)
-                Log.w(TAG, "pipeline run ended quickly (${s.errorCode}); retrying in ${wait}ms")
-                withTimeoutOrNull(wait) { signals.receive() }
+    /** [text] null = listen first; otherwise send [text] straight to Claude. */
+    private fun startTurn(text: String?, byWake: Boolean, echoOnly: Boolean = false) {
+        demoJob?.cancel(); demoJob = null
+        turnJob?.cancel()
+        dismissJob?.cancel()
+        voice.speaker().stop()
+        stopWake(keepMic = text == null)
+        val t = ++token
+        if (!byWake) openedByWake = false
+        turnActive.value = true
+        turnJob = scope.launch {
+            try {
+                runTurn(t, text, echoOnly)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "turn failed: ${e.javaClass.simpleName}")
+                emit(t, TurnEvent.Failed("unknown"))
+            } finally {
+                if (t == token) {
+                    audio = null
+                    turnActive.value = false
+                    _speaking.value = false
+                    ducker.release()
+                    if (!micTest) stopMic()
+                    syncWake()
+                }
             }
         }
     }
 
-    private suspend fun runPipeline(req: Request) {
-        val client = ha()
-        // Context carries over to a follow-up, or to a tap/chip shortly after an answer (not to wake runs).
-        val follow = req is Request.FollowUp || (req !is Request.Wake && now() - lastAnswerAt < CONVERSATION_KEEP_MS)
-        val prevConversation = _state.value.conversationId.takeIf { follow && it?.startsWith("demo-") == false }
-        _state.value = AssistReducer.begin(_state.value, req.startStage, (req as? Request.Text)?.text)
-            .let { if (prevConversation == null) it.copy(conversationId = null) else it }
-        if (req !is Request.Wake) { ducker.duck(); if (req !is Request.FollowUp) openedByWake = false }
-
-        if (req.needsMic && !startMic()) {
-            _state.value = AssistState(phase = Phase.ERROR, answer = "The microphone isn’t available.", errorCode = "mic")
+    private suspend fun runTurn(t: Int, text: String?, echoOnly: Boolean) {
+        ducker.duck()
+        val query: String
+        if (text == null) {
+            emit(t, TurnEvent.ListenStart)
+            val ch = Channel<ByteArray>(LISTEN_BUFFER_CHUNKS, BufferOverflow.DROP_OLDEST)
+            audio = ch
+            if (!startMic()) { emit(t, TurnEvent.Failed("mic")); return }
+            val heard = withContext(voiceThread) { listen(t, ch) }
+            audio = null
+            if (!micTest) stopMic()
+            query = Transcript.pretty(heard)
+            if (query.isBlank()) { emit(t, TurnEvent.Failed("no-speech")); finishTurn(t, speakText = null); return }
+        } else {
+            _state.value = AssistState(phase = Phase.LISTENING)
+            query = text
+        }
+        emit(t, TurnEvent.Heard(query))
+        if (echoOnly) {
+            // On-device round trip (STT → TTS) without Claude, for measuring the voice models.
+            if (voice.ttsAvailable) withContext(voiceThread) { voice.speaker().prepare() }
+            emit(t, TurnEvent.Answer(query))
+            finishTurn(t, query, voice.ttsAvailable)
             return
         }
-        router.reset(gated = req is Request.Wake && settings.getBoolean(KEY_VAD, true))
-
-        val msg = JSONObject()
-            .put("type", "assist_pipeline/run")
-            .put("start_stage", req.startStage)
-            .put("end_stage", "tts")
-            .put("timeout", RUN_TIMEOUT_S)
-        when (req) {
-            is Request.Text -> msg.put("input", JSONObject().put("text", req.text))
-            Request.Wake -> msg.put("input", JSONObject()
-                .put("sample_rate", Pcm.SAMPLE_RATE)
-                .put("timeout", settings.getInt(KEY_WAKE_TIMEOUT, WAKE_TIMEOUT_S))
-                .put("noise_suppression_level", settings.getInt(KEY_NOISE, 0))
-                .put("auto_gain_dbfs", settings.getInt(KEY_GAIN, 0)))
-            else -> msg.put("input", JSONObject().put("sample_rate", Pcm.SAMPLE_RATE))
+        val a = agent() ?: run { emit(t, TurnEvent.Failed("no-key")); return }
+        // Load the voice while Claude works.
+        val tts = if (voice.ttsAvailable && settings.getBoolean(KEY_SPEAK, true))
+            scope.async(voiceThread) { runCatching { voice.speaker().prepare() }.isSuccess } else null
+        val follow = now() - lastAnswerAt < CONVERSATION_KEEP_MS
+        val answer = try {
+            withTimeout(TURN_TIMEOUT_MS) { a.turn(query, if (follow) history else emptyList()) { ev -> emit(t, ev) } }
+        } catch (e: ClaudeException) {
+            Log.w(TAG, "Claude: ${e.code} ${e.message}")
+            emit(t, TurnEvent.Failed(e.code))
+            if (e.code == "auth" || e.code == "refusal") history = emptyList()
+            finishTurn(t, AssistReducer.friendly(e.code), tts?.await() == true)
+            return
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            emit(t, TurnEvent.Failed("timeout"))
+            finishTurn(t, AssistReducer.friendly("timeout"), tts?.await() == true)
+            return
         }
-        resolvePipeline(client)?.let { msg.put("pipeline", it) }
-        prevConversation?.let { msg.put("conversation_id", it) }
+        history = answer.history.takeLast(MAX_HISTORY_MESSAGES).let { trimToUserStart(it) }
+        lastAnswerAt = now()
+        emit(t, TurnEvent.Answer(answer.answer.ifBlank { "Done." }, answer.cards))
+        finishTurn(t, answer.answer, tts?.await() == true)
+    }
 
-        var tts: Deferred<ByteArray?>? = null
-        var ttsMime: String? = null
+    /** History must start at a plain user message (not a tool_result). */
+    private fun trimToUserStart(list: List<JSONObject>): List<JSONObject> {
+        val i = list.indexOfFirst { m ->
+            m.optString("role") == "user" && (m.optJSONArray("content")?.optJSONObject(0)?.optString("type") == "text")
+        }
+        return if (i < 0) emptyList() else list.drop(i)
+    }
+
+    /** Streams the buffered mic audio through STT until the speaker stops. Runs on the voice thread. */
+    private suspend fun listen(t: Int, ch: Channel<ByteArray>): String {
+        val session = try { voice.openStt() } catch (e: Throwable) {
+            Log.w(TAG, "STT load failed: ${e.javaClass.simpleName}"); return ""
+        }
         try {
-            client.subscribe(msg)
-                .map { PipelineEvents.parse(it) }
-                .transformWhile { emit(it); it !is PipelineEvent.RunEnd }
-                .collect { ev ->
-                    if (ev !is PipelineEvent.IntentProgress) Log.d(TAG, "event ${ev::class.simpleName}")
-                    dispatch(ev)
-                    when (ev) {
-                        is PipelineEvent.RunStart -> if (req.needsMic && ev.handlerId != null) router.attach(client, ev.handlerId)
-                        PipelineEvent.WakeWordStart -> _wakeError.value = null
-                        is PipelineEvent.WakeWordEnd -> if (ev.detected) onWakeWord()
-                        PipelineEvent.SttVadEnd, is PipelineEvent.SttEnd -> router.endAudio()
-                        is PipelineEvent.TtsEnd -> ev.url?.let { url ->
-                            ttsMime = ev.mimeType
-                            tts = scope.async { try { client.fetchBytes(url) } catch (e: Exception) { Log.w(TAG, "TTS fetch failed: ${e.message}"); null } }
-                        }
-                        is PipelineEvent.Error -> {
-                            router.endAudio()
-                            if (req is Request.Wake && ev.code !in BENIGN_WAKE_ERRORS && _state.value.phase == Phase.IDLE) {
-                                Log.w(TAG, "wake-word run error ${ev.code}: ${ev.message}")
-                                _wakeError.value = ev.code
-                            }
-                        }
-                        else -> {}
-                    }
+            var last = ""
+            val r = withTimeoutOrNull(LISTEN_MAX_MS) {
+                for (chunk in ch) {
+                    val text = session.accept(chunk)
+                    if (text != last) { last = text; emit(t, TurnEvent.Partial(Transcript.pretty(text))) }
+                    if (session.endpoint) break
                 }
-        } catch (e: CancellationException) {
-            router.endAudio()
-            tts?.cancel()
-            throw e
-        } catch (e: HaException) {
-            Log.w(TAG, "pipeline run failed: ${e.code}")
-            dispatch(PipelineEvent.Error(e.code, e.message ?: ""))
-        } catch (e: Exception) {
-            Log.w(TAG, "pipeline run failed", e)
-            dispatch(PipelineEvent.Error("unknown", e.message ?: ""))
+            }
+            if (r == null) Log.i(TAG, "listen: max length reached")
+            return session.finish()
         } finally {
-            router.endAudio()
-            if (!wakeEnabled() && !micTest) stopMic()
-        }
-
-        val s = _state.value
-        if (s.phase == Phase.ANSWER || s.phase == Phase.ERROR) {
-            lastAnswerAt = now()
-            val audio = tts?.await()
-            if (audio != null) {
-                ducker.duck()
-                _speaking.value = true
-                try { player.play(audio, ttsMime) } finally { _speaking.value = false }
-            }
-            ducker.release()
-            val cur = _state.value
-            // The agent asked something back: listen again without the wake word.
-            if (cur.continueConversation && cur.phase == Phase.ANSWER && _availability.value == Availability.READY) {
-                nextRequest = Request.FollowUp
-                return
-            }
-            scheduleDismiss()
-        } else if (s.phase != Phase.LISTENING) {
-            ducker.release()
+            session.close()
+            if (!settings.getBoolean(KEY_KEEP_STT, false)) voice.releaseStt()
         }
     }
 
-    private fun wakeEnabled() = enabled.value
-
-    private fun dispatch(e: PipelineEvent) { _state.value = AssistReducer.reduce(_state.value, e) }
-
-    private fun onWakeWord() {
-        router.wakeWordHeard()
-        ducker.duck()
-        dismissJob?.cancel()
-        val nav = navigator()
-        if (settings.getBoolean(KEY_OPEN_ON_WAKE, true) && nav != null && nav.current.value != SCREEN_ID) {
-            openedByWake = true
-            nav.show(SCREEN_ID, null)
+    private suspend fun finishTurn(t: Int, speakText: String?, ttsReady: Boolean = false) {
+        if (speakText != null && ttsReady && t == token) {
+            ducker.duck()
+            _speaking.value = true
+            try {
+                withContext(voiceThread) { voice.speaker().speak(speakText) }
+            } finally {
+                _speaking.value = false
+            }
+        } else if (speakText != null && t == token) {
+            // No voice installed: the screen still reveals the answer word by word.
+            _speaking.value = true
+            try { delay(speakText.split(' ').size * DemoScripts.REVEAL_WORD_MS) } finally { _speaking.value = false }
         }
+        if (voice.ttsAvailable && !settings.getBoolean(KEY_KEEP_TTS, false)) withContext(voiceThread) { voice.speaker().release() }
+        emit(t, TurnEvent.TurnEnd)
+        scheduleDismiss()
     }
 
     /** After an answer: back to StandBy if the wake word opened the screen, else back to "How can I help?". */
@@ -378,113 +367,167 @@ class AssistantEngine(
             val nav = navigator()
             if (openedByWake && nav?.current?.value == SCREEN_ID) nav.home()
             openedByWake = false
-            _state.value = AssistState(wakeListening = s.wakeListening, handlerId = s.handlerId, conversationId = s.conversationId)
+            _state.value = AssistState()
         }
     }
 
-    /** `assistant.pipeline` may be a pipeline id or its name; names are looked up once. */
-    private suspend fun resolvePipeline(client: HomeAssistant): String? {
-        val want = settings.getString(KEY_PIPELINE, "").trim()
-        if (want.isEmpty()) return null
-        pipelineId?.let { return it }
-        val found = try {
-            val res = client.command(JSONObject().put("type", "assist_pipeline/pipeline/list")).optJSONObject("result")
-            val list = res?.optJSONArray("pipelines")
-            (0 until (list?.length() ?: 0)).map { list!!.getJSONObject(it) }
-                .firstOrNull { it.optString("id") == want || it.optString("name").equals(want, ignoreCase = true) }
-                ?.optString("id")
-        } catch (e: Exception) { null }
-        if (found == null) Log.w(TAG, "pipeline '$want' not found; using the preferred pipeline")
-        pipelineId = found ?: want
-        return found
+    // ---------------- wake word ----------------
+
+    /** Session override from the screen args (`wake=1`), for measuring. */
+    fun setWakeOverride(on: Boolean?) { wakeOverride = on; syncWake() }
+    private var wakeOverride: Boolean? = null
+
+    private fun wakeWanted() = started &&
+        (wakeOverride ?: wakeSetting.value) &&
+        (_availability.value == Availability.READY ||
+            // Measuring without a key (`wake=1`): a wake word then runs the STT → TTS echo.
+            (_availability.value == Availability.NO_KEY && wakeOverride == true && permission.value && voice.sttAvailable)) &&
+        voice.wakeAvailable &&
+        !turnActive.value && demoJob?.isActive != true && !micTest
+
+    private fun syncWake() {
+        val want = wakeWanted()
+        if (want && wakeJob == null) {
+            wakeJob = scope.launch { wakeLoop() }
+        } else if (!want && wakeJob != null && !turnActive.value) {
+            stopWake(keepMic = false)
+        }
     }
 
-    // ---------------- mic → HA ----------------
+    private fun stopWake(keepMic: Boolean) {
+        val j = wakeJob ?: return
+        wakeJob = null
+        j.cancel()
+        _wakeActive.value = false
+        if (!keepMic && !turnActive.value && !micTest) { audio = null; stopMic() }
+    }
 
-    private fun startMic(): Boolean = mic.running || mic.start(router::onChunk)
+    private suspend fun wakeLoop() {
+        val ch = Channel<ByteArray>(WAKE_BUFFER_CHUNKS, BufferOverflow.DROP_OLDEST)
+        audio = ch
+        if (!startMic()) { wakeJob = null; return }
+        _wakeActive.value = true
+        val hit = try {
+            withContext(voiceThread) {
+                val session = try { voice.openWakeWord() } catch (e: Throwable) {
+                    Log.w(TAG, "wake word load failed: ${e.javaClass.simpleName}"); null
+                } ?: return@withContext false
+                val gate = VoiceGate()
+                try {
+                    for (chunk in ch) {
+                        for (b in gate.process(chunk, Pcm.dbfs(chunk))) {
+                            if (session.accept(b) != null) return@withContext true
+                        }
+                    }
+                    false
+                } finally {
+                    session.close()
+                }
+            }
+        } finally {
+            _wakeActive.value = false
+        }
+        if (wakeJob?.isActive != true) return
+        wakeJob = null
+        if (!hit) return
+        Log.i(TAG, "wake word")
+        onWakeWord()
+    }
+
+    private fun onWakeWord() {
+        val nav = navigator()
+        if (settings.getBoolean(KEY_OPEN_ON_WAKE, true) && nav != null && nav.current.value != SCREEN_ID) {
+            nav.show(SCREEN_ID, null)
+            startTurn(null, byWake = true, echoOnly = agent() == null)
+            openedByWake = true
+        } else {
+            startTurn(null, byWake = true, echoOnly = agent() == null)
+        }
+    }
+
+    // ---------------- mic ----------------
+
+    private fun startMic(): Boolean {
+        if (system.state.value.micMuted) return false
+        return mic.running || mic.start(::onChunk)
+    }
+
+    private fun onChunk(chunk: ByteArray, db: Float) {
+        val lvl = Pcm.level(db)
+        micLevel += (lvl - micLevel) * if (lvl > micLevel) 0.5f else 0.15f
+        audio?.trySend(chunk)
+    }
 
     private fun stopMic() {
-        router.endAudio()
         mic.stop()
         micLevel = 0f
     }
 
-    /** Capture without HA, discarding the audio (perf measurement, level meter check). */
+    /** Capture only, no models (perf measurement, level meter check). */
     fun setMicTest(on: Boolean) {
         if (on == micTest) return
-        micTest = on
         if (on) {
-            if (system.state.value.micMuted) { micTest = false; return }
+            if (system.state.value.micMuted) return
+            stopWake(keepMic = false)
+            micTest = true
             refreshPermission()
             startMic()
-        } else if (_availability.value != Availability.READY) stopMic()
+        } else {
+            micTest = false
+            if (!turnActive.value) stopMic()
+            syncWake()
+        }
     }
 
-    private val router = AudioRouter()
+    val micTesting: Boolean get() = micTest
 
-    /** Runs on the mic thread (onChunk) and the main thread (attach/end), hence the lock. */
-    private inner class AudioRouter {
-        private val lock = Any()
-        private var client: HomeAssistant? = null
-        private var handler: Int? = null
-        private val gate = VoiceGate()
+    /** Listens and repeats what it heard (STT → TTS, no Claude), for measuring the voice models. */
+    fun echoTest() {
+        val a = _availability.value
+        if (a == Availability.MUTED || a == Availability.DISABLED || !voice.sttAvailable || !hasMicPermission()) return
+        startTurn(null, byWake = false, echoOnly = true)
+    }
 
-        fun reset(gated: Boolean) = synchronized(lock) { gate.enabled = gated; client = null; handler = null }
-
-        fun attach(c: HomeAssistant, id: Int) = synchronized(lock) { client = c; handler = id }
-
-        /** From here on HA is transcribing the command: stream everything. */
-        fun wakeWordHeard() = synchronized(lock) { gate.enabled = false }
-
-        /** Empty frame = end of audio. Nothing is sent after it. */
-        fun endAudio() = synchronized(lock) {
-            val c = client
-            val h = handler
-            client = null; handler = null
-            if (c != null && h != null) c.sendBinary(h, ByteArray(0))
-        }
-
-        fun onChunk(chunk: ByteArray, db: Float) {
-            val lvl = Pcm.level(db)
-            micLevel += (lvl - micLevel) * if (lvl > micLevel) 0.5f else 0.15f
-            synchronized(lock) {
-                val out = gate.process(chunk, db)
-                val c = client ?: return
-                val h = handler ?: return
-                for (b in out) { c.sendBinary(h, b); bytesSent += b.size }
+    /** Speaks [text] with the on-device voice only (no Claude), for measuring TTS. */
+    fun sayTest(text: String) {
+        if (!voice.ttsAvailable) return
+        stopAll()
+        val t = ++token
+        turnActive.value = true
+        turnJob = scope.launch {
+            try {
+                _state.value = AssistState(phase = Phase.ANSWER, answer = text)
+                ducker.duck()
+                withContext(voiceThread) { voice.speaker().prepare() }
+                finishTurn(t, text, ttsReady = true)
+            } finally {
+                if (t == token) { turnActive.value = false; ducker.release(); syncWake() }
             }
         }
     }
 
     // ---------------- demos ----------------
 
-    /**
-     * Plays a scripted demo through the state machine. [freezeAtMs] jumps to that point of the
-     * script and holds there (for screenshots).
-     */
+    /** Plays a scripted demo. [freezeAtMs] jumps to that point of the script and holds there (screenshots). */
     fun runDemo(id: String, freezeAtMs: Long? = null) {
         val demo = DemoScripts.byId(id)
-        demoJob?.cancel()
-        player.stop()
-        nextRequest = null
-        currentRun?.cancel()
-        dismissJob?.cancel()
-        _state.value = AssistReducer.begin(AssistState(), "stt", demo = demo.id)
+        stopAll()
+        stopWake(keepMic = false)
+        val t = token
         val timeline = DemoScripts.timeline(demo)
         demoJob = scope.launch {
-            var t = 0L
+            var at0 = 0L
             for ((at, ev) in timeline) {
-                if (freezeAtMs != null && at > freezeAtMs) return@launch
-                if (freezeAtMs == null && at > t) { delay(at - t); t = at }
-                dispatch(ev)
-                if (ev is PipelineEvent.IntentEnd && freezeAtMs == null) {
-                    _speaking.value = true
-                    try { delay(DemoScripts.speakMs(demo)) } finally { _speaking.value = false }
-                    t += DemoScripts.speakMs(demo)
-                }
+                if (freezeAtMs != null && at > freezeAtMs) break
+                if (freezeAtMs == null && at > at0) { delay(at - at0); at0 = at }
+                emit(t, ev)
+                if (ev is TurnEvent.ListenStart) _state.update { it.copy(demo = demo.id) }
+                if (ev is TurnEvent.Answer) _speaking.value = freezeAtMs == null
+                if (ev is TurnEvent.TurnEnd) _speaking.value = false
             }
             if (freezeAtMs == null) scheduleDismiss()
         }
+        demoJob?.invokeOnCompletion { if (t == token) { _speaking.value = false; syncWake() } }
     }
 
     // ---------------- island ----------------
@@ -530,28 +573,31 @@ class AssistantEngine(
             if (_state.value.demo != null || micLevel <= 0f) (0.55 + 0.45 * abs(sin(t * 7.3) * cos(t * 3.1))).toFloat()
             else (0.3f + 0.7f * micLevel).coerceIn(0f, 1f)
         AssistantPhase.WORKING -> 0.4f
-        AssistantPhase.SPEAKING -> (0.5 + 0.3 * abs(sin(t * 9))).toFloat()
+        AssistantPhase.SPEAKING -> {
+            val l = if (_state.value.demo == null) voice.speaker().level else 0f
+            if (l > 0f) 0.35f + 0.6f * l else (0.5 + 0.3 * abs(sin(t * 9))).toFloat()
+        }
         null -> if (micTest) micLevel else 0.25f
     }
-
-    val micTesting: Boolean get() = micTest
 
     companion object {
         const val SCREEN_ID = "assistant"
         const val ACTIVITY_ID = "assistant"
         const val KEY_ENABLED = "assistant.enabled"
-        const val KEY_PIPELINE = "assistant.pipeline"
+        const val KEY_WAKE = "assistant.wakeWord"
         const val KEY_OPEN_ON_WAKE = "assistant.openOnWake"
-        const val KEY_VAD = "assistant.vadGate"
-        const val KEY_WAKE_TIMEOUT = "assistant.wakeTimeoutSec"
-        const val KEY_NOISE = "assistant.noiseSuppression"
-        const val KEY_GAIN = "assistant.autoGainDbfs"
+        const val KEY_SPEAK = "assistant.speak"
+        const val KEY_KEEP_STT = "assistant.keepSttLoaded"
+        const val KEY_KEEP_TTS = "assistant.keepTtsLoaded"
         const val KEY_DISMISS_S = "assistant.dismissSec"
-        const val KEY_WAKE_WORD = "assistant.wakeWordName"
-        const val RUN_TIMEOUT_S = 600
-        const val WAKE_TIMEOUT_S = 60
+        const val KEY_NAME = "assistant.name"
         const val DISMISS_S = 12
         const val CONVERSATION_KEEP_MS = 60_000L
-        val BENIGN_WAKE_ERRORS = setOf("wake-word-timeout", "timeout", "disconnected", "duplicate_wake_up_detected")
+        const val TURN_TIMEOUT_MS = 45_000L
+        const val LISTEN_MAX_MS = 20_000L
+        const val MAX_HISTORY_MESSAGES = 16
+        /** 16 s of 40 ms chunks: covers the STT model load. */
+        const val LISTEN_BUFFER_CHUNKS = 400
+        const val WAKE_BUFFER_CHUNKS = 50
     }
 }
