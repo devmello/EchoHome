@@ -35,6 +35,7 @@ Other options I looked at for when solicitation is missing:
     - Silent notifications don't banner unless the setting is on. Hidden apps are configurable.
     - Removed on the phone dismisses the banner on the Echo.
     - **Dismiss on the Echo sends NegativeAction only when its label means Clear** ("Clear"/"Dismiss" plus localised forms). It never does this for calls or for unrecognised labels like "Delete"/"Archive".
+    - It reacts only to `NotificationFeed.userDismissals` (contracts round 2: the renderer's `dismiss(id, byUser = true)`). Auto-hide timeouts, our own dismissals and other phones' ids never reach the iPhone.
   - `FakeIPhone`: a byte-exact ANCS provider, used by the tests and the on-device demo.
 - **Calls:**
   - IncomingCall becomes `LiveActivity(CALL, LiveContent.Call(caller, "Answer on iPhone", video = false))` with **Decline only** (`DESTRUCTIVE`). It maps to the NegativeAction and ends on Removed.
@@ -87,10 +88,10 @@ Other options I looked at for when solicitation is missing:
   - When the phone comes back in range the same advertising applies, plus an Echo-side ANCS attempt when its ACL or A2DP connects.
   - Audio is **not** auto-connected. Connecting A2DP would pull all the iPhone's audio to the Echo every time you walk in. You pick the Echo in the iPhone's audio picker instead.
 - **Debug demo** (debug builds only; sample data; "Maya's iPhone" is made up): `--es screen phone-pairing --es phone_demo banner|mail|missed|call|media|connected|pairing|pairing-privileged|paired`. It runs the real `AncsSession` and `AncsPresenter` against a `FakeIPhone` exchanging real ANCS bytes, fragmented at MTU 23.
-- **Tests:** 45 JVM tests, all passing (`./gradlew :feature:phone:testDebugUnitTest`):
+- **Tests:** 48 JVM tests, all passing (`./gradlew :feature:phone:testDebugUnitTest`):
   - `AncsCodecTest` (11): NS parsing, command bytes, reassembly at MTU 23/27/64/185 and byte by byte, split UTF-8, mismatched uid.
   - `AncsSessionTest` (12): app-name caching, an ack after the response, PreExisting, a pre-existing call, Modified, Removed while queued, errors, timeouts, actions, truncation, reset.
-  - `AncsPresenterTest` (16): banner fields, catalog fallback, dates, silent, hidden apps, Echo dismiss → Clear and never Delete, calls with Decline only, missed calls, clearAll.
+  - `AncsPresenterTest` (19): banner fields, catalog fallback, dates, silent, hidden apps, Echo dismiss → Clear and never Delete, timeouts and other ids ignored, calls with Decline only, missed calls, clearAll.
   - `AvrcpMappingTest` (6).
 
 ## Left

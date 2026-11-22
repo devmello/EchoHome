@@ -22,7 +22,8 @@ import java.time.format.DateTimeFormatter
  *    for calls and never for a negative action we don't recognise (it could be "Delete").
  *  - Silent notifications (delivered quietly on the phone) don't banner unless [showSilent].
  *
- * Call [onFeedChanged] on every banner-list change so Echo-side dismissals are noticed.
+ * Feed it [NotificationFeed.userDismissals] through [onUserDismissed] so Echo-side dismissals
+ * reach the phone. A call is an island activity, never a banner, so it can't be dismissed that way.
  */
 class AncsPresenter(
     private val feed: NotificationFeed,
@@ -78,16 +79,16 @@ class AncsPresenter(
         ids.forEach { feed.dismiss(bannerId(it)) }
     }
 
-    /** Spots banners the user dismissed on the Echo (gone from the feed, not removed by us). */
-    fun onFeedChanged() {
-        if (posted.isEmpty()) return
-        // Read the current list, not the emitted one: an old emission must not look like a dismissal.
-        val present = feed.banners.value.mapTo(HashSet()) { it.id }
-        val gone = posted.filterKeys { bannerId(it) !in present }
-        for ((uid, n) in gone) {
-            posted.remove(uid)
-            if (clearOnDismiss && negativeClears(n)) perform(uid, Ancs.ACTION_NEGATIVE)
-        }
+    /**
+     * The user dismissed banner [id] on the Echo ([NotificationFeed.userDismissals]). Ids that
+     * aren't ours are ignored. Timeouts and our own dismissals never arrive here (byUser = false).
+     */
+    fun onUserDismissed(id: String) {
+        val prefix = "ancs:$deviceKey:"
+        if (!id.startsWith(prefix)) return
+        val uid = id.removePrefix(prefix).toLongOrNull() ?: return
+        val n = posted.remove(uid) ?: return
+        if (clearOnDismiss && negativeClears(n)) perform(uid, Ancs.ACTION_NEGATIVE)
     }
 
     fun banner(n: AncsNotification): Banner {

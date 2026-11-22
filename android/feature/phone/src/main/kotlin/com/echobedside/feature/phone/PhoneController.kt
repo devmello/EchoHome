@@ -135,7 +135,7 @@ class PhoneController(private val context: Context, private val services: EchoSe
         context.registerReceiver(receiver, f, null, handler)
         media.enabled = audioEnabled
         services.scope.launch { settings.changes.collect { applySetting(it) } }
-        services.scope.launch { services.notifications.banners.collect { presenter?.onFeedChanged() } }
+        services.scope.launch { services.notifications.userDismissals.collect { presenter?.onUserDismissed(it) } }
         val g = peripheral.probeGate()
         Log.i(TAG, "LE gate: $g")
         _state.update { it.copy(advertiseOk = g.started) }
