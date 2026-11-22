@@ -82,7 +82,9 @@ open class HomeScreenView(
         switcher.onPick = { controller.selectRoom(it.id) }
         thermostat.onNudge = { d -> ui?.thermostat?.let { controller.nudgeTarget(it.entityId, d) } }
         thermostat.onMode = { ui?.thermostat?.let { controller.cycleMode(it.entityId) } }
-        lamp.onPreview = { p -> ui?.lamp?.let { controller.previewBrightness(it.entityId, p) } }
+        // While dragging the lamp tile shows the value itself; the controller (and the whole screen's
+        // re-map) only hears about it on release. Per-move updates cost ~10 % CPU on the Echo.
+        lamp.onPreview = null
         lamp.onSet = { p -> ui?.lamp?.let { controller.setBrightness(it.entityId, p) } }
         toggles.forEachIndexed { i, t -> t.onTap = { _, _ -> ui?.toggles?.getOrNull(i)?.let { controller.toggle(it.entityId) } } }
         scenes.forEachIndexed { i, s -> s.onTap = { _, _ -> ui?.scenes?.getOrNull(i)?.let { controller.activateScene(it.entityId) } } }

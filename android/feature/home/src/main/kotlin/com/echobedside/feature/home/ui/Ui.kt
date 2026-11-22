@@ -120,6 +120,7 @@ abstract class GlassTile(context: Context, private val radius: Float, private va
      * instead ([com.echobedside.feature.home.home.HomeWallpaper.shadows]).
      */
     protected val glass = GlassPainter().apply { shadow = false }
+    // No hardware layer: measured on the Echo it saved ~3 ms/frame but cost ~25 MB PSS.
     var night = false
         set(v) { if (field != v) { field = v; invalidate() } }
     /** 0 = off (glass), 1 = on (white). */

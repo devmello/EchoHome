@@ -158,7 +158,7 @@ class CommuteView(context: Context, private val services: EchoServices) : View(c
             altLabel.draw(canvas, altLabel.ellipsize(a.label, 164f), ax + 16f, altLabel.baselineIn(ay + 14f), dim)
             altValue.draw(canvas, "${a.minutes} min", ax + 16f, altValue.baselineIn(ay + 14f + altLabel.normalLineHeight + 4f), c(Color.WHITE))
         }
-        val credit = if (u.demo) "Demo data · set a home location for real routes" else if (u.route != null) "Routes © OpenStreetMap contributors · no live traffic" else null
+        val credit = if (u.demo) "Demo data · sample route" else if (u.route != null) "Routes © OpenStreetMap contributors · no live traffic" else null
         credit?.let { note.draw(canvas, it, 532f, 470f, c(withAlpha(Color.WHITE, 0.4f))) }
     }
 
