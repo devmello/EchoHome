@@ -15,6 +15,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import java.time.ZoneOffset
 
 class AncsPresenterTest {
@@ -22,6 +26,10 @@ class AncsPresenterTest {
     private val island = DefaultIslandManager()
     private val performed = mutableListOf<Pair<Long, Int>>()
     private val p = AncsPresenter(feed, island, "AA:BB", { "Maya’s iPhone" }, { uid, a -> performed += uid to a }, now = { 1234L })
+
+    init { // as PhoneController wires it
+        CoroutineScope(Dispatchers.Unconfined).launch { feed.userDismissals.collect { p.onUserDismissed(it) } }
+    }
 
     private val clearFlags = Ancs.FLAG_NEGATIVE_ACTION
     private fun msg(uid: Long = 7, flags: Int = clearFlags, neg: String = "Clear") = AncsNotification(uid, AncsCategory.SOCIAL, flags,
@@ -81,25 +89,46 @@ class AncsPresenterTest {
         p.onNotification(msg(), Change.POSTED)
         p.onNotification(msg(), Change.REMOVED)
         assertTrue(feed.banners.value.isEmpty())
-        p.onFeedChanged()
         assertTrue(performed.isEmpty()) // our own removal isn't an Echo dismissal
+        feed.dismiss("ancs:AA:BB:7", byUser = true) // a late tap on a banner already gone
+        assertTrue(performed.isEmpty())
     }
 
     @Test fun dismissedOnTheEchoClearsOnThePhone() {
         p.onNotification(msg(), Change.POSTED)
-        feed.dismiss("ancs:AA:BB:7") // the banner's Dismiss button
-        p.onFeedChanged()
+        feed.dismiss("ancs:AA:BB:7", byUser = true) // the banner's Dismiss button
         assertEquals(listOf(7L to Ancs.ACTION_NEGATIVE), performed)
-        p.onFeedChanged()
+        feed.dismiss("ancs:AA:BB:7", byUser = true)
         assertEquals(1, performed.size)
+    }
+
+    @Test fun timeoutOrOtherNonUserDismissDoesntTouchThePhone() {
+        p.onNotification(msg(), Change.POSTED)
+        feed.dismiss("ancs:AA:BB:7") // the renderer's auto-hide (byUser = false)
+        assertTrue(feed.banners.value.isEmpty())
+        assertTrue(performed.isEmpty())
+    }
+
+    @Test fun ignoresOtherPhonesAndOtherSources() {
+        p.onNotification(msg(), Change.POSTED)
+        listOf("ancs:CC:DD:7", "android:7", "ancs:AA:BB:x", "ancs-call:AA:BB:7").forEach { feed.dismiss(it, byUser = true) }
+        assertTrue(performed.isEmpty())
+        feed.dismiss("ancs:AA:BB:7", byUser = true)
+        assertEquals(listOf(7L to Ancs.ACTION_NEGATIVE), performed)
+    }
+
+    @Test fun neverPerformsForACallEvenIfItsIdIsDismissed() {
+        p.onNotification(AncsNotification(3, AncsCategory.INCOMING_CALL, Ancs.FLAG_NEGATIVE_ACTION, title = "Maya", negativeLabel = "Clear"), Change.POSTED)
+        listOf("ancs:AA:BB:3", "ancs-call:AA:BB:3").forEach { feed.dismiss(it, byUser = true) }
+        assertTrue(performed.isEmpty())
+        assertFalse(AncsPresenter.negativeClears(AncsNotification(3, AncsCategory.INCOMING_CALL, Ancs.FLAG_NEGATIVE_ACTION, negativeLabel = "Clear")))
     }
 
     @Test fun neverPerformsAnUnknownOrDestructiveNegativeAction() {
         p.onNotification(msg(uid = 1, neg = "Delete"), Change.POSTED)
         p.onNotification(msg(uid = 2, neg = "Archive"), Change.POSTED)
         p.onNotification(msg(uid = 3, flags = 0), Change.POSTED)
-        listOf(1L, 2L, 3L).forEach { feed.dismiss("ancs:AA:BB:$it") }
-        p.onFeedChanged()
+        listOf(1L, 2L, 3L).forEach { feed.dismiss("ancs:AA:BB:$it", byUser = true) }
         assertTrue(performed.isEmpty())
         assertTrue(AncsPresenter.negativeClears(msg(neg = "")))
         assertTrue(AncsPresenter.negativeClears(msg(neg = "Löschen")))
@@ -108,7 +137,7 @@ class AncsPresenterTest {
     @Test fun clearOnDismissCanBeTurnedOff() {
         p.clearOnDismiss = false
         p.onNotification(msg(), Change.POSTED)
-        feed.dismiss("ancs:AA:BB:7"); p.onFeedChanged()
+        feed.dismiss("ancs:AA:BB:7", byUser = true)
         assertTrue(performed.isEmpty())
     }
 
@@ -153,7 +182,6 @@ class AncsPresenterTest {
         p.onNotification(msg(), Change.POSTED)
         p.onNotification(AncsNotification(3, AncsCategory.INCOMING_CALL, 0, title = "Maya"), Change.POSTED)
         p.clearAll()
-        p.onFeedChanged()
         assertTrue(feed.banners.value.isEmpty())
         assertTrue(island.activities.value.isEmpty())
         assertTrue(performed.isEmpty())
