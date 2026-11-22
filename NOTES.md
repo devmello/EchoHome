@@ -285,6 +285,7 @@ Design rule: **the expensive step runs at most once per person arriving, never c
 3. **Face detection (only after motion, for ~2 s):** a tiny detector. Candidates: TFLite BlazeFace short-range (128×128 input) with XNNPACK, or Android's legacy `android.media.FaceDetector`. Run at ~5 fps until a face is found or the burst ends.
 4. **Quality filter:** only continue when the face is large enough, roughly frontal and not blurry. Most frames stop here.
 5. **Recognition (once per arrival, ≤3 tries):** crop to 112×112 and compute an embedding with a MobileFaceNet-class **int8** TFLite model, then cosine-compare to the enrolled templates (3–5 per person).
+   - **Licence (user decision, Nov 22, 2026):** this is a non-commercial, open-source project, so non-commercial-research weights (MobileFaceNet / ArcFace-family, e.g. InsightFace) are allowed. Record each model's source and licence in `android/feature/camera/MODELS.md`, and don't ship the weights in anything commercial.
    - Switch only after **2 consecutive matches** above threshold.
    - Don't re-run while the same person stays in view. Switch back to "shared" after N minutes with no presence.
    - Option: send only the 112×112 crop to a server on the LAN for the embedding step if on-device is too slow. Nothing is stored either way.

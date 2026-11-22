@@ -29,8 +29,8 @@ android {
         }
     }
 
-    // Keep fonts uncompressed in the APK so they're mmapped, not copied to the heap.
-    androidResources { noCompress += "ttf" }
+    // Keep fonts and TFLite models uncompressed in the APK so they're mmapped, not copied to the heap.
+    androidResources { noCompress += listOf("ttf", "tflite") }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
