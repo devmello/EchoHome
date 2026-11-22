@@ -41,6 +41,7 @@ Debug build, demo album Family, 8 s interval (zoom always running), `build-insta
 | CPU | 18.7 % of one core during crossfade + zoom |
 | Frames | 1207 in 20 s (≈ 60 fps); gfxinfo p50 / p90 / p99 16 / 17 / 18 ms |
 | Framestats medians | total CPU side 3.1 ms (UI 0.9, issue 1.2, dequeue 0.5); GPU completes ~16 ms after swap (pipelined) |
+| PSS, later build (db70657, main b16fbb6 with more features in the app) | 79.9 MB total app after switching albums with the sheet; still under the 200 MB budget |
 | Idle (paused, controls hidden) | **0 frames in 6 s, 0 CPU ticks in 10 s** |
 
 gfxinfo calls 50 % "janky" because the GPU finishes a frame just inside the next vsync; frames are still delivered at 60 fps (1207/20 s) and nothing is dropped visibly. Ideas if it matters: longer interval (zoom ends, frame rests), or a 30 fps zoom.
@@ -50,11 +51,12 @@ gfxinfo calls 50 % "janky" because the GPU finishes a frame just inside the next
 Compared on screen with `Photos.dc.html` rendered at 960×480 in Chrome (same state: photo 1, controls shown).
 
 - `photo.png` — Big Sur stand-in, time, date, caption. Matches the design: positions, sizes, weights, scrim and shadows line up; the photo is a few % into its zoom.
-- `photo-valley.png`, `photo-lanterns.png` — photos 2 and 3 after crossfades.
+- `photo-valley.png` — photo 2 after a crossfade.
+- `photo-lanterns.png` — Night walks album picked from the sheet (controls still up, white glyphs on the dark glass); lantern centres render clean.
 - `controls.png` — glass capsule shown on tap (paused, so the play icon shows). Matches the design's capsule (size, album pill, icons); glass uses the NOTES §3.2 recipe with the design's .12 fill.
 - `album-sheet.png` — album picker grown out of the album button.
 - `controls-hidden.png` — controls settled away after 4 s.
-- `album-switched.png` — Trips album (Lake Tahoe stand-in) with the capsule over snow: dark glyphs on the bright glass.
+- `album-switched.png` — Trips album (Lake Tahoe stand-in) with the capsule over snow: dark glyphs on the bright glass. The sheet over the same photo stays under the threshold and keeps white text.
 - `night.png`, `night-wake.png` — Night mode: red monochrome photo, red text; after a tap, brighter with the red-outline capsule.
 
 ## Open questions
