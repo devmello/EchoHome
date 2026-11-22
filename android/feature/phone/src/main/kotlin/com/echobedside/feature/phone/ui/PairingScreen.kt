@@ -130,9 +130,9 @@ open class PairingScreen(context: Context, private val services: EchoServices, p
         } else {
             tTitle.draw(c, "Pair your iPhone", 64f, tTitle.baselineIn(146f, 55f), white)
             var y = 222f
-            y = wrap(c, tBody, "Speaker: on your iPhone, open Settings › Bluetooth and tap “${s.echoName}”.", 64f, y, 470f, 30f, withAlpha(white, 0.78f)) + 12f
-            wrap(c, tBody, "Notifications: in a Bluetooth app such as nRF Connect, connect to “${s.echoName}”, pair, then turn on Share System Notifications.",
-                64f, y, 470f, 30f, withAlpha(white, 0.78f))
+            y = wrap(c, tBody, "On your iPhone, open Settings › Bluetooth and tap “${s.echoName}”. Music, notifications and Now Playing follow.", 64f, y, 470f, 30f, withAlpha(white, 0.78f)) + 12f
+            wrap(c, tBody, "No notifications after a minute? Connect once from the nRF Connect app.",
+                64f, y, 470f, 30f, withAlpha(white, 0.6f))
         }
 
         drawCard(c, white)

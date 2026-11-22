@@ -19,9 +19,11 @@ import com.echobedside.feature.phone.ui.PairingScreen
  *    → the island (Decline only: calls are answered on the phone, no call audio on the Echo).
  *  - The Echo as a Bluetooth speaker (A2DP sink + AVRCP controller) → the phone's Now Playing in
  *    services.media as MediaSourceKind.BLUETOOTH ("bluetooth").
+ *  - The iPhone's Now Playing over AMS (Bluetooth LE) → services.media "iphone" (OTHER_APP), merged into
+ *    "bluetooth" when the same iPhone streams to the Echo.
  *  - "phone-pairing" screen (not in the pager): `services.navigator.show(PhoneFeature.SCREEN_ID)`.
  *
- * Debug: `--es screen phone-pairing --es phone_demo banner|mail|missed|call|media|connected|pairing|paired`.
+ * Debug: `--es screen phone-pairing --es phone_demo banner|mail|missed|call|media|ams|ams-podcast|connected|pairing|paired`.
  */
 object PhoneFeature : EchoFeature {
     override val id = "phone"
@@ -71,12 +73,16 @@ object PhoneFeature : EchoFeature {
     /** The "iPhone" card on the web settings page; every value applies live (PhoneController.applySetting). */
     private fun settingsSection(c: PhoneController) = SettingsSection(
         id = "phone", title = "iPhone", order = 40,
-        help = "Notifications come over Bluetooth LE (ANCS); calls are answered on the iPhone. Pair from the Echo's Bluetooth screen.",
+        help = "Notifications (ANCS) and Now Playing (AMS) come over Bluetooth LE; calls are answered on the iPhone. Pair from the iPhone's Settings › Bluetooth.",
         settings = listOf(
             SettingSpec(PhoneController.KEY_NOTIFICATIONS, "Show iPhone notifications", SettingType.BOOLEAN, "true",
                 help = "Banners for the iPhone's notifications and incoming calls."),
             SettingSpec(PhoneController.KEY_AUDIO, "Bluetooth audio", SettingType.BOOLEAN, "true",
                 help = "Show the iPhone's music in Now Playing when it plays to the Echo over Bluetooth."),
+            SettingSpec(PhoneController.KEY_NOW_PLAYING, "Show what the iPhone is playing", SettingType.BOOLEAN, "true",
+                help = "Now Playing shows the iPhone's music, podcasts or videos, even when they play on AirPods or the car, with play/pause, skip and volume (Apple Media Service)."),
+            SettingSpec(PhoneController.KEY_ART_LOOKUP, "Look up album art (sends the song title to Apple)", SettingType.BOOLEAN, "true",
+                help = "The iPhone doesn't send cover art over Bluetooth. Asks Apple's iTunes Search for the song's title and artist."),
             SettingSpec(PhoneController.KEY_HIDDEN_APPS, "Hide notifications from", SettingType.TEXT_LIST, "",
                 help = "App names or bundle ids, e.g. Mail, com.burbn.instagram. Calls always show."),
             SettingSpec(PhoneController.KEY_CLEAR_ON_DISMISS, "Dismiss on the Echo clears the iPhone", SettingType.BOOLEAN, "true",

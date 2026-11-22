@@ -16,6 +16,9 @@ import android.util.Log
 import com.echobedside.core.model.MediaControls
 import com.echobedside.core.model.MediaHub
 import com.echobedside.core.model.MediaState
+import com.echobedside.feature.phone.ams.AmsMapping
+import com.echobedside.feature.phone.ams.AmsNowPlaying
+import com.echobedside.feature.phone.ams.ArtworkLookup
 import kotlin.math.roundToInt
 
 /**
@@ -44,6 +47,10 @@ class BluetoothMediaSource(
     private val onPlayingChanged: (Boolean) -> Unit = {},
     /** Now Playing's Disconnect: drop the A2DP link to the phone (it stays paired). */
     private val disconnectAudio: () -> Boolean = { false },
+    /** The same iPhone's AMS Now Playing when it's merged into this entry (its app name). */
+    private val remote: () -> AmsNowPlaying? = { null },
+    /** Album art lookup for tracks without art (null = off). */
+    private val artwork: ArtworkLookup? = null,
 ) {
     private var browser: MediaBrowser? = null
     private var controller: MediaController? = null
@@ -110,7 +117,16 @@ class BluetoothMediaSource(
             updatedAtElapsed = ps.lastPositionUpdateTime,
             artwork = md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) ?: md.getBitmap(MediaMetadata.METADATA_KEY_ART),
         )
-        val state = AvrcpMapping.toState(snap, label(), volume(), SystemClock.elapsedRealtime())?.let { it.copy(route = AvrcpMapping.route(it.sourceLabel)) }
+        val phone = label()
+        val state = AvrcpMapping.toState(snap, phone, volume(), SystemClock.elapsedRealtime())?.let { st ->
+            // One entry for the iPhone: AMS (same phone, same track) names the app, e.g. "Spotify on Maya’s iPhone".
+            val r = remote()?.takeIf { it.app.isNotBlank() && AmsMapping.sameTrack(it.title, it.artist, st.title, st.artist) }
+            st.copy(
+                sourceLabel = if (r != null) AmsMapping.label(r.app, phone) else phone,
+                route = AvrcpMapping.route(phone) + listOfNotNull(r?.app),
+                artwork = st.artwork ?: artwork?.get(st.artist, st.title) { refresh() },
+            )
+        }
         if (state == null) { clear(); return }
         if (AvrcpMapping.sameForUi(published, state)) return
         val wasPlaying = published?.playing == true

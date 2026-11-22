@@ -3,6 +3,8 @@
     <!-- API 30: both are normal (install-time) permissions. -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    <!-- Album art lookup (iTunes Search API), a setting. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Privileged: granted only once the app is a /system/priv-app (it's on device/privapp-permissions-com.echobedside.xml).
          Used behind checkSelfPermission: pairing confirmation on our screen, A2DP connection policy for the Audio switch. -->
     <uses-permission android:name="android.permission.BLUETOOTH_PRIVILEGED" />
