@@ -29,6 +29,8 @@ object AlarmFeature : EchoFeature {
         host.services.timers = timers
         AlarmRuntime.alarms = alarms
         AlarmRuntime.timers = timers
+        AlarmRuntime.settings = host.services.settings
+        host.registerSettings(AlarmSettings.section)
         AlarmService.createChannels(host.context)
 
         host.registerScreen(ScreenSpec(RealAlarmStore.SCREEN_ID, order = 1000, inPager = false) { AlarmScreen(it, host.services) })

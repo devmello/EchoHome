@@ -23,6 +23,8 @@ class TimerEngine(
     private val elapsed: () -> Long,
     private val wall: () -> Long,
     private val newId: () -> String,
+    /** How long a finished timer sounds (setting "timer.alert.minutes"). */
+    private val alertMs: () -> Long = { ALERT_MS },
 ) {
     var timers: List<EchoTimer> = emptyList()
         private set
@@ -77,7 +79,7 @@ class TimerEngine(
             if (it.state == State.RUNNING && it.endsAtElapsed <= now) { changed = true; it.copy(state = State.DONE) } else it
         }
         // Finished long enough ago: stop alerting.
-        timers.filter { it.state == State.DONE && it.id !in silenced && now - it.endsAtElapsed >= ALERT_MS }.forEach { silenced = silenced + it.id; changed = true }
+        timers.filter { it.state == State.DONE && it.id !in silenced && now - it.endsAtElapsed >= alertMs() }.forEach { silenced = silenced + it.id; changed = true }
         return changed
     }
 
@@ -87,7 +89,7 @@ class TimerEngine(
     /** Next time something changes on its own: a running timer ends, or an alert times out. */
     fun nextWakeElapsed(): Long? {
         val ends = timers.filter { it.state == State.RUNNING }.map { it.endsAtElapsed }
-        val alerts = alerting().map { it.endsAtElapsed + ALERT_MS }
+        val alerts = alerting().map { it.endsAtElapsed + alertMs() }
         return (ends + alerts).minOrNull()
     }
 

@@ -28,12 +28,13 @@ import kotlinx.coroutines.flow.asStateFlow
  * The real [TimerStore] (services.timers). Survives the process being killed: end times are
  * persisted (filesDir/timers.json) and the next end is an exact ELAPSED_REALTIME_WAKEUP alarm that
  * restarts the process and marks it DONE ([AlarmTriggerReceiver]). A DONE timer chimes for
- * [TimerEngine.ALERT_MS] through [AlarmService] and stays as a card until dismissed.
+ * the timer chime length (setting, 3 min) through [AlarmService] and stays as a card until dismissed.
  * Island: a TIMER activity per running/paused timer, TIMER_DONE when it finishes. Main thread only.
  */
 class RealTimerStore(private val ctx: Context, private val services: EchoServices) : TimerStore {
     private val file = AtomicFile(File(ctx.filesDir, "timers.json"))
-    private val engine = TimerEngine(SystemClock::elapsedRealtime, System::currentTimeMillis) { java.util.UUID.randomUUID().toString().take(8) }
+    private val engine = TimerEngine(SystemClock::elapsedRealtime, System::currentTimeMillis, { java.util.UUID.randomUUID().toString().take(8) },
+        { AlarmSettings.timerAlertMs(services.settings) })
     private val handler = Handler(Looper.getMainLooper())
     private val am = ctx.getSystemService(AlarmManager::class.java)
     private val bootCount = runCatching { Settings.Global.getInt(ctx.contentResolver, Settings.Global.BOOT_COUNT) }.getOrDefault(-1)
@@ -129,7 +130,7 @@ class RealTimerStore(private val ctx: Context, private val services: EchoService
                 if (done) ActivityKind.TIMER_DONE else ActivityKind.TIMER,
                 content, actions,
                 // Finished timers stay as cards on the Timers screen but leave the island after the alert.
-                staleAfterElapsed = if (done) t.endsAtElapsed + TimerEngine.ALERT_MS else null,
+                staleAfterElapsed = if (done) t.endsAtElapsed + AlarmSettings.timerAlertMs(services.settings) else null,
                 ownerScreen = SCREEN_ID,
             ))
         }

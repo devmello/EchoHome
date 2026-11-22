@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
  * Foreground service that rings: keeps the process alive and the sound going while our activity is
  * in the background or the screen is off. Follows [AlarmRuntime.sound]:
  *  - alarm: the system default alarm sound on the alarm stream, looping, volume ramping up over
- *    [RAMP_MS]; audio focus taken (music pauses / ducks); a screen wake lock; a full-screen-intent
+ *    the ramp setting; audio focus taken (music pauses / ducks); a screen wake lock; a full-screen-intent
  *    notification that opens the alarm screen if we're not in front.
  *  - timer: the synthesized chime.
  *  - keepAlive (sunrise): silent.
@@ -45,6 +45,7 @@ class AlarmService : Service() {
     private var fallback: AudioTrack? = null
     private var chime: AudioTrack? = null
     private var ringStart = 0L
+    private var rampMs = DEFAULT_RAMP_MS
     private var focus: AudioFocusRequest? = null
     private var wake: PowerManager.WakeLock? = null
     private var restoreAlarmVolume: Int? = null
@@ -84,11 +85,14 @@ class AlarmService : Service() {
 
     private fun startAlarm() {
         if (player != null || fallback != null) return
-        raiseAlarmVolumeFloor()
+        val settings = AlarmRuntime.settings
+        if (settings != null && AlarmSettings.volumeFloor(settings)) raiseAlarmVolumeFloor()
+        rampMs = settings?.let { AlarmSettings.rampMs(it) } ?: DEFAULT_RAMP_MS
         ringStart = SystemClock.elapsedRealtime()
+        val sound = settings?.let { AlarmSettings.sound(it) } ?: AlarmSettings.SOUND_SYSTEM
         val uri = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_ALARM)
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-        player = try {
+        player = if (sound != AlarmSettings.SOUND_SYSTEM) null else try {
             MediaPlayer().apply {
                 setAudioAttributes(ALARM_ATTRS)
                 setDataSource(this@AlarmService, uri)
@@ -101,9 +105,11 @@ class AlarmService : Service() {
             Log.w(AlarmRuntime.TAG, "Default alarm sound failed ($uri), using the synthesized tone", e)
             null
         }
-        if (player == null) fallback = Tones.track(Tones.alarmFallback()).also { it.setVolume(rampVolume()); it.play() }
+        if (player == null) fallback = runCatching {
+            Tones.track(if (sound == AlarmSettings.SOUND_CHIME) Tones.timerChime() else Tones.alarmFallback()).also { it.setVolume(rampVolume()); it.play() }
+        }.onFailure { Log.e(AlarmRuntime.TAG, "Alarm tone", it) }.getOrNull()
         handler.post(ramp)
-        Log.i(AlarmRuntime.TAG, "Ringing: ${if (player != null) uri else "fallback tone"}")
+        Log.i(AlarmRuntime.TAG, "Ringing: ${if (player != null) uri else sound} (ramp ${rampMs / 1000} s)")
     }
 
     private val ramp = object : Runnable {
@@ -115,9 +121,10 @@ class AlarmService : Service() {
         }
     }
 
-    /** Quadratic (perceptually smoother) from a whisper to full over [RAMP_MS]. */
+    /** Quadratic (perceptually smoother) from a whisper to full over the ramp setting (45 s). */
     private fun rampVolume(): Float {
-        val p = ((SystemClock.elapsedRealtime() - ringStart).toFloat() / RAMP_MS).coerceIn(0f, 1f)
+        if (rampMs <= 0) return 1f
+        val p = ((SystemClock.elapsedRealtime() - ringStart).toFloat() / rampMs).coerceIn(0f, 1f)
         return (0.04f + 0.96f * p * p).coerceIn(0f, 1f)
     }
 
@@ -131,7 +138,7 @@ class AlarmService : Service() {
         restoreAlarmVolume = null
     }
 
-    /** An alarm on a near-silent alarm stream wakes nobody: lift it to 60 % for the ring, then restore. */
+    /** Setting "Make sure alarms are audible" (off by default): lift the alarm stream to 60 % for the ring, then restore. */
     private fun raiseAlarmVolumeFloor() {
         runCatching {
             val max = audio.getStreamMaxVolume(AudioManager.STREAM_ALARM)
@@ -200,15 +207,27 @@ class AlarmService : Service() {
             .setCategory(if (r.alarm) Notification.CATEGORY_ALARM else Notification.CATEGORY_SERVICE)
             .setOngoing(true)
             .setContentIntent(openScreen(this, if (r.timer && !r.alarm) "timers" else "alarm", 1))
-        if (r.alarm) b.setFullScreenIntent(openScreen(this, "alarm", 2), true)
+        if (r.alarm) {
+            b.setFullScreenIntent(openScreen(this, "alarm", 2), true)
+            // If another app is in front Android shows this as a heads-up instead of opening the
+            // alarm screen (background activity starts are blocked without the overlay grant):
+            // make it answerable from there.
+            b.addAction(Notification.Action.Builder(null, "Snooze", command(AlarmTriggerReceiver.ACTION_SNOOZE, 4)).build())
+            b.addAction(Notification.Action.Builder(null, "Stop", command(AlarmTriggerReceiver.ACTION_STOP, 5)).build())
+        }
         return b.build()
     }
+
+    private fun command(action: String, req: Int): PendingIntent = PendingIntent.getBroadcast(
+        this, req, Intent(this, AlarmTriggerReceiver::class.java).setAction(action),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
 
     companion object {
         private const val NOTIFICATION_ID = 0xE1A2A
         private const val CHANNEL_RING = "alarm.ring"
         private const val CHANNEL_QUIET = "alarm.quiet"
-        const val RAMP_MS = 45_000L
+        const val DEFAULT_RAMP_MS = 45_000L
         val ALARM_ATTRS: AudioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
 

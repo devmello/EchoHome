@@ -75,9 +75,15 @@ data class Evaluation(
  * - GoodMorning → Idle: [dismissGoodMorning], or after [MORNING_TIMEOUT_MS].
  * - [stop] during Sunrise skips that occurrence.
  * - One-shot alarms switch themselves off when they ring.
- * - An occurrence missed by up to [GRACE_MS] (process restarting, reboot) still rings.
+ * - An occurrence missed by up to [GRACE_MS] (process restarting, reboot) still rings; a ringing
+ *   or snoozed state left over from longer ago is dropped instead of ringing late.
  */
-class AlarmEngine(data: AlarmData = AlarmData(), private val zone: () -> ZoneId = { ZoneId.systemDefault() }) {
+class AlarmEngine(
+    data: AlarmData = AlarmData(),
+    private val zone: () -> ZoneId = { ZoneId.systemDefault() },
+    /** Applies the user's global settings (sunrise on/length, snooze length) to each alarm. */
+    private val adjust: (Alarm) -> Alarm = { it },
+) {
     var data: AlarmData = data
         private set
 
@@ -143,7 +149,7 @@ class AlarmEngine(data: AlarmData = AlarmData(), private val zone: () -> ZoneId 
      */
     fun evaluate(now: Long): Evaluation {
         // 1. Due occurrences (rang at/just before now). The latest one wins; all are marked handled.
-        val due = data.alarms.filter { it.enabled }.mapNotNull { a ->
+        val due = data.alarms.filter { it.enabled }.map(adjust).mapNotNull { a ->
             val from = maxOf(now - GRACE_MS, data.handled[a.id] ?: Long.MIN_VALUE)
             val t = nextTriggerAfter(a, from, zone())
             if (t <= now) a to t else null
@@ -161,6 +167,14 @@ class AlarmEngine(data: AlarmData = AlarmData(), private val zone: () -> ZoneId 
         // 2. Timeouts of the active alarm.
         data.active?.let { act ->
             if (alarm(act.alarmId) == null) { data = data.copy(active = null); return@let }
+            // Stale state from a time nothing was running to handle it (process dead, another
+            // build installed): don't ring an alarm from long ago.
+            val stale = when (act.state) {
+                ActiveAlarm.State.RINGING -> now - act.sinceMillis >= AUTO_SNOOZE_MS + GRACE_MS
+                ActiveAlarm.State.SNOOZED -> now >= act.untilMillis + GRACE_MS
+                ActiveAlarm.State.MORNING -> false
+            }
+            if (stale) { data = data.copy(active = null); return@let }
             when (act.state) {
                 ActiveAlarm.State.RINGING -> if (now - act.sinceMillis >= AUTO_SNOOZE_MS) {
                     if (act.autoSnoozes >= MAX_AUTO_SNOOZES) data = data.copy(active = null)
@@ -210,14 +224,14 @@ class AlarmEngine(data: AlarmData = AlarmData(), private val zone: () -> ZoneId 
     }
 
     /** Enabled alarms' next future occurrences, soonest first. */
-    private fun upcoming(now: Long): List<Pair<Alarm, Long>> = data.alarms.filter { it.enabled }
+    private fun upcoming(now: Long): List<Pair<Alarm, Long>> = data.alarms.filter { it.enabled }.map(adjust)
         .map { a -> a to nextTriggerAfter(a, maxOf(now, data.handled[a.id] ?: Long.MIN_VALUE), zone()) }
         .sortedBy { it.second }
 
     private fun inSunrise(a: Alarm, t: Long, now: Long) =
         a.sunrise && a.sunriseMinutes > 0 && now >= t - a.sunriseMinutes * MIN && now < t
 
-    private fun alarm(id: String) = data.alarms.firstOrNull { it.id == id }
+    private fun alarm(id: String) = data.alarms.firstOrNull { it.id == id }?.let(adjust)
 
     companion object {
         const val MIN = 60_000L

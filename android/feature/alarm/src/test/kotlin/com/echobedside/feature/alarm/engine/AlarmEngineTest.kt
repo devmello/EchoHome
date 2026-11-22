@@ -278,4 +278,38 @@ class AlarmEngineTest {
         assertNull(d.active)
         assertNotNull(d.handled)
     }
+
+    @Test fun staleRingingFromLongAgoIsDroppedNotRung() {
+        // Persisted "RINGING since 05:03", then nothing handled it (another build installed) until 07:00.
+        val e = engine()
+        e.upsert(Alarm("a", 5, 3), at("2026-11-22T05:00"))
+        assertTrue(e.evaluate(at("2026-11-22T05:03")).phase is AlarmPhase.Ringing)
+        val e2 = AlarmEngine(Codec.alarmsFromJson(Codec.alarmsToJson(e.data)), { la })
+        assertEquals(AlarmPhase.Idle, e2.evaluate(at("2026-11-22T07:00")).phase)
+        assertNull(e2.data.active)
+    }
+
+    @Test fun staleSnoozeIsDroppedButALateTickStillRings() {
+        val e = engine()
+        e.upsert(Alarm("a", 7, 0), at("2026-11-22T05:00"))
+        e.evaluate(at("2026-11-22T07:00")); e.snooze(at("2026-11-22T07:00"))
+        // A wake-up a few minutes late (process restarting) still rings…
+        val late = AlarmEngine(e.data, { la })
+        assertTrue(late.evaluate(at("2026-11-22T07:12")).phase is AlarmPhase.Ringing)
+        // …but not an hour later.
+        val stale = AlarmEngine(e.data, { la })
+        assertEquals(AlarmPhase.Idle, stale.evaluate(at("2026-11-22T08:10")).phase)
+    }
+
+    @Test fun globalSettingsAdjustSnoozeAndSunrise() {
+        val e = AlarmEngine(AlarmData(), { la }, { it.copy(snoozeMinutes = 5, sunriseMinutes = 10) })
+        e.upsert(Alarm("a", 7, 0), at("2026-11-22T05:00"))
+        assertEquals(AlarmPhase.Idle, e.evaluate(at("2026-11-22T06:45")).phase)
+        assertTrue(e.evaluate(at("2026-11-22T06:55")).phase is AlarmPhase.Sunrise)
+        e.evaluate(at("2026-11-22T07:00")); e.snooze(at("2026-11-22T07:00"))
+        assertEquals(at("2026-11-22T07:05"), (e.evaluate(at("2026-11-22T07:01")).phase as AlarmPhase.Snoozed).untilMillis)
+        val off = AlarmEngine(AlarmData(), { la }, { it.copy(sunrise = false) })
+        off.upsert(Alarm("a", 7, 0), at("2026-11-22T05:00"))
+        assertEquals(AlarmPhase.Idle, off.evaluate(at("2026-11-22T06:55")).phase)
+    }
 }

@@ -14,12 +14,16 @@ class AlarmTriggerReceiver : BroadcastReceiver() {
         when (intent.action) {
             ACTION_ALARM -> AlarmRuntime.alarms?.evaluate("alarm manager") ?: Log.e(AlarmRuntime.TAG, "alarm store missing")
             ACTION_TIMER -> AlarmRuntime.timers?.tick() ?: Log.e(AlarmRuntime.TAG, "timer store missing")
+            ACTION_SNOOZE -> AlarmRuntime.alarms?.snooze()
+            ACTION_STOP -> AlarmRuntime.alarms?.stop()
         }
     }
 
     companion object {
         const val ACTION_ALARM = "com.echobedside.alarm.WAKE"
         const val ACTION_TIMER = "com.echobedside.alarm.TIMER"
+        const val ACTION_SNOOZE = "com.echobedside.alarm.SNOOZE"
+        const val ACTION_STOP = "com.echobedside.alarm.STOP"
     }
 }
 

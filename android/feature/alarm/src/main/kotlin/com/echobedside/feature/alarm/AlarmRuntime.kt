@@ -3,6 +3,7 @@ package com.echobedside.feature.alarm
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.echobedside.core.model.SettingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,6 +30,8 @@ internal object AlarmRuntime {
 
     var alarms: RealAlarmStore? = null
     var timers: RealTimerStore? = null
+    /** For the service: sound settings. */
+    var settings: SettingsStore? = null
 
     private val _sound = MutableStateFlow(SoundRequest())
     val sound: StateFlow<SoundRequest> = _sound.asStateFlow()

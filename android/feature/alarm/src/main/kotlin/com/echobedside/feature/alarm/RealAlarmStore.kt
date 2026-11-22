@@ -27,6 +27,8 @@ import kotlin.math.pow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.launch
 
 /**
  * The real [AlarmStore] (services.alarms): [AlarmEngine] + persistence (filesDir/alarms.json) +
@@ -43,7 +45,7 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class RealAlarmStore(private val ctx: Context, private val services: EchoServices) : AlarmStore {
     private val file = AtomicFile(File(ctx.filesDir, "alarms.json"))
-    private val engine = AlarmEngine(load())
+    private val engine = AlarmEngine(load(), adjust = { AlarmSettings.apply(services.settings, it) })
     private val handler = Handler(Looper.getMainLooper())
     private val am = ctx.getSystemService(AlarmManager::class.java)
 
@@ -55,6 +57,13 @@ class RealAlarmStore(private val ctx: Context, private val services: EchoService
     override val phase: StateFlow<AlarmPhase> = _phase.asStateFlow()
 
     private val tick = Runnable { evaluate("tick") }
+
+    init {
+        // Settings apply live: a new sunrise / snooze length reschedules at once.
+        services.scope.launch {
+            services.settings.changes.filter { it.startsWith("alarm.") }.collect { evaluate("settings") }
+        }
+    }
 
     override fun upsert(alarm: Alarm) = change { engine.upsert(alarm, now()) }
     override fun delete(id: String) = change { engine.delete(id) }
@@ -91,12 +100,13 @@ class RealAlarmStore(private val ctx: Context, private val services: EchoService
                 if (engine.data.brightnessBefore == null) engine.setBrightnessBefore(services.system.state.value.brightness)
                 val from = engine.data.brightnessBefore ?: 0.3f
                 // Slow start like a real sunrise; full brightness when it rings.
-                services.systemControls.setBrightness(from + (1f - from) * new.progress.pow(1.6f))
+                val to = AlarmSettings.sunriseBrightness(services.settings).coerceAtLeast(from)
+                services.systemControls.setBrightness(from + (to - from) * new.progress.pow(1.6f))
                 handler.postDelayed(tick, SUNRISE_TICK_MS)
             }
             is AlarmPhase.Ringing -> {
                 if (old !is AlarmPhase.Ringing) {
-                    if (new.alarm.sunrise || engine.data.brightnessBefore != null) services.systemControls.setBrightness(1f)
+                    if (new.alarm.sunrise || engine.data.brightnessBefore != null) services.systemControls.setBrightness(AlarmSettings.sunriseBrightness(services.settings))
                     engine.setBrightnessBefore(null)
                     showAlarmScreen()
                 }
