@@ -4,6 +4,30 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 
+/** Glyph colour on glass over a bright part of the photo (Apple's label colour on light glass). */
+internal val ON_LIGHT = 0xFF1C1C1E.toInt()
+
+/**
+ * Relative luminance (0–1) of the blurred backdrop under a window rect, from a few samples of the
+ * small pre-blurred bitmap (cheap: ~24 getPixel calls, once per photo / show).
+ */
+internal fun backdropLuma(bd: com.echobedside.core.design.Backdrop, l: Float, t: Float, r: Float, b: Float): Float {
+    val bmp = bd.bitmap
+    if (bmp.isRecycled || r <= l || b <= t) return 0f
+    var sum = 0f
+    var n = 0
+    for (iy in 0 until 3) for (ix in 0 until 8) {
+        val x = l + (r - l) * (ix + 0.5f) / 8f
+        val y = t + (b - t) * (iy + 0.5f) / 3f
+        val bx = ((x - bd.screenLeft) / bd.screenWidth * bmp.width).toInt().coerceIn(0, bmp.width - 1)
+        val by = ((y - bd.screenTop) / bd.screenHeight * bmp.height).toInt().coerceIn(0, bmp.height - 1)
+        val c = bmp.getPixel(bx, by)
+        sum += 0.2126f * ((c shr 16) and 255) + 0.7152f * ((c shr 8) and 255) + 0.0722f * (c and 255)
+        n++
+    }
+    return sum / n / 255f
+}
+
 /** The design's SVG icons as Paths, drawn at a given size and centre. */
 internal object Icons {
     /** Pause, viewBox 32: M7 5h6.4v22H7z M18.6 5H25v22h-6.4z */

@@ -33,6 +33,9 @@ internal class AlbumList(context: Context) : View(context) {
     /** "Loading albums…", "Offline · cached albums", "Can't reach Immich". */
     var status: String? = null
         set(v) { if (v != field) { field = v; requestLayout(); invalidate() } }
+    /** Glass over a bright part of the photo: dark glyphs, as Liquid Glass does (white would vanish). */
+    var onLight = false
+        set(v) { if (v != field) { field = v; invalidate() } }
     var night = false
         set(v) { field = v; invalidate() }
     var onPick: ((Album) -> Unit)? = null
@@ -61,7 +64,7 @@ internal class AlbumList(context: Context) : View(context) {
     }
 
     override fun onDraw(canvas: Canvas) {
-        val white = if (night) Night.COLOR else Color.WHITE
+        val white = if (night) Night.COLOR else if (onLight) ON_LIGHT else Color.WHITE
         val w = width.toFloat()
         heading.draw(canvas, "Albums", PAD + 12f, heading.baselineIn(PAD + (HEADER - heading.normalLineHeight) / 2f), withAlpha(white, 0.6f))
 

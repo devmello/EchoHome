@@ -815,6 +815,19 @@ class PhotosScreen internal constructor(
         val forSheet = bd.takeIf { sheetOpen }
         if (capsule.backdrop !== forCapsule) capsule.backdrop = forCapsule
         if (sheet.backdrop !== forSheet) sheet.backdrop = forSheet
+        // Dark glyphs over bright photo areas (snow, sky): the blurred glass there is near white.
+        val w = width.toFloat()
+        val h = height.toFloat()
+        if (forCapsule != null) {
+            val r = w - 28f
+            val b = h - 26f
+            bar.onLight = backdropLuma(forCapsule, r - capsule.width.coerceAtLeast(200), b - ControlsBar.HEIGHT, r, b) > ON_LIGHT_LUMA
+        }
+        if (forSheet != null) {
+            val r = w - 28f
+            val b = h - 26f - ControlsBar.HEIGHT - 10f
+            albumList.onLight = backdropLuma(forSheet, r - AlbumList.WIDTH, b - sheet.height.coerceAtLeast(150), r, b) > ON_LIGHT_LUMA
+        }
     }
 
     // --- night -------------------------------------------------------------------------------
@@ -873,6 +886,8 @@ class PhotosScreen internal constructor(
         private const val ZOOM_TO = 1.08f
         private const val CONTROLS_MS = 4000L
         private const val SHADOW_PAD = 40
+        /** Backdrop luminance above which the glass glyphs turn dark (white text stops reading). */
+        private const val ON_LIGHT_LUMA = 0.68f
         private const val RETRY_MIN_MS = 30_000L
         private const val RETRY_MAX_MS = 10 * 60_000L
         /** Reload the album this often (new photos; back online after a network failure). */
