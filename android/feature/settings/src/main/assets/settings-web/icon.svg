@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#050816"/>
+      <stop offset=".55" stop-color="#1B1446"/>
+      <stop offset="1" stop-color="#5A2A4A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".5" cy="1.05" r=".7">
+      <stop offset="0" stop-color="#FF9F0A" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#FF9F0A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="spec" x1="0" y1="0" x2=".35" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".34"/>
+      <stop offset=".4" stop-color="#fff" stop-opacity=".05"/>
+      <stop offset="1" stop-color="#fff" stop-opacity=".08"/>
+    </linearGradient>
+    <radialGradient id="star" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset=".5" stop-color="#FFE7B0" stop-opacity=".5"/>
+      <stop offset="1" stop-color="#FFD60A" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="180" height="180" fill="url(#sky)"/>
+  <rect width="180" height="180" fill="url(#glow)"/>
+  <!-- the Echo's 2:1 screen as a glass slab -->
+  <rect x="26" y="58" width="128" height="68" rx="20" fill="#fff" fill-opacity=".1"/>
+  <rect x="26" y="58" width="128" height="68" rx="20" fill="url(#spec)"/>
+  <rect x="26.5" y="58.5" width="127" height="67" rx="19.5" fill="none" stroke="#fff" stroke-opacity=".45"/>
+  <!-- the evening star -->
+  <circle cx="90" cy="92" r="22" fill="url(#star)"/>
+  <path d="M90 74 C91.6 86.5 95.5 90.4 108 92 C95.5 93.6 91.6 97.5 90 110 C88.4 97.5 84.5 93.6 72 92 C84.5 90.4 88.4 86.5 90 74 Z" fill="#fff"/>
+</svg>

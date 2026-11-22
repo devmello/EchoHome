@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Echo Show</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Echo Show">
+<meta name="theme-color" content="#000000">
+<meta name="color-scheme" content="dark light">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="app.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<div class="sky" aria-hidden="true"></div>
+
+<!-- Pairing: shown until this browser holds the Echo's cookie -->
+<main id="pair" class="pair" hidden>
+  <div class="pair-card glass">
+    <img class="pair-icon" src="icon.svg" alt="" width="72" height="72">
+    <h1>Pair with <span data-name>Echo Show</span></h1>
+    <div id="pair-start">
+      <p class="lead">Tap Pair. A 6-digit code appears on the Echo’s screen.</p>
+      <button id="pair-btn" class="btn-primary" type="button">Pair</button>
+    </div>
+    <div id="pair-code" hidden>
+      <p class="lead">Type the code shown on the Echo.</p>
+      <input id="code" class="code" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code"
+             maxlength="6" placeholder="000000" aria-label="6-digit code" spellcheck="false">
+      <p id="pair-msg" class="pair-msg" role="status" aria-live="polite"></p>
+      <button id="pair-again" class="btn-link" type="button">Get a new code</button>
+    </div>
+    <p class="fine">Only devices on your home Wi-Fi can open this page.</p>
+  </div>
+</main>
+
+<!-- Settings -->
+<div id="app" hidden>
+  <header class="top">
+    <div class="title-row">
+      <div>
+        <h1 data-name>Echo Show</h1>
+        <p class="status"><span id="dot" class="dot"></span><span id="status-text">Connecting…</span></p>
+      </div>
+      <label class="adv">
+        <span>Advanced</span>
+        <input id="advanced" type="checkbox" class="switch" role="switch">
+      </label>
+    </div>
+    <nav id="chips" class="chips" aria-label="Sections"></nav>
+  </header>
+  <main id="sections" class="sections"></main>
+  <footer class="foot">
+    <div class="theme" role="radiogroup" aria-label="Page appearance">
+      <button type="button" data-theme-set="dark">Dark</button>
+      <button type="button" data-theme-set="light">Light</button>
+      <button type="button" data-theme-set="auto">Auto</button>
+    </div>
+    <p>Vesper on <span data-name>Echo Show</span>. Changes apply on the Echo right away.</p>
+  </footer>
+</div>
+
+<div id="toast" class="toast glass" role="status" aria-live="polite" hidden></div>
+<noscript><p class="noscript">This page needs JavaScript.</p></noscript>
+</body>
+</html>
