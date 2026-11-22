@@ -103,7 +103,7 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
         repeatCount = ValueAnimator.INFINITE
         addUpdateListener {
             ambient.setFraction(it.animatedFraction)
-            if (session?.state?.playing == true) progress.invalidate()
+            if (session?.state?.playing == true) progress.refreshIfChanged()
         }
         addListener(object : AnimatorListenerAdapter() {
             override fun onAnimationRepeat(animation: Animator) = onTick()

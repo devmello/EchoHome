@@ -16,6 +16,7 @@ import android.os.SystemClock
 import android.util.Log
 import android.view.MotionEvent
 import android.view.View
+import android.widget.FrameLayout
 import com.echobedside.core.design.Motion
 import com.echobedside.core.design.Night
 import com.echobedside.core.design.SpecText
@@ -55,7 +56,7 @@ import kotlin.math.sin
  * (tap outside collapses, with a 25 % black scrim as in the design).
  */
 @SuppressLint("ViewConstructor")
-internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(context) {
+internal class IslandOverlay(context: Context, private val ui: SystemUi) : FrameLayout(context) {
     private val s = ui.services
     private val model = IslandModel()
     private var layout = model.layout
@@ -119,8 +120,17 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(
     private val recompute = Runnable { recompute() }
     private val back: () -> Boolean = { if (layout.mode == IslandMode.EXPANDED) { setLayout(model.collapse()); true } else false }
 
+    /** The music bars, animated on their own so a frame repaints 30×24 px, not the window. */
+    private val eq = IslandEqualizer(context)
+    private var eqShown = false
+    private var boxLeft = 0f
+    private var boxTop = 0f
+
     init {
         isClickable = false
+        setWillNotDraw(false)
+        eq.visibility = INVISIBLE
+        addView(eq, LayoutParams(IslandEqualizer.W_PX, IslandEqualizer.H_PX))
         observeWhileAttached(s.island.activities) { recompute() }
         observeWhileAttached(s.navigator.current) {
             recompute()
@@ -249,6 +259,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(
         var ambient = false
         var ticking = false
         tickIn = 1000L
+        eqShown = false
 
         if (scrim.value > 0.004f) canvas.drawColor(withAlpha(Color.BLACK, 0.25f * scrim.value * bannerFade.value))
 
@@ -262,6 +273,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(
             clip.reset(); clip.addRoundRect(boxRect, br, br, Path.Direction.CW)
             canvas.clipPath(clip)
             canvas.translate(bx, by)
+            boxLeft = bx; boxTop = by
             val ca = compactA.value * vis
             compactAct?.let { if (ca > 0.004f) { val (amb, tick) = drawCompact(canvas, it, bw, ca); ambient = ambient or amb; ticking = ticking or tick } }
             val ea = expandedA.value * vis
@@ -287,11 +299,24 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(
             if (layout.mode == IslandMode.HIDDEN && glass.backdrop != null) { glass.backdrop?.bitmap?.recycle(); glass.backdrop = null; beadGlass.backdrop = null; backdropTakenFor = null }
         }
 
+        if (!eqShown && (eq.visibility == VISIBLE || eq.playing)) { eq.playing = false; eq.visibility = INVISIBLE }
+
         when {
             running -> postInvalidateOnAnimation()
             ambient -> postInvalidateDelayed(AMBIENT_FRAME_MS)
             ticking -> postInvalidateDelayed(tickIn)
         }
+    }
+
+    /** Positions the bars (overlay coordinates) and sets their look; only changed values touch the view. */
+    private fun placeEq(x: Float, y: Float, a: Float, color: Int, playing: Boolean) {
+        eqShown = true
+        if (eq.translationX != x) eq.translationX = x
+        if (eq.translationY != y) eq.translationY = y
+        if (eq.alpha != a) eq.alpha = a
+        eq.color = color
+        eq.playing = playing
+        if (eq.visibility != VISIBLE) eq.visibility = VISIBLE
     }
 
     private fun ink(c: Int, a: Float) = if (night) withAlpha(Night.COLOR, Color.alpha(c) / 255f * a) else withAlpha(c, Color.alpha(c) / 255f * a)
@@ -310,16 +335,10 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(
             }
             is LiveContent.Music -> {
                 art.artwork(c, ct.artwork, 9f, cy - 14f, 28f, 8f, alpha, night)
-                val playing = isPlaying(ct)
-                // 5 bars, 3.5 wide, gap 3, heights 6 + 16·|sin(t·(3.1 + 0.9i) + i)|
-                var x = right - (5 * 3.5f + 4 * 3f)
-                paint.shader = null; paint.style = Paint.Style.FILL; paint.color = ink(PEACH, alpha)
-                for (i in 0 until 5) {
-                    val bh = if (playing) 6f + 16f * abs(sin(t * (3.1f + i * 0.9f) + i)) else 3.5f
-                    rect.set(x, cy - bh / 2, x + 3.5f, cy + bh / 2); c.drawRoundRect(rect, 2f, 2f, paint)
-                    x += 3.5f + 3f
-                }
-                return playing to false
+                // The bars are a child view (IslandEqualizer) that animates itself at ~15 fps while
+                // playing; static when paused or in Night. Nothing here asks for overlay frames.
+                placeEq(boxLeft + right - IslandEqualizer.W, boxTop + cy - IslandEqualizer.H / 2f, alpha, ink(PEACH, 1f), isPlaying(ct) && !night)
+                return false to false
             }
             is LiveContent.Assistant -> {
                 art.orb(c, 9f + 13f, cy, 26f, (t * 140f) % 360f, alpha, night)
