@@ -100,17 +100,17 @@ Template:
 ## 2026-11-22 · G (assistant) · audio focus for the assistant's voice
 - Need: while the assistant listens and speaks it holds `AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK` (`USAGE_ASSISTANT`, `CONTENT_TYPE_SPEECH`). Music from AirPlay (C), Bluetooth (J) and other apps should duck (or pause) on `AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK` and come back on `AUDIOFOCUS_GAIN`, so the answer isn't talked over (design demo B: "I paused music here").
 - Proposed: C and J request focus for playback (`USAGE_MEDIA`) and handle the transient loss by lowering their own volume to ~20% (Android 11 auto-ducks only players that use AudioAttributes through the framework; native AudioTrack output from shairplay may need the manual duck). No interface change.
-- Status: open. G works without it (answers are still spoken over music).
+- Status: accepted (Nov 22); on the lead's list for C and J after integration (speech is off by default, so nothing is talked over today).
 
 ## 2026-11-22 · G (assistant) · `:app` asks for RECORD_AUDIO
 - Need: the assistant needs `android.permission.RECORD_AUDIO` (declared in `:feature:assistant`'s manifest). Today it's granted with `adb shell pm grant com.echobedside android.permission.RECORD_AUDIO` (docs/assistant-setup.md).
 - Proposed: `MainActivity` requests it once on first start (or when the assistant screen opens with it missing). G re-checks the permission in `onScreenShown`, so no callback is needed.
-- Status: open (low priority, adb grant works).
+- Status: done (Nov 22): `MainActivity.onResume` asks once per process when it's missing.
 
 ## 2026-11-22 · G (assistant) · start the assistant from the mic button / anywhere
 - Need: a way for `:app` / B to open the assistant and start listening (e.g. a long press of the mic/camera button once remapped, or the island's assistant tap).
 - Available now, no contract change: `services.navigator.show("assistant", bundleOf("listen" to "1"))` opens the screen and starts a turn (the screen arg `listen`). The island activity has `ownerScreen = "assistant"`.
-- Status: FYI.
+- Status: FYI. The mic button stays a mic mute switch (the user's decision); tap-to-talk and the island open the assistant.
 
 ## 2026-11-22 · J (phone) · say when a banner was dismissed by the user
 - Need: dismissing an iPhone banner on the Echo should clear it on the iPhone (ANCS NegativeAction "Clear"). Today `:feature:phone` infers "user dismissed" when one of its banners disappears from `notifications.banners` without phone removing it. That's right with B's current BannerOverlay (it only calls `dismiss` on the Dismiss button), but would misfire if anything ever removes banners on a timeout / DND / "clear all".

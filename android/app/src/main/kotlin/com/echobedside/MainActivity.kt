@@ -42,6 +42,7 @@ class MainActivity : Activity() {
     private val offPagerViews = HashMap<String, View>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var shownId: String? = null
+    private var askedMic = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -181,6 +182,12 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         (currentScreenView() as? EchoScreen)?.onScreenShown(null)
+        // The assistant's microphone (declared in :feature:assistant). Ask once per process; the
+        // assistant re-checks it in onScreenShown, so no result callback is needed.
+        if (!askedMic && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            askedMic = true
+            requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), 1)
+        }
     }
 
     override fun onPause() {
