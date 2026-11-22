@@ -1,19 +1,67 @@
 package com.echobedside.feature.system
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Bundle
+import android.util.Log
 import com.echobedside.core.model.EchoFeature
 import com.echobedside.core.model.FeatureHost
+import com.echobedside.core.model.NightMode
+import com.echobedside.core.model.OverlaySpec
+import com.echobedside.feature.system.banner.BannerOverlay
+import com.echobedside.feature.system.cc.ControlCenterOverlay
+import com.echobedside.feature.system.hud.HudOverlay
+import com.echobedside.feature.system.island.IslandOverlay
 
 /**
- * `:feature:system` (agent B — System layer).
+ * `:feature:system` (agent B — System layer): volume keys in-app (no system panel), the mic/camera
+ * button (gating latch + KEY_POWER remap plan), the lens shutter, HUDs, Control Center, banners and
+ * the Echo Island renderer. Binds `services.systemControls`. See docs/status/system.md.
  *
- * Volume keys in-app (no system panel), mic/camera button (gating KEY_POWER remap: ask before /system), shutter (SW_CAMERA_LENS_COVER), HUDs (HUDs.dc.html), Control Center (ControlCenter.dc.html), banners (Banners.dc.html) and the Echo Island renderer (Island*.dc.html, NOTES §5.4). Binds services.systemControls.
+ * Overlays (full-screen, empty areas pass touches through): island 300, banners 400, HUDs 500,
+ * Control Center 600.
  *
- * Register screens/overlays/key handlers and bind owned services in [install]; see EchoFeature.
+ * Debug (debug builds): `adb shell am broadcast -a com.echobedside.system.DEBUG --es island story`
+ * (also `--es hud volume|brightness|micoff|micon|camoff`, `--es banner 0..3`, `--es cc open|close`,
+ * `--es look glass|black`), or the same extras on the launch intent.
  */
 object SystemFeature : EchoFeature {
     override val id = "system"
+    internal var ui: SystemUi? = null; private set
 
     override fun install(host: FeatureHost) {
-        // Not built yet.
+        val ui = SystemUi(host.context, host.services)
+        this.ui = ui
+        host.services.systemControls = ui.controls
+        applyNightSetting(host.services)
+        SystemSettings.sections.forEach { host.registerSettings(it) }
+        host.registerKeyHandler { ui.keys.onKey(it) }
+        host.registerOverlay(OverlaySpec("island", 300) { IslandOverlay(it, ui) })
+        host.registerOverlay(OverlaySpec("banners", 400) { BannerOverlay(it, ui) })
+        host.registerOverlay(OverlaySpec("huds", 500) { HudOverlay(it, ui) })
+        host.registerOverlay(OverlaySpec("controlcenter", 600) { ControlCenterOverlay(it, ui) })
+        if (host.services.config.debug) registerDebug(host.context, ui)
     }
+
+    /** `system.night.mode` (CC button or the settings page) → SystemState.nightMode. Also called live on change. */
+    internal fun applyNightSetting(services: com.echobedside.core.model.EchoServices) {
+        val m = services.settings.getString(SystemSettings.NIGHT_MODE, "").takeIf { it.isNotEmpty() } ?: return
+        val mode = runCatching { NightMode.valueOf(m.uppercase()) }.getOrNull() ?: return
+        if (services.system.state.value.nightMode != mode) services.system.update { it.copy(nightMode = mode) }
+    }
+
+    private fun registerDebug(ctx: Context, ui: SystemUi) {
+        ctx.registerReceiver(object : BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) {
+                val b = Bundle(i.extras ?: Bundle())
+                b.putLong("_t", System.nanoTime()) // distinct each time
+                Log.i("EchoSystem", "debug: ${b.keySet().filter { it != "_t" }.associateWith { b.get(it) }} | ${ui.monitor.describe()}")
+                ui.debug.value = b
+            }
+        }, IntentFilter(DEBUG_ACTION))
+    }
+
+    const val DEBUG_ACTION = "com.echobedside.system.DEBUG"
 }
