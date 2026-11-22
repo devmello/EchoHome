@@ -3,7 +3,6 @@ package com.echobedside.feature.media
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.sqrt
 
 /**
  * The Now Playing ambient colours (NowPlaying.dc.html `base/a/b/c`): [base] fills the screen,
@@ -30,43 +29,46 @@ data class Swatch(val rgb: Int, val population: Int) {
  */
 object PaletteExtractor {
 
+    /**
+     * Roles like AndroidX Palette's targets, which is what the designer's palettes follow:
+     * A = dark vibrant (the big top-left blob), B = vibrant (bottom-right), C = light vibrant
+     * (top), base = A's hue, very dark. Scores weigh lightness fit 0.52, saturation 0.24 and
+     * population 0.24 (Palette's weights); B also earns a little for moving away from A's hue.
+     * Then each role is clamped to the saturation / lightness band the design's palettes sit in.
+     */
     fun extract(pixels: IntArray, maxColors: Int = 16): AmbientPalette {
-        val swatches = quantize(pixels, maxColors)
-        if (swatches.isEmpty()) return AmbientPalette.NEUTRAL
-        val total = swatches.sumOf { it.population }.toFloat()
+        val all = quantize(pixels, maxColors)
+        if (all.isEmpty()) return AmbientPalette.NEUTRAL
+        // Near-black and near-white say nothing about the hue.
+        val swatches = all.filter { it.hsl[2] in 0.05f..0.95f }.ifEmpty { all }
+        val maxPop = swatches.maxOf { it.population }.toFloat()
+        val grey = swatches.all { it.hsl[1] < 0.15f }
 
-        // A: dominant, preferring coloured over near-black / near-white.
-        val a = swatches.maxBy { s ->
-            val (_, sat, l) = s.hsl
-            val usable = if (l < 0.05f || l > 0.95f) 0.15f else 1f
-            s.population / total * (0.35f + sat) * usable
+        val used = HashSet<Swatch>()
+        fun pick(targetL: Float, lRange: ClosedFloatingPointRange<Float>, minSat: Float, bonus: (Swatch) -> Float = { 0f }): Swatch? =
+            swatches.filter { it !in used && it.hsl[2] in lRange && (grey || it.hsl[1] >= minSat) }
+                .maxByOrNull { s ->
+                    val (_, sat, l) = s.hsl
+                    0.24f * sat + 0.52f * (1f - abs(l - targetL)) + 0.24f * (s.population / maxPop) + bonus(s)
+                }?.also { used += it }
+
+        val dominant = swatches.maxBy { it.population * (0.5f + it.hsl[1]) }
+        val a = pick(0.26f, 0.05f..0.45f, 0.3f) ?: dominant.also { used += it }
+        val aHue = a.hsl[0]
+        val b = pick(0.5f, 0.3f..0.7f, 0.3f) { s -> 0.2f * min(hueDistance(s.hsl[0], aHue), 60f) / 60f }
+            ?: pick(0.5f, 0.2f..0.8f, 0.15f) ?: a
+        val c = pick(0.74f, 0.55f..0.95f, 0.3f) ?: pick(0.65f, 0.4f..0.95f, 0.1f) ?: b
+
+        if (grey) {
+            return AmbientPalette(hslToRgb(aHue, min(a.hsl[1], 0.08f), 0.085f),
+                shape(a.hsl, 0f, 0.12f, 0.24f, 0.42f), shape(b.hsl, 0f, 0.12f, 0.42f, 0.62f), shape(c.hsl, 0f, 0.12f, 0.6f, 0.8f))
         }
-        val aH = a.hsl
-        val grey = swatches.all { it.hsl[1] < 0.12f || it.hsl[2] < 0.04f || it.hsl[2] > 0.97f }
-
-        // B: vibrant and as far from A's hue as the artwork allows.
-        val b = swatches.filter { it !== a }.maxByOrNull { s ->
-            val (h, sat, l) = s.hsl
-            val share = sqrt(s.population / total)
-            val hueFar = if (grey) 1f else 0.25f + hueDistance(h, aH[0]) / 180f
-            val midLight = 1f - abs(l - 0.55f) * 1.4f
-            share * (0.2f + sat) * hueFar * midLight.coerceAtLeast(0.05f)
-        } ?: a
-
-        // C: a light accent, distinct from both.
-        val c = swatches.filter { it !== a && it !== b }.maxByOrNull { s ->
-            val (_, sat, l) = s.hsl
-            val share = sqrt(s.population / total)
-            val light = 1f - abs(l - 0.72f) * 1.3f
-            share * (0.3f + sat) * light.coerceAtLeast(0.05f) * (0.3f + min(rgbDistance(s.rgb, a.rgb), rgbDistance(s.rgb, b.rgb)))
-        } ?: b
-
-        val satCap = if (grey) 0.12f else 0.9f
-        val blobA = shape(a.hsl, satMin = if (grey) 0f else 0.35f, satMax = satCap, lMin = 0.24f, lMax = 0.42f)
-        val blobB = shape(b.hsl, satMin = if (grey) 0f else 0.45f, satMax = satCap, lMin = 0.42f, lMax = 0.66f)
-        val blobC = shape(c.hsl, satMin = if (grey) 0f else 0.45f, satMax = satCap, lMin = 0.58f, lMax = 0.8f)
-        val base = hslToRgb(aH[0], min(aH[1], if (grey) 0.08f else 0.6f), 0.085f)
-        return AmbientPalette(base, blobA, blobB, blobC)
+        return AmbientPalette(
+            base = hslToRgb(aHue, a.hsl[1].coerceIn(0.4f, 0.65f), 0.085f),
+            a = shape(a.hsl, satMin = 0.5f, satMax = 0.8f, lMin = 0.28f, lMax = 0.45f),
+            b = shape(b.hsl, satMin = 0.65f, satMax = 0.9f, lMin = 0.45f, lMax = 0.62f),
+            c = shape(c.hsl, satMin = 0.75f, satMax = 1f, lMin = 0.62f, lMax = 0.8f),
+        )
     }
 
     private fun shape(hsl: FloatArray, satMin: Float, satMax: Float, lMin: Float, lMax: Float): Int =
@@ -182,14 +184,6 @@ fun hslToRgb(h: Float, s: Float, l: Float): Int {
 }
 
 fun hueDistance(a: Float, b: Float): Float { val d = abs(a - b) % 360f; return if (d > 180f) 360f - d else d }
-
-/** 0..1, Euclidean in RGB. */
-private fun rgbDistance(x: Int, y: Int): Float {
-    val dr = ((x shr 16) and 255) - ((y shr 16) and 255)
-    val dg = ((x shr 8) and 255) - ((y shr 8) and 255)
-    val db = (x and 255) - (y and 255)
-    return sqrt((dr * dr + dg * dg + db * db).toFloat()) / 441.7f
-}
 
 /** Linear blend of two opaque colours (used for the 1.2 s palette crossfade). */
 fun blend(from: Int, to: Int, t: Float): Int {

@@ -1,2 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Media sessions of other apps (MediaSessionManager.getActiveSessions needs an enabled
+             listener). Media only; banners have their own listener in :feature:system.
+             Grant: adb shell cmd notification allow_listener com.echobedside/com.echobedside.feature.media.MediaListenerService -->
+        <service
+            android:name="com.echobedside.feature.media.MediaListenerService"
+            android:label="Echo Bedside media"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>
