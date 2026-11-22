@@ -37,6 +37,11 @@ done
 TASK=assembleDebug; [ "$VARIANT" = release ] && TASK=assembleRelease
 APK="$CHECKOUT/android/app/build/outputs/apk/$VARIANT/app-$VARIANT.apk"
 if [ "$BUILD" = 1 ]; then
+  # The assistant's voice libs are git-ignored: without them the APK has no voice and replaces a working one.
+  if ! ls "$CHECKOUT/android/feature/assistant/src/main/jniLibs/armeabi-v7a/libsherpa-onnx-jni.so" >/dev/null 2>&1 && [ -x "$CHECKOUT/scripts/fetch-voice.sh" ]; then
+    echo "voice libs missing: fetching (scripts/fetch-voice.sh --libs)"
+    "$CHECKOUT/scripts/fetch-voice.sh" --libs >/dev/null || echo "warning: fetch-voice.sh --libs failed; the APK will have no voice" >&2
+  fi
   echo "build: $TASK in $CHECKOUT/android"
   (cd "$CHECKOUT/android" && ./gradlew -q ":app:$TASK" 2>&1 | grep -v '^w: ' || true)
 fi
