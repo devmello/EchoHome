@@ -43,14 +43,20 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
     private var dragging = false
     private var velocity: VelocityTracker? = null
     private var snapshotPending = false
+    /** The panel is on screen (revealing, open or closing). */
+    private var revealed = false
 
     private val back: () -> Boolean = { if (open) { close(); true } else false }
 
     init {
         addView(bg, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(panel, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        bg.visibility = GONE; panel.visibility = GONE
-        panel.translationY = -480f
+        // Closed, the panel stays VISIBLE above the screen at alpha 0: a GONE view leaves the render
+        // tree and HWUI frees its tiles' recorded nodes, so every open re-recorded them all (~40 ms).
+        // The background toggles INVISIBLE, not GONE: GONE <-> VISIBLE re-lays out the whole window.
+        bg.visibility = INVISIBLE
+        panel.translationY = -480f; panel.alpha = 0f
+        panel.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         observeWhileAttached(ui.ccRequests) { if (it) openNow() else close() }
         observeWhileAttached(ui.debug) { b -> when (b?.getString("cc")) { "open" -> openNow(); "close" -> close() } }
         panel.onDragClose = { dy, done, fling -> dragClose(dy, done, fling) }
@@ -59,9 +65,13 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         ui.backHandlers += back
+        // the first open would record every tile (~40 ms): do it once the screen has settled
+        postDelayed(warm, 4000)
     }
 
-    override fun onDetachedFromWindow() { ui.backHandlers -= back; super.onDetachedFromWindow() }
+    private val warm = Runnable { if (!open && isAttachedToWindow) panel.prewarm() }
+
+    override fun onDetachedFromWindow() { removeCallbacks(warm); ui.backHandlers -= back; super.onDetachedFromWindow() }
 
     // --- the edge pull (closed) ---
 
@@ -74,6 +84,8 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
                 tracking = true; dragging = false; startY = e.y
                 velocity = VelocityTracker.obtain().also { it.addMovement(e) }
                 takeSnapshot()
+                // record the tiles now, while nothing moves, so the reveal only replays them
+                panel.prewarm()
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
@@ -109,8 +121,11 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
             Snapshot.offMain({ buildSnapshot(bmp) }) { r ->
                 snapshotPending = false
                 if (r != null) {
+                    val t0 = System.nanoTime()
                     bg.setBitmap(r.first)
                     panel.setBackdrop(Backdrop(r.second, 0f, 0f, width.toFloat().coerceAtLeast(960f), height.toFloat().coerceAtLeast(480f)))
+                    val ms = (System.nanoTime() - t0) / 1_000_000
+                    if (ui.debugBuild && ms >= 8) android.util.Log.d("EchoPerf", "cc backdrop set $ms ms")
                 }
                 then?.invoke()
             }
@@ -150,9 +165,17 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
     }
 
     private fun beginReveal() {
-        bg.visibility = VISIBLE; panel.visibility = VISIBLE
+        bg.visibility = VISIBLE
+        revealed = true
+        panel.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_AUTO
+        // while it moves, the panel is one cached texture: a frame composites it instead of replaying ~45 nodes
+        panel.setLayerType(LAYER_TYPE_HARDWARE, null)
+        val t0 = System.nanoTime()
         panel.onOpening()
+        val t1 = System.nanoTime()
         ui.ccOpen.value = true
+        val t2 = System.nanoTime()
+        if (ui.debugBuild && t2 - t0 > 8_000_000) android.util.Log.d("EchoPerf", "cc reveal: onOpening ${(t1 - t0) / 1_000_000} ms, ccOpen observers ${(t2 - t1) / 1_000_000} ms")
     }
 
     private fun setProgress(p: Float, follow: Float) {
@@ -164,7 +187,7 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
     private fun settle(toOpen: Boolean) {
         open = toOpen
         if (toOpen) {
-            panel.animate().translationY(0f).alpha(1f).setDuration(500).setInterpolator(PANEL_SPRING).withEndAction(null).start()
+            panel.animate().translationY(0f).alpha(1f).setDuration(500).setInterpolator(PANEL_SPRING).withEndAction { if (open) panel.setLayerType(LAYER_TYPE_NONE, null) }.start()
             bg.animate().alpha(1f).setDuration(450).setInterpolator(EASE).start()
             panel.announceForAccessibility("Control Center")
         } else {
@@ -177,6 +200,7 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
         if (open) return
         open = true
         // copy the screen first, so the copy can't contain the panel itself
+        panel.prewarm()
         takeSnapshot {
             panel.alpha = 0f; bg.alpha = 0f; panel.translationY = -480f
             beginReveal()
@@ -185,7 +209,7 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
     }
 
     fun close() {
-        if (!open && panel.visibility != VISIBLE) return
+        if (!open && !revealed) return
         settle(false)
     }
 
@@ -193,6 +217,7 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
     private fun dragClose(dy: Float, done: Boolean, fling: Boolean) {
         if (!done) {
             panel.animate().cancel(); bg.animate().cancel()
+            if (panel.layerType != LAYER_TYPE_HARDWARE) panel.setLayerType(LAYER_TYPE_HARDWARE, null)
             panel.translationY = dy.coerceAtMost(0f)
             bg.alpha = (1f + dy / 400f).coerceIn(0f, 1f)
             return
@@ -201,7 +226,11 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
     }
 
     private fun finishClose() {
-        bg.visibility = GONE; panel.visibility = GONE
+        bg.visibility = INVISIBLE
+        revealed = false
+        panel.translationY = -480f; panel.alpha = 0f
+        panel.setLayerType(LAYER_TYPE_NONE, null)
+        panel.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         ui.ccOpen.value = false
         panel.onClosed()
         bg.setBitmap(null)

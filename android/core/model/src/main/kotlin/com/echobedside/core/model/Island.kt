@@ -106,20 +106,40 @@ interface IslandManager {
     fun update(id: String, transform: (LiveActivity) -> LiveActivity)
     fun end(id: String)
 
+    /** Screen ids that hide the whole island while they're the current screen (see [hideOnScreen]). */
+    val hiddenOnScreens: StateFlow<Set<String>> get() = NO_SCREENS
+
+    /**
+     * Hides the island entirely while [screenId] is current (a full-screen moment whose layout the
+     * island would cover, e.g. the ringing / snoozed alarm). Call once at registration; the island
+     * comes back when another screen is shown.
+     */
+    fun hideOnScreen(screenId: String, hidden: Boolean = true) {}
+
     /**
      * Main + bead: the two highest-priority activities that aren't stale and whose
-     * [LiveActivity.ownerScreen] isn't [currentScreen].
+     * [LiveActivity.ownerScreen] isn't [currentScreen]. Nothing while [currentScreen] is in [hiddenOnScreens].
      */
     fun visible(currentScreen: String?, now: Long = SystemClock.elapsedRealtime()): List<LiveActivity> =
-        activities.value
+        if (currentScreen != null && currentScreen in hiddenOnScreens.value) emptyList()
+        else activities.value
             .filter { (it.staleAfterElapsed == null || it.staleAfterElapsed > now) && (it.ownerScreen == null || it.ownerScreen != currentScreen) }
             .sortedByDescending { it.priority }
             .take(2)
+
+    companion object {
+        private val NO_SCREENS: StateFlow<Set<String>> = MutableStateFlow(emptySet<String>()).asStateFlow()
+    }
 }
 
 class DefaultIslandManager : IslandManager {
     private val _activities = MutableStateFlow<List<LiveActivity>>(emptyList())
     override val activities: StateFlow<List<LiveActivity>> = _activities.asStateFlow()
+    private val _hidden = MutableStateFlow<Set<String>>(emptySet())
+    override val hiddenOnScreens: StateFlow<Set<String>> = _hidden.asStateFlow()
+
+    override fun hideOnScreen(screenId: String, hidden: Boolean) =
+        _hidden.update { if (hidden) it + screenId else it - screenId }
 
     override fun publish(activity: LiveActivity) =
         _activities.update { list -> list.filterNot { it.id == activity.id } + activity }

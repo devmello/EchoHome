@@ -48,6 +48,9 @@ internal class Connectivity(private val app: Context, @Suppress("unused") privat
         refresh()
     }
 
+    /** [refresh] on the background thread: its binder calls can stall the UI thread for tens of ms (CC opening). */
+    fun refreshAsync() = com.echobedside.feature.system.ui.Snapshot.offMain({ refresh() }) {}
+
     @SuppressLint("MissingPermission")
     @Suppress("DEPRECATION")
     fun refresh() {

@@ -132,6 +132,8 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
         eq.visibility = INVISIBLE
         addView(eq, LayoutParams(IslandEqualizer.W_PX, IslandEqualizer.H_PX))
         observeWhileAttached(s.island.activities) { recompute() }
+        // screens that hide the island while current (IslandManager.hideOnScreen, e.g. the alarm)
+        observeWhileAttached(s.island.hiddenOnScreens) { recompute() }
         observeWhileAttached(s.navigator.current) {
             recompute()
             // the screen underneath changed: re-take the glass snapshot once the pager settles

@@ -28,6 +28,18 @@ class ContractsTest {
         assertEquals(listOf("a"), m.visible("nowplaying", now = 200).map { it.id })
     }
 
+    @Test fun screenCanHideTheWholeIsland() {
+        val m = DefaultIslandManager()
+        m.publish(act("m", ActivityKind.MUSIC, owner = "nowplaying"))
+        m.publish(act("t", ActivityKind.TIMER))
+        m.hideOnScreen("alarm")
+        assertEquals(emptyList<String>(), m.visible("alarm", now = 0).map { it.id })
+        assertEquals(listOf("m", "t").sorted(), m.visible("standby", now = 0).map { it.id }.sorted())
+        assertEquals(setOf("alarm"), m.hiddenOnScreens.value)
+        m.hideOnScreen("alarm", hidden = false)
+        assertEquals(2, m.visible("alarm", now = 0).size)
+    }
+
     @Test fun publishReplacesSameId() {
         val m = DefaultIslandManager()
         m.publish(act("x", ActivityKind.TIMER))
