@@ -8,7 +8,7 @@
   - **Analog**: superellipse n=5 minute track (a=446, b=222) and numerals (a=380, b=172), ticks rotated to the curve normal (`Superellipse.ring`, NOTES §5.7); date at 9, alarm at 3 from `services.alarms.next`. Two layers: the dial redraws on the minute, the hands view redraws once a second (aligned to the wall-clock second), stopped in `onScreenHidden`/detach.
   - **World**: land mask from `World.dc.html → rows()`, lit by the design's sun declination / subsolar longitude with the smoothstep twilight band; ~1,000 dots recomputed once a minute and drawn as 48 `drawPoints` batches (24 brightness levels × under-text). Cities from `clock.world.cities` (default the design's three); "you are here" from `services.location`. No colour option.
   - **Solar**: the sky / corona / horizon streak / disc + two glows are painted once per colour into a half-res bitmap on `Dispatchers.Default` (soft gradients; `BlurMaskFilter` sigmas from the CSS), then only text per minute.
-  - **Float**: two-tone `hsl` bubble gradients per glyph (170°), tilt/lift per position, `BlendMode.SCREEN` between digits, colon dots on top. **Font:** Nunito Black from `feature/clock/src/main/assets/fonts/Nunito-Black.ttf` when that file is there (`FloatFont`, OFL); until it is bundled, Inter 900 with a 14 px round-joined outline stroke (see Needs from the user).
+  - **Float**: two-tone `hsl` bubble gradients per glyph (170°), tilt/lift per position, `BlendMode.SCREEN` between digits, colon dots on top. **Font:** Nunito at wght 900 from `feature/clock/src/main/assets/fonts/Nunito-wght.ttf` (Google Fonts' variable font, OFL in `OFL-Nunito.txt`, bundled Nov 22 with the user's OK); without the file, Inter 900 with a 14 px round-joined outline stroke.
   - **Liquid Glass**: wallpaper (`Blue|Dusk|Graphite`) and the "lens" copy (colours passed through the tint and toward white by 0.14 + 0.5·glass, then pre-blurred by the glass amount) are painted once off the main thread at half res; the digits are a path filled with a `BitmapShader` of the lens copy under a 1.08× scale matrix about the centre (CSS `background-size: 108%`), then the specular band and a 1.5 px rim. Shadow = quarter-res blurred copy of the text, rebuilt per minute. Glyph contours are merged per glyph (`Path.op UNION`) because Inter variable keeps overlapping contours, which the rim stroke would otherwise show. Settings: `clock.glass.amount` (0–1, default 0.45), `clock.glass.wallpaper`.
   - **Weather**: day / dusk / night sky from sunrise/sunset (weather source, else computed for `services.location`: `SunMath.sunriseSunset`), stars + drifting cloud banks (pre-blurred 1/8-res bitmaps), hourly / sunrise / tomorrow modules as plain content fills (no glass on content). TOMORROW bars = 10 of tomorrow's `Weather.hourly` precipitation chances centred on the rain (`rainWindow`); no sample data. Motion updates **once a second** (clouds move ≤ 1.5 px/s under a 40 px blur); none in Night or while hidden.
   - **Calendar**: day/date, mini month, agenda for today + tomorrow with the live "now" line, past events at 0.4, "in N min" badge (≤ 60 min). Redraws on the minute.
@@ -26,7 +26,6 @@
 - Liquid Glass frost / wallpaper and World cities have no on-device control (no design for one); they're on the web settings page.
 - The home location is `services.location` (`:feature:home` binds it); the clock has no location setting of its own.
 - The first edit-mode entry after the Echo has been idle is still janky (the 0.5 s zoom runs at ~21 ms per frame; see Measured). Later entries, the palette, swipes and Done hold 60 fps.
-- Nunito Black isn't bundled yet (needs the download OK, see Needs from the user).
 - Night dim is view alpha; actual backlight dimming belongs with `:feature:system` (brightness).
 
 ## Measured on the Echo
@@ -79,7 +78,6 @@ Per phase (framestats, frames over 17 ms):
 `docs/status/shots/clock/`, all from the Echo at 960×480, compared with the design files:
 
 - Faces vs `Analog`, `Digital`, `World`, `Solar`, `Float`, `Glass`, `Weather`, `Calendar` `.dc.html`: `analog.png`, `digital.png`, `world.png`, `solar.png`, `float.png`, `glass.png`, `glass-frosted-dusk.png` (frost 1, Dusk, orange), `weather.png`, `calendar.png`. They match in layout, type and colour. Differences:
-  - Float uses Inter 900 with a round stroke, not Nunito (see Open questions).
   - Weather shows data (54°, H:61 L:47, sunrise 6:56 computed for Santa Cruz, tomorrow's bars from hourly rain) instead of the artboard's fixed sample values.
 - Night vs `Night.dc.html` / `NightDigital.dc.html`: `night-analog.png`, `night-digital.png`, `night-world.png`, `night-solar.png`, `night-float.png`, `glass-night.png`, `night-weather.png`, `night-calendar.png` (all dimmed to 0.42), `night-analog-awake.png` (tap: full red for 6 s).
 - Edit mode vs `Customize.dc.html`: `edit-analog.png` (palette open, re-shot with the corner masks), `edit-world.png` (no colour button), `edit-night.png` (Night pill on).
@@ -102,7 +100,6 @@ Per phase (framestats, frames over 17 ms):
 
 ## Needs from the user
 
-- **OK to download Nunito Black** for the Float face: `Nunito-Black.ttf` (about 130 KB) and its licence `OFL.txt` from Google Fonts (fonts.google.com/specimen/Nunito, the static Black weight; SIL Open Font License 1.1). They go to `android/feature/clock/src/main/assets/fonts/Nunito-Black.ttf` and `.../fonts/OFL-Nunito.txt`; nothing else changes (the code loads it when present). I didn't download it without that OK.
 - Nothing else: the clock needs no /system change, remount or flash.
 
 ## Device setup

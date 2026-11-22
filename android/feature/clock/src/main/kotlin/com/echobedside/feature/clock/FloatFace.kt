@@ -33,7 +33,7 @@ class FloatFace(context: Context, services: EchoServices) : SpecFace(context, se
     private val digitText = SpecText(380f, 900).apply {
         if (nunito != null) {
             paint.typeface = nunito
-            paint.fontVariationSettings = null // static Black
+            paint.fontVariationSettings = "'wght' 900" // Black
         } else {
             paint.style = Paint.Style.FILL_AND_STROKE
             paint.strokeJoin = Paint.Join.ROUND
@@ -167,11 +167,12 @@ class FloatFace(context: Context, services: EchoServices) : SpecFace(context, se
 }
 
 /**
- * Nunito Black for the Float face: `assets/fonts/Nunito-Black.ttf` in this module (SIL Open Font
- * License 1.1, `assets/fonts/OFL-Nunito.txt`). null when the file isn't bundled.
+ * Nunito for the Float face, drawn at wght 900 (Black): the variable font Google Fonts publishes,
+ * `ofl/nunito/Nunito[wght].ttf` from github.com/google/fonts, as `assets/fonts/Nunito-wght.ttf` in this
+ * module (SIL Open Font License 1.1, `assets/fonts/OFL-Nunito.txt`). null when the file isn't bundled.
  */
 object FloatFont {
-    const val ASSET = "fonts/Nunito-Black.ttf"
+    const val ASSET = "fonts/Nunito-wght.ttf"
     private var loaded = false
     private var typeface: Typeface? = null
 
