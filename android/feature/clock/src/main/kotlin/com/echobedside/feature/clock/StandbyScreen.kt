@@ -48,7 +48,7 @@ import kotlin.math.abs
  *    while this screen is shown ([NightController]).
  *
  * Debug launch extras (`--es screen standby …`): `face <id>`, `edit true`, `palette open`,
- * `nightmode on|off|auto`, `wake true`, `color #RRGGBB`, `glass 0..1`, `wallpaper Blue|Dusk|Graphite`,
+ * `nightmode on|off|auto`, `wake true`, `color RRGGBB`, `glass 0..1`, `wallpaper Blue|Dusk|Graphite`,
  * `complications true|false`, and in debug builds `fakelux <lux>` (feeds the night state machine).
  */
 @SuppressLint("ViewConstructor")
@@ -442,13 +442,14 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
     }
 
     private fun handleArgs(args: Bundle?) {
-        if (args == null) { if (editing) setEditing(false); return }
+        // null = resume / home: keep edit mode (it ends on Done or when the screen is hidden)
+        if (args == null) return
         fun str(k: String): String? = args.get(k)?.toString()
         str("face")?.let { showFace(it) }
         str("nightmode")?.let { m -> NightMode.entries.firstOrNull { it.name.equals(m, true) }?.let { services.systemControls.setNightMode(it) } }
         val cur = current
         if (cur != null) {
-            str("color")?.let { c -> runCatching { Color.parseColor(c) }.getOrNull()?.let { services.settings.putInt("clock.color.${cur.spec.id}", it) } }
+            str("color")?.let { c -> runCatching { Color.parseColor(if (c.startsWith("#")) c else "#$c") }.getOrNull()?.let { services.settings.putInt("clock.color.${cur.spec.id}", it) } }
             str("complications")?.let { services.settings.putBoolean("clock.complications.${cur.spec.id}", it.toBoolean()) }
             str("glass")?.toFloatOrNull()?.let { services.settings.putFloat(GlassFace.KEY_GLASS, it) }
             str("wallpaper")?.let { services.settings.putString(GlassFace.KEY_WALLPAPER, it) }

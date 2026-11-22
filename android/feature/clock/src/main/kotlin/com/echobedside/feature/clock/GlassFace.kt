@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
@@ -46,8 +47,14 @@ import kotlin.math.sin
 class GlassFace(context: Context, services: EchoServices) : SpecFace(context, services) {
 
     private val dateText = SpecText(26f, 600, -0.01f).apply { paint.setShadowLayer(9.5f, 0f, 1f, withAlpha(Color.BLACK, 0.25f)) }
-    private val timeLens = SpecText(300f, 700, -0.045f)
-    private val timeRim = SpecText(300f, 700, -0.045f).apply { paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.5f }
+    private val timeLens = SpecText(300f, 700, -0.045f).apply { paint.isFilterBitmap = true }
+    private val rimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.5f }
+    /** The time as one path: each glyph's overlapping contours merged (Inter variable keeps them),
+     *  so the rim stroke shows only the outline, like -webkit-text-stroke on a static font. */
+    private val timePath = Path()
+    private val glyphPath = Path()
+    private val emptyPath = Path()
+    private var timeWidth = 0f
     private val alarmText = SpecText(17f, 600, -0.01f)
     private val alarmIcon = context.icon(R.drawable.ic_alarm_22)
     private val bmpPaint = Paint(Paint.FILTER_BITMAP_FLAG)
@@ -71,7 +78,7 @@ class GlassFace(context: Context, services: EchoServices) : SpecFace(context, se
 
     init {
         observeWhileAttached(services.alarms.next) { nextAlarm = it; refresh(force = false) }
-        observeWhileAttached(services.settings.changes) { k -> if (k == KEY_GLASS || k == KEY_WALLPAPER) { readSettings(); rebuild() } }
+        observeWhileAttached(services.settings.changes) { k -> if (k == KEY_GLASS || k == KEY_WALLPAPER) { readSettings(); time = ""; rebuild(); refresh(force = true) } }
         readSettings()
     }
 
@@ -131,9 +138,27 @@ class GlassFace(context: Context, services: EchoServices) : SpecFace(context, se
         val d = TimeText.dateLine(cal)
         val a = nextAlarm?.let { TimeText.clock(it.triggerAtMillis, is24) }
         if (t == time && d == dateLine && a == alarmLabel) return false
-        if (t != time || shadow == null) { time = t; buildShadow() }
+        if (t != time || shadow == null) { time = t; buildPath(); buildShadow() }
         dateLine = d; alarmLabel = a
         return true
+    }
+
+    private fun buildPath() {
+        timePath.reset()
+        val p = timeLens.paint
+        val widths = FloatArray(time.length)
+        p.getTextWidths(time, widths)
+        val tracking = -0.045f * timeLens.size
+        timeWidth = widths.sum() + tracking * time.length
+        var x = (W - timeWidth) / 2f
+        val baseline = timeLens.baselineIn(TEXT_TOP, 300f)
+        for (i in time.indices) {
+            glyphPath.reset()
+            p.getTextPath(time, i, i + 1, x, baseline, glyphPath)
+            glyphPath.op(emptyPath, Path.Op.UNION)
+            timePath.addPath(glyphPath)
+            x += widths[i] + tracking
+        }
     }
 
     /** text-shadow-like drop shadow: the time, blurred 16 px, at quarter resolution. */
@@ -141,22 +166,24 @@ class GlassFace(context: Context, services: EchoServices) : SpecFace(context, se
         shadow?.recycle(); shadow = null
         if (config.night || time.isEmpty()) return
         val q = 4f
-        val tw = timeLens.width(time)
+        val tw = timeWidth
         val pad = 3 * 16f
         val w = ((tw + 2 * pad) / q).toInt() + 1
         val h = ((300f + 2 * pad) / q).toInt() + 1
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         c.scale(1 / q, 1 / q)
-        c.translate(pad, pad)
-        timeLens.paint.shader = null
-        timeLens.draw(c, time, 0f, timeLens.baselineIn(0f, 300f), Colors.argb(0.18f + 0.2f * glass, 0, 8, 30))
+        val left = (W - tw) / 2f - pad
+        c.translate(-left, -(TEXT_TOP - pad))
+        rimPaint.style = Paint.Style.FILL
+        rimPaint.color = Colors.argb(0.18f + 0.2f * glass, 0, 8, 30)
+        c.drawPath(timePath, rimPaint)
+        rimPaint.style = Paint.Style.STROKE
         val px = IntArray(w * h)
         bmp.getPixels(px, 0, w, 0, 0, w, h)
         PreBlur.gaussian(px, w, h, 16f / q)
         bmp.setPixels(px, 0, w, 0, 0, w, h)
         shadow = bmp
-        val left = (W - tw) / 2f - pad
         shadowRect.set(left, TEXT_TOP + 12f - pad, left + w * q, TEXT_TOP + 12f - pad + h * q)
     }
 
@@ -171,7 +198,7 @@ class GlassFace(context: Context, services: EchoServices) : SpecFace(context, se
         dateText.drawCentered(canvas, dateLine, W / 2, dateText.baselineIn(46f), dateColor)
 
         if (time.isNotEmpty()) {
-            val x = (W - timeLens.width(time)) / 2f
+            val x = (W - timeWidth) / 2f
             val baseline = timeLens.baselineIn(TEXT_TOP, 300f)
             // 1. shadow
             shadow?.let { canvas.drawBitmap(it, null, shadowRect, bmpPaint) }
@@ -186,11 +213,12 @@ class GlassFace(context: Context, services: EchoServices) : SpecFace(context, se
                 timeLens.paint.shader = ls
                 timeLens.draw(canvas, time, x, baseline, Color.WHITE)
             }
-            // 3. specular band + rim
+            // 3. specular band (text fills keep the counters), then the rim from the merged path
             timeLens.paint.shader = specular(night)
             timeLens.draw(canvas, time, x, baseline, Color.WHITE)
             timeLens.paint.shader = null
-            timeRim.draw(canvas, time, x, baseline, if (night) Colors.argb(0.9f, 190, 24, 14) else withAlpha(Color.WHITE, 0.32f + 0.25f * glass))
+            rimPaint.color = if (night) Colors.argb(0.9f, 190, 24, 14) else withAlpha(Color.WHITE, 0.32f + 0.25f * glass)
+            canvas.drawPath(timePath, rimPaint)
         }
 
         // next alarm, centred, bottom 34
