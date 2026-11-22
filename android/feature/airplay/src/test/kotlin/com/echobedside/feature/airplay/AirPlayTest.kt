@@ -128,6 +128,16 @@ class ReceiverStateTest {
         assertEquals(0L, s.durationMs)
     }
 
+    @Test fun progressJustBeforeNewTrackTextIsKept() {
+        // pyatv / iTunes order: progress, then text, then artwork.
+        var s = Reducer.metadata(connected(), "A", "X", "", -1, 0)
+        s = Reducer.progress(s, 0, 0, 44_100 * 120, 60_000)
+        s = Reducer.metadata(s, "B", "X", "", -1, 60_200)
+        assertEquals(120_000L, s.durationMs)
+        assertEquals(0L, s.positionMs)
+        assertEquals(60_000L, s.positionAt)
+    }
+
     @Test fun localPauseShowsPausedAndFreezes() {
         var s = Reducer.flowing(Reducer.progress(connected(), 0, 0, 44_100 * 60, 0), true, 0)
         s = Reducer.locallyPaused(s, true, 3_000)

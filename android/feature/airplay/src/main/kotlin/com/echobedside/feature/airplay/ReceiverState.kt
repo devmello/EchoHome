@@ -71,6 +71,8 @@ internal data class ReceiverState(
     val hasRemote: Boolean = false,
     /** When the current artwork arrived; null = no artwork for this track. */
     val artworkAt: Long? = null,
+    /** When the last progress message arrived. */
+    val progressAt: Long? = null,
 ) {
     val anyConnection: Boolean get() = connections.isNotEmpty()
 
@@ -104,8 +106,8 @@ internal data class ReceiverState(
 }
 
 internal object Reducer {
-    /** Artwork that arrived this shortly before new track metadata belongs to the new track. */
-    const val ARTWORK_GRACE_MS = 1_500L
+    /** Artwork / progress that arrived this shortly before new track text belongs to the new track. */
+    const val GRACE_MS = 1_500L
 
     fun clientConnected(s: ReceiverState, ip: String) =
         s.copy(connections = s.connections + (ip to (s.connections[ip] ?: 0) + 1), lastIp = ip)
@@ -138,16 +140,22 @@ internal object Reducer {
 
     fun flush(s: ReceiverState, now: Long) = freeze(s, now).copy(playing = false)
 
+    /**
+     * Senders send text, artwork and progress as separate messages in any order, so artwork or
+     * progress that arrived just before new track text belongs to the new track.
+     */
     fun metadata(s: ReceiverState, title: String?, artist: String?, album: String?, durationMs: Long, now: Long): ReceiverState {
         val newTrack = title != s.title || artist != s.artist || album != s.album
-        val keepArt = !newTrack || (s.artworkAt != null && now - s.artworkAt <= ARTWORK_GRACE_MS)
+        val keepArt = !newTrack || (s.artworkAt != null && now - s.artworkAt <= GRACE_MS)
+        val keepProgress = !newTrack || (s.progressAt != null && now - s.progressAt <= GRACE_MS)
         return s.copy(
             title = title,
             artist = artist,
             album = album,
-            durationMs = if (durationMs > 0) durationMs else if (newTrack) 0 else s.durationMs,
-            positionMs = if (newTrack) 0 else s.positionMs,
-            positionAt = if (newTrack) now else s.positionAt,
+            durationMs = if (durationMs > 0) durationMs else if (keepProgress) s.durationMs else 0,
+            positionMs = if (keepProgress) s.positionMs else 0,
+            positionAt = if (keepProgress) s.positionAt else now,
+            progressAt = if (keepProgress) s.progressAt else null,
             artworkAt = if (keepArt) s.artworkAt else null,
         )
     }
@@ -156,7 +164,7 @@ internal object Reducer {
 
     fun progress(s: ReceiverState, start: Long, current: Long, end: Long, now: Long): ReceiverState {
         val (position, duration) = AirPlayMath.progress(start, current, end)
-        return s.copy(positionMs = position, durationMs = if (duration > 0) duration else s.durationMs, positionAt = now)
+        return s.copy(positionMs = position, durationMs = if (duration > 0) duration else s.durationMs, positionAt = now, progressAt = now)
     }
 
     fun volume(s: ReceiverState, db: Float) = s.copy(volumeDb = db)

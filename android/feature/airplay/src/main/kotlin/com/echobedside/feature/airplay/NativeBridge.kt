@@ -69,6 +69,9 @@ internal object NativeBridge {
     /** Blocks up to [timeoutMs]. Returns samples copied, 0 on timeout, -1 when the stream ended. */
     external fun nativeReadPcm(handle: Long, buf: ShortArray, timeoutMs: Int): Int
 
+    /** Releases a reader blocked in [nativeReadPcm] (it returns 0). */
+    external fun nativeWakeReader(handle: Long)
+
     external fun nativeDroppedSamples(handle: Long): Long
 
     /** Blocking DACP request (up to ~2 s). Call off the main thread. */

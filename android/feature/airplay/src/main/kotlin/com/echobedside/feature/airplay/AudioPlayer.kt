@@ -33,6 +33,8 @@ internal class AudioPlayer(
     /** Ends the thread; the stream's -1 ends it too. */
     fun stop() {
         running = false
+        NativeBridge.nativeWakeReader(handle)
+        try { track?.pause() } catch (_: IllegalStateException) {} // releases a blocking write()
     }
 
     fun join(timeoutMs: Long) = thread.join(timeoutMs)

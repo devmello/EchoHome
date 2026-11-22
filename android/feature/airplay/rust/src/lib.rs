@@ -38,6 +38,8 @@ struct PcmState {
     /// The current session ended: `readPcm` returns -1 once the queue is drained.
     closed: bool,
     dropped: u64,
+    /// Bumped by `nativeWakeReader` to release a blocked reader.
+    wake: u64,
 }
 
 struct PcmRing {
@@ -53,6 +55,7 @@ impl PcmRing {
                 generation: 0,
                 closed: true,
                 dropped: 0,
+                wake: 0,
             }),
             cv: Condvar::new(),
         }
@@ -455,10 +458,11 @@ pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeR
     let capacity = env.get_array_length(&buf).unwrap_or(0) as usize & !1;
     let ring = &r.shared.ring;
     let guard = ring.state.lock().unwrap();
+    let wake = guard.wake;
     let (mut s, _) = ring
         .cv
         .wait_timeout_while(guard, Duration::from_millis(timeout_ms.max(0) as u64), |s| {
-            s.queue.is_empty() && !s.closed
+            s.queue.is_empty() && !s.closed && s.wake == wake
         })
         .unwrap();
     if s.queue.is_empty() {
@@ -475,6 +479,20 @@ pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeR
     }
     s.queue.drain(..n);
     n as jint
+}
+
+/// Wakes a reader blocked in `nativeReadPcm` (it returns 0), so the player thread can stop at once.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_echobedside_feature_airplay_NativeBridge_nativeWakeReader<'a>(
+    _env: JNIEnv<'a>,
+    _this: JObject<'a>,
+    handle: jlong,
+) {
+    if let Some(r) = receiver(handle) {
+        let mut s = r.shared.ring.state.lock().unwrap();
+        s.wake = s.wake.wrapping_add(1);
+        r.shared.ring.cv.notify_all();
+    }
 }
 
 /// Samples dropped because the AudioTrack fell behind (diagnostics).
