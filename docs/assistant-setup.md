@@ -58,9 +58,17 @@ android/feature/assistant/tools/push-voice-models.sh stt tts  # or only some
 | Part | Model | Licence | Size |
 |---|---|---|---|
 | Native runtime | sherpa-onnx v2.0.1 `libsherpa-onnx-jni.so` + `libonnxruntime.so` (armeabi-v7a) | Apache-2.0 (onnxruntime: MIT) | 18 MB in the APK |
-| Wake word | `sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01` (int8 encoder/joiner) | Apache-2.0 | 5.0 MB on device |
+| Wake word | `sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01` (the non-mobile tarball; int8 encoder/joiner) | Apache-2.0 | 5.8 MB on device |
 | Speech-to-text | `sherpa-onnx-streaming-zipformer-en-20M-2023-02-17` (int8 encoder/joiner) | Apache-2.0 | 34 MB on device |
-| Text-to-speech | `vits-piper-en_US-amy-low-int8` (Piper, 16 kHz, one voice) | MIT (Piper); voice CC BY 4.0, per its MODEL_CARD | 36 MB on device, incl. espeak-ng-data |
+| Text-to-speech | `vits-piper-en_US-amy-low-int8` (Piper, 16 kHz, one voice) | MIT (Piper); voice CC BY 4.0, per its MODEL_CARD | 24 MB on device, incl. the lexicon |
+| Pronunciation | `lexicon-en-us.txt` from the sherpa-onnx `tts-models` release | Not stated by the release; derived from CMUdict (BSD-2) and espeak-ng's en_list (GPL-3.0). A data file, not linked code | 6.3 MB, in `tts/` |
+
+Two things to know about these files:
+- **Use the non-mobile KWS tarball.** The `-mobile` int8 encoder of the same model fails on its
+  second chunk (a Reshape of {17,1,128} to {8,2,1,128} in `/downsample/Reshape_1`, reproduced on
+  the Mac with onnxruntime 1.21). On the Echo the failed decode kept the voice thread at 100% CPU.
+- **sherpa-onnx v2 has no espeak-ng.** Piper voices need the `lexicon-en-us.txt` word list
+  instead of `espeak-ng-data`, which v2 ignores. Without it the voice produces no audio.
 
 The models live in `/sdcard/Android/data/com.echobedside/files/voice/{kws,stt,tts}`. That's the
 app's own external files dir: no permission or root is needed, and nothing goes in `/system`. The
@@ -70,10 +78,22 @@ The libs are packaged from `android/feature/assistant/src/main/jniLibs/` (git-ig
 without them still works, and the idle screen says "The voice models aren’t installed yet".
 
 The Echo has no Android TextToSpeech engine installed (checked: `cmd tts` shows no
-`TTS_SERVICE` providers), so Piper is the voice.
+`TTS_SERVICE` providers), so Piper is the voice. **It's slow on this CPU**, so speaking is off by default
+(`assistant.speak`):
+
+| Amy low on the Echo (1 thread) | Load | Synthesis of 9.6 s of speech | RTF | PSS while loaded |
+|---|---|---|---|---|
+| int8 (installed) | 35.5 s | 33.9 s | 3.4 | 139–164 MB |
+| fp32 | 27.8 s | 11.5 s | 1.2 | 200 MB |
+| (the Mac, for comparison: int8) | 0.4 s | 1.1 s | 0.11 | |
+
+The voice loads on its own thread while Claude works. An answer never waits more than 1.5 s for
+it: if the voice isn't ready by then, the answer is only shown. A real-time voice needs a faster
+engine; see the open question in docs/status/assistant.md.
 
 **More voices.** Push any sherpa-onnx Piper voice folder to `voice/tts/<name>/`. The folder needs
-one `.onnx` file, its `tokens.txt` and `espeak-ng-data`. The voice then shows up in the Voice
+one `.onnx` file and its `tokens.txt`, plus `lexicon-en-us.txt` (or it uses the one in
+`voice/tts/`). The voice then shows up in the Voice
 setting after the app restarts. Amy is the flat `voice/tts/` folder.
 
 ## 3. Microphone permission
@@ -91,7 +111,7 @@ The app doesn't ask for the permission at runtime yet. Grant it once over adb:
   turn. Tap again to stop at any time.
 - **Chips** send their question to Claude. In demo mode they play the demos.
 - While Claude works, each tool call shows as a step ("Timer", "Weather", …). The answer is
-  revealed word by word and spoken. Result cards show what the tools did: timer and alarm tiles,
+  revealed word by word (and spoken, if Speak answers is on). Result cards show what the tools did: timer and alarm tiles,
   weather, now playing, brightness.
 - **Follow-ups.** A new question within 60 s keeps the conversation. When Claude answers with a
   question, the assistant listens for your reply right away (Follow-up listening). If you say
@@ -107,7 +127,9 @@ The app doesn't ask for the permission at runtime yet. Grant it once over adb:
 The wake word is off by default. When it's on, the mic and the 3.3M keyword spotter run whenever
 the assistant is idle. A voice gate means the model only decodes around speech. Saying the wake
 word opens the assistant screen (`assistant.openOnWake`, default true) and starts listening.
-Check its measured idle cost in docs/status/assistant.md before you turn it on.
+Measured idle cost in a quiet room: about +40 MB PSS (the model stays loaded) and about 5% of
+one core on StandBy (1.4% without it). The gate learns the room's noise floor in the first ~10 s,
+and the model decodes until then. Loading takes 2–6 s.
 
 "Hey Nova" is a placeholder. The spotter takes the phrase as the model's BPE tokens, one phrase
 per line in `kws/keywords.txt`:
@@ -141,7 +163,7 @@ Every value applies right away, with no restart.
 | `assistant.openOnWake` | on/off | on | The wake word opens the assistant screen |
 | `assistant.model` | choice | `claude-haiku-5-5` | Haiku 5.5, Sonnet 5.5 or Opus 5.5. A change starts a new conversation |
 | `assistant.followUp` | on/off | on | Listen again when Claude asks a question |
-| `assistant.speak` | on/off | on | Speak answers (when off, they're only shown) |
+| `assistant.speak` | on/off | off | Speak answers (when off, they're only shown). Off because Piper is slower than real time here |
 | `assistant.speakAtNight` | on/off | off | Speak while night mode is active |
 | `assistant.voice` | choice | `amy` | The installed on-device voices |
 | `assistant.speechRate` | 0.7–1.4 | 1.0 | Speaking speed |
@@ -160,7 +182,10 @@ these:
 | `listen 1` | Starts a turn |
 | `ask <text>` | Sends text to Claude |
 | `echo 1` | Listens and shows the transcript (STT only, no Claude, nothing spoken) |
-| `synth <text>` | Synthesizes speech **without playing it**, and logs load time, synthesis time and RTF |
+| `synth <text>` | Synthesizes speech **without playing it**, logs load time, synthesis time and RTF, and saves `voice/bench/synth.wav` |
+| `bench stt:<file>` | Transcribes a 16 kHz WAV under `voice/` and logs load time, RTF and the word count (not the words) |
+| `bench kws:<file>` | Runs the wake word over a WAV and logs load time, RTF and hits |
+| `voice <id>` | Switches the voice for this run |
 | `say <text>` | Speaks with the on-device voice (**plays sound**) |
 | `mictest 1` | Captures the mic without models |
 | `wake 1` | Turns the wake word on for this run |
