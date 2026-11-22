@@ -50,6 +50,7 @@ class RoomSwitcher(context: Context, backdrop: () -> Backdrop?) : GlassTile(cont
     private val segs = ArrayList<Float>() // x of each segment start, plus the end
 
     fun bind(rooms: List<Room>, selected: String?) {
+        if (rooms.map { it.label } == this.rooms.map { it.label } && selected == this.selected) { this.rooms = rooms; return }
         this.rooms = rooms; this.selected = selected
         segs.clear()
         var x = 4f
@@ -87,7 +88,7 @@ class RoomSwitcher(context: Context, backdrop: () -> Backdrop?) : GlassTile(cont
 class ThermostatView(context: Context, backdrop: () -> Backdrop?) : GlassTile(context, 34f, backdrop) {
     override val springs = false
     var tile: ThermostatTile? = null
-        set(v) { field = v; invalidate() }
+        set(v) { if (field != v) { field = v; invalidate() } }
     var onNudge: ((Int) -> Unit)? = null
     var onMode: (() -> Unit)? = null
 
@@ -178,7 +179,7 @@ class ThermostatView(context: Context, backdrop: () -> Backdrop?) : GlassTile(co
 class LampView(context: Context, backdrop: () -> Backdrop?) : GlassTile(context, 30f, backdrop) {
     override val springs = false
     var tile: LampTile? = null
-        set(v) { field = v; if (!dragging) shown = v?.pct ?: 0; invalidate() }
+        set(v) { if (field != v) { field = v; if (!dragging) shown = v?.pct ?: 0; invalidate() } }
     /** Live while dragging; [onSet] on release. */
     var onPreview: ((Int) -> Unit)? = null
     var onSet: ((Int) -> Unit)? = null
@@ -245,8 +246,10 @@ class LampView(context: Context, backdrop: () -> Backdrop?) : GlassTile(context,
 class SmallTile(context: Context, backdrop: () -> Backdrop?) : GlassTile(context, 30f, backdrop) {
     var name = ""; var state = ""; var iconD = Icons.BULB; var accent = 0xFFFF9F0A.toInt()
     fun bind(name: String, state: String, icon: String, accent: Int, on: Boolean, animate: Boolean) {
+        val changed = name != this.name || state != this.state || icon != iconD || accent != this.accent
         this.name = name; this.state = state; this.iconD = icon; this.accent = accent
-        setOn(on, animate); invalidate()
+        setOn(on, animate)
+        if (changed) invalidate() // unchanged tiles keep their display list
     }
 
     override fun drawContent(canvas: Canvas, w: Float, h: Float) {
@@ -268,9 +271,11 @@ class SceneView(context: Context, backdrop: () -> Backdrop?) : GlassTile(context
     private var name = ""; private var iconD = Icons.SPARKLE; private var dot = 0
     private var lines: List<String> = emptyList()
     fun bind(t: SceneTile, animate: Boolean) {
+        setOn(t.active, animate)
+        if (t.name == name && Icons.of(t.icon) == iconD && t.dot == dot) return // unchanged: keep the display list
         name = t.name; iconD = Icons.of(t.icon); dot = t.dot
         lines = HomeType.sceneName.wrap(name, 148f - 14f - 36f - 10f - 14f, 2)
-        setOn(t.active, animate); invalidate()
+        invalidate()
     }
 
     override fun drawContent(canvas: Canvas, w: Float, h: Float) {

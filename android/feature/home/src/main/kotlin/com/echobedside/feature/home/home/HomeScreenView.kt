@@ -8,7 +8,9 @@ import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RadialGradient
+import android.graphics.RectF
 import android.graphics.Shader
 import android.os.Bundle
 import android.widget.FrameLayout
@@ -44,8 +46,11 @@ open class HomeScreenView(
 ) : FrameLayout(context), EchoScreen {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val controller = HomeController(ha, services.settings, scope, defaults = defaults)
-    private val wallpaper: Bitmap = HomeWallpaper.render(960, 480)
-    private val backdrop: Backdrop = PreBlur.backdrop(wallpaper, 960f, 480f, blurPx = 20f)
+    private val plain: Bitmap = HomeWallpaper.render(960, 480)
+    private val backdrop: Backdrop = PreBlur.backdrop(plain, 960f, 480f, blurPx = 20f)
+    /** [plain] with the tiles' shadows baked in (redone only when the room switcher's width changes). */
+    private var wallpaper: Bitmap = plain
+    private var shadowsFor = -1
     private var night = false
     private var ui: HomeUi? = null
     private var shown = false
@@ -123,7 +128,8 @@ open class HomeScreenView(
         val rooms = u.rooms.take(4)
         val w = switcher.widthFor(rooms)
         (switcher.layoutParams as LayoutParams).let { lp ->
-            if (lp.width != w.toInt()) { lp.width = kotlin.math.ceil(w).toInt(); lp.leftMargin = (960 - 24 - lp.width); switcher.layoutParams = lp }
+            val sw = kotlin.math.ceil(w).toInt()
+            if (lp.width != sw) { lp.width = sw; lp.leftMargin = (960 - 24 - lp.width); switcher.layoutParams = lp }
         }
         switcher.bind(rooms, u.selected?.id)
 
@@ -146,7 +152,33 @@ open class HomeScreenView(
             v.visibility = if (t != null) VISIBLE else INVISIBLE
             if (t != null) v.bind(t.name, t.stateText, Icons.of(t.icon), 0xFFFF9F0A.toInt(), t.on, animate)
         }
+        bakeShadows()
         invalidate()
+    }
+
+    /**
+     * The tiles' drop shadows, drawn once into the wallpaper (see [com.echobedside.feature.home.ui.GlassTile]).
+     * Redone only when which tiles show, or the switcher's width, changes (a room with fewer slots).
+     */
+    private fun bakeShadows() {
+        val list = ArrayList<HomeWallpaper.Shadow>()
+        var key = 17
+        for (i in 0 until childCount) {
+            val v = getChildAt(i)
+            if (v.visibility != VISIBLE) continue
+            val lp = v.layoutParams as LayoutParams
+            val x = (if (v === switcher) 960 - 24 - lp.width else lp.leftMargin).toFloat()
+            key = key * 31 + i * 7919 + lp.width
+            list += when (v) {
+                switcher -> HomeWallpaper.Shadow(x, lp.topMargin.toFloat(), lp.width.toFloat(), lp.height.toFloat(), 22f, 8f, 24f, 0.30f)
+                is SceneView -> HomeWallpaper.Shadow(x, lp.topMargin.toFloat(), lp.width.toFloat(), lp.height.toFloat(), 24f, 12f, 30f, 0.30f)
+                is ThermostatView -> HomeWallpaper.Shadow(x, lp.topMargin.toFloat(), lp.width.toFloat(), lp.height.toFloat(), 34f, 16f, 40f, 0.35f)
+                else -> HomeWallpaper.Shadow(x, lp.topMargin.toFloat(), lp.width.toFloat(), lp.height.toFloat(), 30f, 16f, 40f, 0.35f)
+            }
+        }
+        if (key == shadowsFor) return
+        shadowsFor = key
+        wallpaper = HomeWallpaper.shadows(plain, list) // the old one is left to the GC: a display list may still hold it
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -172,6 +204,26 @@ open class HomeScreenView(
 
 /** The Home.dc.html background, rendered once (then pre-blurred for the glass). */
 object HomeWallpaper {
+    /** CSS `box-shadow: 0 [dy] [blur] rgba(0,0,0,[alpha])` under a rounded rect. */
+    data class Shadow(val x: Float, val y: Float, val w: Float, val h: Float, val radius: Float, val dy: Float, val blur: Float, val alpha: Float)
+
+    /** A copy of [base] with [shadows] drawn outside their shapes (the glass is see-through). */
+    fun shadows(base: Bitmap, shadows: List<Shadow>): Bitmap {
+        val b = base.copy(Bitmap.Config.ARGB_8888, true)
+        val c = Canvas(b)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
+        val r = RectF(); val path = Path()
+        for (s in shadows) {
+            // CSS blur B is a Gaussian with σ = B/2; setShadowLayer(radius) uses σ ≈ 0.577·radius + 0.5.
+            val radius = ((s.blur / 2f) - 0.5f) / 0.57735f
+            p.setShadowLayer(radius, 0f, s.dy, withAlpha(Color.BLACK, s.alpha))
+            r.set(s.x, s.y, s.x + s.w, s.y + s.h)
+            path.reset(); path.addRoundRect(r, s.radius, s.radius, Path.Direction.CW)
+            c.save(); c.clipOutPath(path); c.drawPath(path, p); c.restore()
+        }
+        return b
+    }
+
     fun render(w: Int, h: Int): Bitmap {
         val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)

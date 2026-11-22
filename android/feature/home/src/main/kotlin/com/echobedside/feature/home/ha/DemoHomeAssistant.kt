@@ -141,7 +141,7 @@ class DemoHomeAssistant(private val scope: CoroutineScope, private val latencyMs
                 ent("light.ceiling", "off", "friendly_name" to "Ceiling", "supported_color_modes" to modes("onoff")),
                 ent("fan.air_purifier", "on", "friendly_name" to "Air purifier", "preset_mode" to "auto", "percentage" to 25),
                 ent("light.floor_lamp", "on", "friendly_name" to "Floor lamp", "brightness" to 89, "supported_color_modes" to modes("color_temp")),
-                ent("light.tv_backlight", "on", "friendly_name" to "TV backlight", "supported_color_modes" to modes("onoff")),
+                ent("light.tv_backlight", "on", "friendly_name" to "TV light", "supported_color_modes" to modes("onoff")),
                 ent("switch.speakers", "off", "friendly_name" to "Speakers"),
                 ent("light.pendants", "on", "friendly_name" to "Pendants", "brightness" to 204, "supported_color_modes" to modes("brightness")),
                 ent("light.under_cabinet", "off", "friendly_name" to "Under-cabinet", "supported_color_modes" to modes("onoff")),

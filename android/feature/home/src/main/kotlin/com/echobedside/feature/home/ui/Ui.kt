@@ -114,7 +114,12 @@ val GLASS_OFF = withAlpha(Color.WHITE, 0.09f)
  */
 @SuppressLint("ViewConstructor")
 abstract class GlassTile(context: Context, private val radius: Float, private val backdrop: () -> Backdrop?) : View(context) {
-    protected val glass = GlassPainter()
+    /**
+     * No live shadow: GlassPainter's setShadowLayer on a path is re-blurred on the CPU every frame
+     * (≈ 100 ms frames on the Echo with 11 tiles). The screen bakes the shadows into its wallpaper
+     * instead ([com.echobedside.feature.home.home.HomeWallpaper.shadows]).
+     */
+    protected val glass = GlassPainter().apply { shadow = false }
     var night = false
         set(v) { if (field != v) { field = v; invalidate() } }
     /** 0 = off (glass), 1 = on (white). */
