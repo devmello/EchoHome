@@ -16,6 +16,8 @@ import com.echobedside.feature.assistant.llm.ClaudeModels
 import com.echobedside.feature.assistant.llm.EchoTools
 import com.echobedside.feature.assistant.ui.AssistantScreen
 import com.echobedside.feature.assistant.voice.SherpaVoice
+import com.echobedside.feature.assistant.voice.SystemTtsSpeaker
+import com.echobedside.feature.assistant.voice.VoiceWithSystemTts
 import java.io.File
 import java.util.concurrent.Executors
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -47,7 +49,9 @@ object AssistantFeature : EchoFeature {
         }.asCoroutineDispatcher()
         // /sdcard/Android/data/com.echobedside/files/voice (created here so adb can push into it).
         val root = ctx.getExternalFilesDir("voice") ?: File(ctx.filesDir, "voice")
-        val voice = SherpaVoice(root)
+        // An installed Android TTS engine (real time) is preferred over the slow on-device Piper voices.
+        val engines = runCatching { SystemTtsSpeaker.engines(ctx) }.getOrDefault(emptyList())
+        val voice = VoiceWithSystemTts(SherpaVoice(root), engines.firstOrNull()?.let { SystemTtsSpeaker(ctx, it) })
         val agent = AssistantAgent(
             api = ClaudeClient({ services.config.secrets.anthropicApiKey }),
             tools = EchoTools({ services }),
@@ -70,10 +74,11 @@ object AssistantFeature : EchoFeature {
             hasMicPermission = { ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED },
             voiceThread = voiceThread,
             ttsThread = ttsThread,
+            speakDefault = engines.isNotEmpty(),
             demoData = services.config.demoData,
         )
         this.engine = engine
-        host.registerSettings(AssistantSettings.section(voice.voices(), voice.defaultVoice))
+        host.registerSettings(AssistantSettings.section(voice.voices(), voice.defaultVoice, speakDefault = engines.isNotEmpty()))
         host.registerScreen(ScreenSpec(AssistantEngine.SCREEN_ID, order = 60, inPager = false) { AssistantScreen(it, services, engine) })
         // After every feature installed (slots may be replaced during install).
         Handler(Looper.getMainLooper()).post { engine.start() }

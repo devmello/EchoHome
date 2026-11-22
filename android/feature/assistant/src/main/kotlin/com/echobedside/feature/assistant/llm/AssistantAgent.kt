@@ -94,7 +94,7 @@ class AssistantAgent(
         while (true) {
             var streamed = false
             val listener = object : StreamListener {
-                override fun onText(delta: String) { streamed = true }
+                override fun onText(delta: String) { streamed = true; emit(TurnEvent.AnswerDelta(delta)) }
                 override fun onToolUse(id: String, name: String) { streamed = true; emit(TurnEvent.ToolStart(id, name)) }
             }
             try {

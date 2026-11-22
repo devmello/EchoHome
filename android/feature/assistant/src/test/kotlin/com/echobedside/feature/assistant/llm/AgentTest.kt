@@ -55,7 +55,11 @@ class AgentTest {
         assertEquals("Your pasta timer is set for ten minutes.", r.answer)
         assertEquals(listOf("set_timer"), ran.map { it.first })
         assertEquals(600, ran[0].second.getInt("duration_seconds"))
-        assertEquals(listOf(TurnEvent.ToolStart("toolu_1", "set_timer"), TurnEvent.ToolDone("toolu_1", true)), events)
+        assertEquals(listOf(TurnEvent.ToolStart("toolu_1", "set_timer"), TurnEvent.ToolDone("toolu_1", true)),
+            events.filterNot { it is TurnEvent.AnswerDelta })
+        // The answer text streams as it comes (the voice starts on its first sentence).
+        assertEquals("Your pasta timer is set for ten minutes.",
+            events.filterIsInstance<TurnEvent.AnswerDelta>().joinToString("") { it.text })
         assertEquals(1, r.cards.size)
 
         // Request 1: headers and body shape.

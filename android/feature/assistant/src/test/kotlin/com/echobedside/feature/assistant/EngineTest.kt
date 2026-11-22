@@ -144,6 +144,19 @@ class EngineTest {
         )
     }
 
+    @Test fun `a streamed answer is spoken piece by piece, numbers spelled out`() = runTest {
+        val r = Rig(this, api = ClaudeApi { _, l ->
+            listOf("Rain starts around 8 tomorrow", ". Your alarm is at ", "6:40 AM.").forEach { l.onText(it) }
+            textMessage("Rain starts around 8 tomorrow. Your alarm is at 6:40 AM.")
+        })
+        runCurrent()
+        r.engine.ask("Weather?")
+        advanceTimeBy(5000)
+        assertEquals(Phase.ANSWER, r.engine.state.value.phase)
+        assertEquals(listOf("Rain starts around eight tomorrow.", "Your alarm is at six forty a m."), r.voice.spoken)
+        assertEquals(1, r.voice.ttsReleased)
+    }
+
     @Test fun `tap to talk runs a whole turn and frees the models`() = runTest {
         val r = Rig(this)
         r.engine.start(); runCurrent()

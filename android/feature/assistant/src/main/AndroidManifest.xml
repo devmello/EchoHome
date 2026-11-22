@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Mic audio for the Home Assistant Assist pipeline (the wake word runs on the server). -->
+    <!-- Mic audio for the on-device wake word and speech recognition. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 11 package visibility: find installed TTS engines (eSpeak NG, RHVoice...). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
 </manifest>

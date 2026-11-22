@@ -48,19 +48,24 @@ large is committed to git.
 
 ```sh
 # On the Mac: download + verify, unpack the armv7 JNI libs into the module, stage the models.
-android/feature/assistant/tools/fetch-voice.sh
+./scripts/fetch-voice.sh            # libs + models (the module's tools/fetch-voice.sh does the work)
+./scripts/fetch-voice.sh --libs     # only the JNI libs: run this once in every checkout that builds
 # Build and install the app once (this creates the app's external files dir), then push the models:
 ./scripts/build-install.sh --screen assistant
 android/feature/assistant/tools/push-voice-models.sh          # all three
 android/feature/assistant/tools/push-voice-models.sh stt tts  # or only some
 ```
 
+**A checkout without the libs builds an APK without a voice.** Installing it on the Echo replaces
+a working one (the assistant then says the voice models aren't installed). Every worktree that
+installs on the Echo should run `./scripts/fetch-voice.sh --libs` once.
+
 | Part | Model | Licence | Size |
 |---|---|---|---|
 | Native runtime | sherpa-onnx v2.0.1 `libsherpa-onnx-jni.so` + `libonnxruntime.so` (armeabi-v7a) | Apache-2.0 (onnxruntime: MIT) | 18 MB in the APK |
 | Wake word | `sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01` (the non-mobile tarball; int8 encoder/joiner) | Apache-2.0 | 5.8 MB on device |
 | Speech-to-text | `sherpa-onnx-streaming-zipformer-en-20M-2023-02-17` (int8 encoder/joiner) | Apache-2.0 | 34 MB on device |
-| Text-to-speech | `vits-piper-en_US-amy-low-int8` (Piper, 16 kHz, one voice) | MIT (Piper); voice CC BY 4.0, per its MODEL_CARD | 24 MB on device, incl. the lexicon |
+| Text-to-speech | `vits-piper-en_US-amy-low` (Piper fp32, 16 kHz, one voice; not the -int8 build, which is 2.7× slower here) | MIT (Piper); voice CC BY 4.0, per its MODEL_CARD | 66 MB on device, incl. the lexicon |
 | Pronunciation | `lexicon-en-us.txt` from the sherpa-onnx `tts-models` release | Not stated by the release; derived from CMUdict (BSD-2) and espeak-ng's en_list (GPL-3.0). A data file, not linked code | 6.3 MB, in `tts/` |
 
 Two things to know about these files:
@@ -77,19 +82,44 @@ push script holds the device lock and replaces each folder.
 The libs are packaged from `android/feature/assistant/src/main/jniLibs/` (git-ignored). A build
 without them still works, and the idle screen says "The voice models aren’t installed yet".
 
-The Echo has no Android TextToSpeech engine installed (checked: `cmd tts` shows no
-`TTS_SERVICE` providers), so Piper is the voice. **It's slow on this CPU**, so speaking is off by default
-(`assistant.speak`):
+### How fast the voices are on the Echo
 
-| Amy low on the Echo (1 thread) | Load | Synthesis of 9.6 s of speech | RTF | PSS while loaded |
-|---|---|---|---|---|
-| int8 (installed) | 35.5 s | 33.9 s | 3.4 | 139–164 MB |
-| fp32 | 27.8 s | 11.5 s | 1.2 | 200 MB |
-| (the Mac, for comparison: int8) | 0.4 s | 1.1 s | 0.11 | |
+The Echo has no Android TextToSpeech engine installed (checked: no `TTS_SERVICE` providers), so
+the built-in voice is Piper. Measured on the Echo (quad Cortex-A53 at 1.3 GHz, governor
+`performance`), silently with `bench tts,...` on the assistant screen, for the same three-sentence
+answer (about 12 s of speech):
 
-The voice loads on its own thread while Claude works. An answer never waits more than 1.5 s for
-it: if the voice isn't ready by then, the answer is only shown. A real-time voice needs a faster
-engine; see the open question in docs/status/assistant.md.
+| Voice (sherpa-onnx v2.0.1) | Threads | Load | First sentence | RTF | PSS (app) |
+|---|---|---|---|---|---|
+| Piper amy low **fp32** (installed) | **3** | 20 s (+10 s with the full lexicon) | 3.0 s | **1.22** | 157–166 MB |
+| Piper amy low fp32 | 2 | 20 s | 3.3 s | 1.43 | 161–186 MB |
+| Piper amy low fp32 | 1 | 20 s | 5.1 s | 2.27 | 158–180 MB |
+| Piper amy low fp32 | 4 | 23 s | 5.3 s | 2.08 | 167–186 MB |
+| Piper amy low int8 (before) | 2 | 35 s | – | 3.40 | 139–164 MB |
+| Piper amy low int8 | 4 | 28–38 s | 9.3 s | 3.8 | 120–161 MB |
+| Matcha ljspeech (3 steps) + HiFiGAN v2 | 2 | 25 s | 6.7 s | 2.33 | 164–181 MB |
+| icefall VITS ljspeech low | 2 | 8.7 s | 5.1 s | 2.44 | 126–150 MB |
+| Supertonic int8 (4 steps; 44.1 kHz) | 2 | 11 s | 25 s (no sentence split) | 2.04 | 193–222 MB |
+| Supertonic int8 (2 steps) | 4 | 12 s | 23 s | 1.88 | 193–202 MB |
+
+lessac-low and ryan-low are the same network as amy-low (same size and speed on the Mac), so
+they're no faster. Four threads are slower than three: the screen's animation and the system
+need a core. None of these reaches real time, so **speaking stays off by default** with Piper.
+
+What's in place anyway:
+- **Sentence streaming.** Claude's answer is cut into sentences as it streams (the first piece may
+  be a clause after four words). Each piece is spoken as soon as it's complete, and piece N+1 is
+  synthesized while piece N plays (a player thread with a queue). With a voice faster than real
+  time this starts speech on the first sentence and plays without gaps. With Piper it starts
+  about 3.5 s after the first sentence and pauses between sentences: measured with a
+  two-sentence answer at volume 2, 8.3 s of speech took 19 s.
+- **System voice.** An installed Android TTS engine (eSpeak NG or RHVoice from F-Droid) shows up
+  as the voice "System voice", is the default voice, and turns speaking on by default. Pieces go
+  to it with `QUEUE_ADD`, so it streams the same way. Not tried on the Echo yet: no engine is
+  installed (it needs your OK to download the APK).
+- The voice loads on its own thread while Claude works. An answer never waits more than 1.5 s for
+  it: if the voice isn't ready by then, the answer is only shown. "Keep TTS loaded" avoids the
+  20–30 s load at the cost of about 70 MB.
 
 **More voices.** Push any sherpa-onnx Piper voice folder to `voice/tts/<name>/`. The folder needs
 one `.onnx` file and its `tokens.txt`, plus `lexicon-en-us.txt` (or it uses the one in
@@ -98,7 +128,7 @@ setting after the app restarts. Amy is the flat `voice/tts/` folder.
 
 ## 3. Microphone permission
 
-The app doesn't ask for the permission at runtime yet. Grant it once over adb:
+The app asks for the microphone once (`:app`). Without a touch on the Echo, grant it over adb:
 
 ```sh
 ./platform-tools/adb -s "$(cat .echo-serial)" shell pm grant com.echobedside android.permission.RECORD_AUDIO
@@ -163,9 +193,9 @@ Every value applies right away, with no restart.
 | `assistant.openOnWake` | on/off | on | The wake word opens the assistant screen |
 | `assistant.model` | choice | `claude-haiku-5-5` | Haiku 5.5, Sonnet 5.5 or Opus 5.5. A change starts a new conversation |
 | `assistant.followUp` | on/off | on | Listen again when Claude asks a question |
-| `assistant.speak` | on/off | off | Speak answers (when off, they're only shown). Off because Piper is slower than real time here |
+| `assistant.speak` | on/off | off (on with a system voice) | Speak answers, starting on the first sentence (when off, they're only shown). Off with Piper, which is slower than real time here |
 | `assistant.speakAtNight` | on/off | off | Speak while night mode is active |
-| `assistant.voice` | choice | `amy` | The installed on-device voices |
+| `assistant.voice` | choice | `system` if an engine is installed, else `amy` | The system voice and the installed on-device voices |
 | `assistant.speechRate` | 0.7–1.4 | 1.0 | Speaking speed |
 | `assistant.dismissSec` | 5–60 | 12 | How long an answer stays on screen |
 | `assistant.name` (advanced) | text | Nova | The assistant's name in the system prompt |
@@ -186,7 +216,8 @@ these:
 | `bench stt:<file>` | Transcribes a 16 kHz WAV under `voice/` and logs load time, RTF and the word count (not the words) |
 | `bench kws:<file>` | Runs the wake word over a WAV and logs load time, RTF and hits |
 | `voice <id>` | Switches the voice for this run |
-| `say <text>` | Speaks with the on-device voice (**plays sound**) |
+| `bench tts,<threads>,<dir>,<model>,<lexicon>[,<vocoder>]:<text file>` | Synthesizes a text file silently with any voice and logs load time, time to the first sentence, RTF and PSS (`supertonic` as the model for Supertonic) |
+| `say <text>` | Speaks with the on-device voice, fed word by word like Claude's stream (**plays sound**) |
 | `mictest 1` | Captures the mic without models |
 | `wake 1` | Turns the wake word on for this run |
 

@@ -4,6 +4,7 @@
 # and the push script expect them. Nothing here is committed (see ../.gitignore).
 #
 #   android/feature/assistant/tools/fetch-voice.sh          # libs + all models
+#   android/feature/assistant/tools/fetch-voice.sh --libs   # only the native libs (what a build needs)
 #
 # Output:
 #   android/feature/assistant/src/main/jniLibs/armeabi-v7a/{libonnxruntime.so,libsherpa-onnx-jni.so}
@@ -32,6 +33,7 @@ tar xjf "$CACHE/sherpa-onnx-$SHERPA-android.tar.bz2" -C "$tmp" ./jniLibs/armeabi
 cp "$tmp"/jniLibs/armeabi-v7a/*.so "$JNI/"
 rm -rf "$tmp"
 echo "libs: $(du -sh "$JNI" | cut -f1) in $JNI"
+[ "${1:-}" = "--libs" ] && exit 0
 
 # 2. Models: keyword spotter (wake word), streaming STT, Piper TTS voice.
 unpack() { # tarball dest-subdir file...
@@ -57,8 +59,9 @@ STT=sherpa-onnx-streaming-zipformer-en-20M-2023-02-17-mobile
 fetch "$GH/asr-models/$STT.tar.bz2" "$STT.tar.bz2" 753a5362538539212442efbfb8dd5748db82e35e7deaec5330f49c56e81e40fd
 unpack "$STT.tar.bz2" stt encoder-epoch-99-avg-1.int8.onnx decoder-epoch-99-avg-1.onnx joiner-epoch-99-avg-1.int8.onnx tokens.txt README.md
 
-TTS=vits-piper-en_US-amy-low-int8
-fetch "$GH/tts-models/$TTS.tar.bz2" "$TTS.tar.bz2" 93070ac9fadf512e56c46bdd0c5d2ce96b424fdc4e683d560167410bd2c4df7d
+# fp32, not the -int8 build: on the Echo's armv7 CPU int8 is 2.7x slower (RTF 3.8 vs 1.4 at 2 threads).
+TTS=vits-piper-en_US-amy-low
+fetch "$GH/tts-models/$TTS.tar.bz2" "$TTS.tar.bz2" c70f5284a09a7fd4ed203b39b2ff51cac1432b422b852eb647b481dade3cf639
 unpack "$TTS.tar.bz2" tts en_US-amy-low.onnx en_US-amy-low.onnx.json tokens.txt MODEL_CARD
 # sherpa-onnx 2.x dropped espeak-ng (GPL): Piper voices take phonemes from this English lexicon instead.
 fetch "$GH/tts-models/lexicon-en-us.txt" lexicon-en-us.txt 8b67ae549a465eee78f92ecb74644ad90c3c58ce65f19c68baf85878a10ef73a
