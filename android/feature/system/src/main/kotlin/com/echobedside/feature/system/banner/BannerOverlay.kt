@@ -151,6 +151,8 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
         val act = context as? Activity
         q.expand()
         expandedBanner = cur
+        // the tucked-behind banner leaves at once (it would ghost over the expanded view and the snapshot)
+        backY.snap(-110f); backOpacity.snap(0f); back = null
         val open = {
             expandA.snap(0f); expandA.to(1f, 400, EASE)
             opacity.to(0f, 200, EASE)

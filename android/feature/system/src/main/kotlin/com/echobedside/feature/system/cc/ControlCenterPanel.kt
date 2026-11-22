@@ -321,16 +321,35 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         c.drawCircle(rr.left + 16f + 24f, cy, 24f, paint)
         icon.drawCentered(c, rr.left + 40f, cy, 24f, if (night && on) Color.BLACK else ink(Color.WHITE), paint)
         val tx = rr.left + 16f + 48f + 12f
-        val lh1 = 15f * 1.15f; val lh2 = tWideState.normalLineHeight
-        val top = cy - (lh1 + 2f + lh2) / 2f
+        // the design's spans wrap (no nowrap): "Do Not / Disturb", "On until / 7:00 AM"
         val tw = rr.right - 16f - tx
-        tWideName.draw(c, tWideName.ellipsize(name, tw), tx, tWideName.baselineIn(top, lh1), ink(Color.WHITE))
-        tWideState.draw(c, tWideState.ellipsize(st, tw), tx, tWideState.baselineIn(top + lh1 + 2f, lh2), ink(withAlpha(Color.WHITE, 0.72f)))
+        val nameLines = wrapWords(tWideName, name, tw, 2)
+        val stLines = wrapWords(tWideState, st, tw, 2)
+        val lh1 = 15f * 1.15f; val lh2 = tWideState.normalLineHeight
+        var top = cy - (lh1 * nameLines.size + 2f + lh2 * stLines.size) / 2f
+        for (l in nameLines) { tWideName.draw(c, l, tx, tWideName.baselineIn(top, lh1), ink(Color.WHITE)); top += lh1 }
+        top += 2f
+        for (l in stLines) { tWideState.draw(c, l, tx, tWideState.baselineIn(top, lh2), ink(withAlpha(Color.WHITE, 0.72f))); top += lh2 }
         c.restore()
     }
 
+    private fun wrapWords(t: SpecText, text: String, maxW: Float, maxLines: Int): List<String> {
+        if (t.width(text) <= maxW) return listOf(text)
+        val out = ArrayList<String>()
+        var line = ""
+        val words = text.split(' ')
+        for ((i, w) in words.withIndex()) {
+            val cand = if (line.isEmpty()) w else "$line $w"
+            if (t.width(cand) <= maxW || line.isEmpty()) line = cand
+            else if (out.size == maxLines - 1) { line = line + " " + words.subList(i, words.size).joinToString(" "); break }
+            else { out += line; line = w }
+        }
+        out += t.ellipsize(line, maxW)
+        return out
+    }
+
     private fun drawSquares(c: Canvas) {
-        val mic = state.micMuted
+        val mic = state.micMuted || state.micMutedHardware
         square(c, Hit.MIC, "Microphone", when { state.micMutedHardware -> "Off · button"; mic -> "Off"; else -> "On" }, if (mic) Icons.micOff else Icons.mic, mic, RED_DOT)
         val camOff = state.cameraBlocked
         square(c, Hit.CAM, "Camera", when { state.cameraDisabled -> "Off"; state.shutterClosed -> "Shutter closed"; state.micMutedHardware -> "Off · button"; state.cameraInUse -> "In use"; else -> "On" },
