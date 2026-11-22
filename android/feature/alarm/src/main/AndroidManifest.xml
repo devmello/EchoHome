@@ -6,9 +6,9 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
-    <!-- With the overlay grant (appops SYSTEM_ALERT_WINDOW allow), Android 11 lets us bring the alarm
-         screen up over another app; without it the ringing alarm is a heads-up with Snooze / Stop. -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Privileged (the app is a /system/priv-app with this on its allow-list): Android 11 lets us bring
+         the alarm screen up over another app. Without it the ringing alarm is a heads-up with Snooze / Stop. -->
+    <uses-permission android:name="android.permission.START_ACTIVITIES_FROM_BACKGROUND" />
 
     <application>
         <!-- Rings alarms and timers while our activity is in the background / the screen is off. -->
