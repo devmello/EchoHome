@@ -139,7 +139,7 @@ class StocksView(context: Context, private val services: EchoServices) : View(co
         if (pts.size >= 2) {
             val lastX = 44f + (pts.size - 1) * 440f / (q.sessionBars - 1).coerceAtLeast(1)
             val area = Path(path).apply { lineTo(lastX, top + 190f); lineTo(44f, top + 190f); close() }
-            p.shader = LinearGradient(0f, top, 0f, top + 190f, withAlpha(c(col), 0.35f), withAlpha(c(col), 0f), Shader.TileMode.CLAMP)
+            p.color = Color.BLACK; p.shader = LinearGradient(0f, top, 0f, top + 190f, withAlpha(c(col), 0.35f), withAlpha(c(col), 0f), Shader.TileMode.CLAMP)
             canvas.drawPath(area, p); p.shader = null
         }
         if (base != null) {

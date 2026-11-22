@@ -129,6 +129,7 @@ class ThermostatView(context: Context, backdrop: () -> Backdrop?) : GlassTile(co
                 // The SVG gradient (#FF9F0A → #FF453A, bottom-left to top-right) is rotated with the
                 // circle by 135°, so on screen it runs top (orange) to bottom (red).
                 if (heatShader == null) heatShader = LinearGradient(0f, cy - 88f, 0f, cy + 88f, 0xFFFF9F0A.toInt(), 0xFFFF453A.toInt(), Shader.TileMode.CLAMP)
+                stroke.color = Color.BLACK // opaque: the paint's alpha also scales the shader
                 stroke.shader = heatShader
             }
             canvas.drawArc(arc, 135f, 270f * frac, false, stroke)
@@ -185,6 +186,7 @@ class LampView(context: Context, backdrop: () -> Backdrop?) : GlassTile(context,
     private var dragging = false
     private var downX = 0f
     private var amber: Shader? = null
+    private var amberW = -1f
     private var spec: Shader? = null
     private val path = Path()
     private val box = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -196,7 +198,11 @@ class LampView(context: Context, backdrop: () -> Backdrop?) : GlassTile(context,
             path.reset(); rect.set(0f, 0f, w, h); path.addRoundRect(rect, 30f, 30f, Path.Direction.CW)
             canvas.save(); canvas.clipPath(path)
             if (night) fill.shader = null.also { fill.color = withAlpha(Night.COLOR, 0.45f) }
-            else fill.shader = LinearGradient(0f, 0f, fw, 0f, 0xEBFFAA50.toInt(), 0xF2FFCE8C.toInt(), Shader.TileMode.CLAMP).also { amber = it }
+            else {
+                fill.color = Color.BLACK // opaque: the paint's alpha also scales the shader
+                if (amber == null || amberW != fw) { amber = LinearGradient(0f, 0f, fw, 0f, 0xEBFFAA50.toInt(), 0xF2FFCE8C.toInt(), Shader.TileMode.CLAMP); amberW = fw }
+                fill.shader = amber
+            }
             canvas.drawRect(0f, 0f, fw, h, fill)
             fill.shader = null
             if (!night) { // the specular span sits above the fill

@@ -104,7 +104,7 @@ class CommuteView(context: Context, private val services: EchoServices) : View(c
             s.strokeWidth = 10f; s.color = c(withAlpha(Color.WHITE, 0.18f)); canvas.drawPath(route, s)
             if (alt != null) { s.strokeWidth = 6f; s.color = c(withAlpha(Color.WHITE, 0.16f)); s.pathEffect = dash; canvas.drawPath(alt, s); s.pathEffect = null }
             s.strokeWidth = 7f
-            if (night) s.color = Night.COLOR else s.shader = routeShader
+            if (night) s.color = Night.COLOR else { s.color = Color.BLACK; s.shader = routeShader } // opaque: paint alpha scales shaders
             canvas.drawPath(route, s); s.shader = null
             if (ui.trafficChip != null && ui.route == null) { s.color = c(0xFFFF9F0A.toInt()); canvas.drawPath(designSlow, s) }
             val (sx, sy) = ends.first; val (ex, ey) = ends.second
