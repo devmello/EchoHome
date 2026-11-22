@@ -447,7 +447,7 @@ class AssistantEngine(
                     Log.w(TAG, "wake word load failed: ${e.javaClass.simpleName}"); null
                 } ?: return@withContext false
                 val gate = VoiceGate()
-                var total = 0; var decoded = 0; var decodeNs = 0L
+                var total = 0; var decoded = 0; var decodeNs = 0L; var lastLog = System.nanoTime()
                 try {
                     for (chunk in ch) {
                         val out = gate.process(chunk, Pcm.dbfs(chunk))
@@ -458,7 +458,9 @@ class AssistantEngine(
                             if (hit) return@withContext true
                         }
                         decoded += out.size
-                        if (++total == WAKE_STATS_CHUNKS) {
+                        total++
+                        if (System.nanoTime() - lastLog > WAKE_STATS_NS) {
+                            lastLog = System.nanoTime()
                             // Levels and counts only (never audio or words): how much the gate lets through.
                             Log.i(TAG, "wake: decoded $decoded/$total chunks, ${decodeNs / 1_000_000} ms decoding, " +
                                 "floor ${gate.noiseFloorDb.toInt()} dB, gate ${if (gate.open) "open" else "shut"}")
@@ -549,6 +551,18 @@ class AssistantEngine(
                 "for ${warm.audioMs} ms of audio (RTF ${"%.2f".format(java.util.Locale.US, warm.rtf)}), ${text.length} chars")
             if (!settings.getBoolean(KEY_KEEP_TTS, false)) sp.release()
         }
+    }
+
+    /**
+     * Debug: decodes a test WAV under the voice dir ([name], e.g. "bench/0.wav") through "stt" or
+     * "kws" on its own thread and logs the timings. Silent; the wake word is stopped first.
+     */
+    fun benchTest(kind: String, file: java.io.File) {
+        stopWake(keepMic = false); setWakeOverride(false)
+        Thread({
+            val r = try { voice.bench(kind, file) } catch (e: Throwable) { "bench failed: ${e.javaClass.simpleName}" }
+            Log.i(TAG, r)
+        }, "assistant-bench").start()
     }
 
     /** Speaks [text] with the on-device voice only (no Claude), for measuring TTS. Plays sound. */
@@ -668,7 +682,7 @@ class AssistantEngine(
         /** 16 s of 40 ms chunks: covers the STT model load. */
         const val LISTEN_BUFFER_CHUNKS = 400
         const val WAKE_BUFFER_CHUNKS = 50
-        /** Wake word stats in the log every 10 s of audio. */
-        const val WAKE_STATS_CHUNKS = 250
+        /** Wake word stats in the log every 10 s. */
+        const val WAKE_STATS_NS = 10_000_000_000L
     }
 }

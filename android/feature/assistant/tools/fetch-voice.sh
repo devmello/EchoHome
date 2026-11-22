@@ -45,8 +45,9 @@ unpack() { # tarball dest-subdir file...
   echo "$dest: $(du -sh "$OUT/$dest" | cut -f1)"
 }
 
-KWS=sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01-mobile
-fetch "$GH/kws-models/$KWS.tar.bz2" "$KWS.tar.bz2" 2e6ac2577310bfa2f4b6b5fab0478b868c9d0b2cb2c51b3e13b50581b588864d
+# The non-"mobile" build: the -mobile int8 encoder fails at its own chunk size (Reshape /downsample, ORT 1.21 too).
+KWS=sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01
+fetch "$GH/kws-models/$KWS.tar.bz2" "$KWS.tar.bz2" f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a
 unpack "$KWS.tar.bz2" kws encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx decoder-epoch-12-avg-2-chunk-16-left-64.onnx \
   joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx tokens.txt README.md
 # "Hey Nova" (placeholder wake word) in the model's BPE units; see docs/assistant-setup.md to change it.

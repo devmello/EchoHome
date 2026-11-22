@@ -58,6 +58,8 @@ interface VoiceStack {
     val defaultVoice: String get() = "amy"
     /** Switches the TTS voice (the loaded one is freed; the next answer loads the new one). */
     fun selectVoice(id: String) {}
+    /** Debug: decode timings for a test WAV (see SherpaVoice.bench). */
+    fun bench(kind: String, wav: java.io.File): String = "bench unsupported"
 }
 
 const val DEFAULT_WAKE_THRESHOLD = 0.25f
@@ -70,7 +72,7 @@ data class SynthStats(val loadMs: Long, val synthMs: Long, val audioMs: Long) {
 
 /**
  * keywords.txt lines ("▁HE Y ▁NO V A :2.0 #0.25 @HEY_NOVA") with each `#threshold` replaced (or
- * added) for the sensitivity setting, joined with "/" for `KeywordSpotter.createStream`.
+ * added) for the sensitivity setting, joined with "/" (SherpaVoice writes them back one per line).
  */
 object Keywords {
     private val THRESHOLD = Regex("""\s#[0-9.]+""")

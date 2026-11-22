@@ -93,8 +93,14 @@ class VoiceGate(
     fun process(chunk: ByteArray, db: Float): List<ByteArray> {
         if (!enabled) return listOf(chunk)
         val loud = db > max(noiseFloorDb + thresholdDb, minSpeechDb)
-        // Noise floor: falls fast, rises slowly, and only learns from non-speech.
-        if (!loud) noiseFloorDb = if (db < noiseFloorDb) noiseFloorDb + (db - noiseFloorDb) * 0.3f else noiseFloorDb + (db - noiseFloorDb) * 0.02f
+        // Noise floor: falls fast, rises slowly. A steady sound louder than the threshold (a fan,
+        // the mic's own hiss after gain) is learnt too, just slower (~10 s), or the gate would
+        // stay open forever; a few seconds of speech only lift it by a few dB.
+        noiseFloorDb += (db - noiseFloorDb) * when {
+            db < noiseFloorDb -> 0.3f
+            !loud -> 0.02f
+            else -> 0.004f
+        }
         if (open) {
             if (loud) quietMs = 0 else quietMs += chunkMs
             if (quietMs > holdMs) {

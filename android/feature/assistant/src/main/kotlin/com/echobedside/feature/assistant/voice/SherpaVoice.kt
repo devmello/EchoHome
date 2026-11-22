@@ -136,42 +136,89 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
 
     // ---------------- wake word ----------------
 
+    @Volatile private var kwsModelType = "zipformer2"
+    @Volatile private var kwsEncoder = KWS_ENC
+    @Volatile private var kwsKeywords = "keywords.txt"
+
     override fun openWakeWord(threshold: Float): WakeWordSession {
         val t0 = SystemClock.elapsedRealtime()
+        // The sensitivity setting's threshold goes into a copy of keywords.txt (each line's `#t`).
+        // (Per-stream keywords via createStream(keywords) cost a whole core on the Echo.)
+        val keywordsFile = try {
+            val lines = Keywords.withThreshold(File(kwsDir, kwsKeywords).readLines(), threshold).split('/')
+            File(root, ACTIVE_KEYWORDS).apply { writeText(lines.joinToString("\n", postfix = "\n")) }
+        } catch (e: Exception) { File(kwsDir, "keywords.txt") }
         val kws = KeywordSpotter(null, KeywordSpotterConfig(
             featConfig = FeatureConfig(16000, 80),
             modelConfig = OnlineModelConfig(
-                transducer = OnlineTransducerModelConfig(f(kwsDir, KWS_ENC), f(kwsDir, KWS_DEC), f(kwsDir, KWS_JOIN)),
+                transducer = OnlineTransducerModelConfig(f(kwsDir, kwsEncoder), f(kwsDir, KWS_DEC), f(kwsDir, KWS_JOIN)),
                 tokens = f(kwsDir, "tokens.txt"),
                 numThreads = 1,
-                modelType = "zipformer2",
+                modelType = kwsModelType,
             ),
             maxActivePaths = 4,
-            keywordsFile = f(kwsDir, "keywords.txt"),
+            keywordsFile = keywordsFile.absolutePath,
             keywordsScore = 2.0f,
-            keywordsThreshold = 0.25f,
+            keywordsThreshold = threshold,
             numTrailingBlanks = 1,
         ))
         Log.i(TAG, "wake word loaded in ${SystemClock.elapsedRealtime() - t0} ms (threshold $threshold)")
-        // The per-stream keywords carry the sensitivity setting's threshold.
-        val keywords = try { Keywords.withThreshold(File(kwsDir, "keywords.txt").readLines(), threshold) } catch (e: Exception) { "" }
-        val stream = kws.createStream(keywords)
+        val stream = kws.createStream()
         return object : WakeWordSession {
             private val buf = FloatArray(640)
             override fun accept(pcm: ByteArray): String? {
                 val samples = if (pcm.size / 2 == buf.size) pcm16ToFloat(pcm, buf) else pcm16ToFloat(pcm)
+                val t0 = SystemClock.elapsedRealtime()
                 stream.acceptWaveform(samples, 16000)
                 var hit: String? = null
-                while (kws.isReady(stream)) {
+                var n = 0
+                // Bounded: a chunk is 40 ms, a few decodes at most.
+                while (n < MAX_DECODES_PER_CHUNK && kws.isReady(stream)) {
                     kws.decode(stream)
+                    n++
                     val k = kws.getResult(stream).keyword
                     if (k.isNotEmpty()) { hit = k; kws.reset(stream) }
                 }
+                if (n >= MAX_DECODES_PER_CHUNK) Log.w(TAG, "wake decode: $n steps in ${SystemClock.elapsedRealtime() - t0} ms")
                 return hit
             }
             override fun reset() = kws.reset(stream)
             override fun close() { stream.release(); kws.release() }
         }
+    }
+
+    /**
+     * Debug: runs a 16 kHz mono PCM16 WAV (e.g. a model's own test_wavs) through STT ("stt") or the
+     * wake word ("kws") as fast as it decodes, and returns timings (never the words). Silent.
+     */
+    override fun bench(kind: String, wav: File): String {
+        val pcm = wav.readBytes().let { it.copyOfRange(minOf(44, it.size), it.size) }
+        val audioMs = pcm.size / 32L
+        val chunk = 1280
+        val t0 = SystemClock.elapsedRealtime()
+        var words = 0
+        var hits = 0
+        if (kind.startsWith("kws")) {
+            // Debug variants: "kws,<modelType>,<encoder file>".
+            kind.split(",").let { p -> if (p.size >= 2) kwsModelType = p[1]; if (p.size >= 3 && p[2].isNotEmpty()) kwsEncoder = p[2]; if (p.size >= 4) kwsKeywords = p[3] }
+            val s = openWakeWord(DEFAULT_WAKE_THRESHOLD)
+            val tl = SystemClock.elapsedRealtime()
+            try {
+                var off = 0
+                while (off < pcm.size) { if (s.accept(pcm.copyOfRange(off, minOf(pcm.size, off + chunk))) != null) hits++; off += chunk }
+            } finally { s.close() }
+            val ms = SystemClock.elapsedRealtime() - tl
+            return "kws: load ${tl - t0} ms, ${ms} ms for $audioMs ms of audio (RTF ${"%.2f".format(java.util.Locale.US, ms.toFloat() / audioMs)}), $hits hits"
+        }
+        val s = openStt()
+        val tl = SystemClock.elapsedRealtime()
+        try {
+            var off = 0
+            while (off < pcm.size) { s.accept(pcm.copyOfRange(off, minOf(pcm.size, off + chunk))); off += chunk }
+            words = s.finish().split(' ').count { it.isNotBlank() }
+        } finally { s.close(); releaseStt() }
+        val ms = SystemClock.elapsedRealtime() - tl
+        return "stt: load ${tl - t0} ms, ${ms} ms for $audioMs ms of audio (RTF ${"%.2f".format(java.util.Locale.US, ms.toFloat() / audioMs)}), $words words"
     }
 
     // ---------------- TTS ----------------
@@ -317,5 +364,7 @@ class SherpaVoice(private val root: File, private val threads: Int = 2) : VoiceS
         const val KWS_JOIN = "joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx"
         const val TTS_MODEL = "en_US-amy-low.onnx"
         const val DEFAULT_VOICE = "amy"
+        const val ACTIVE_KEYWORDS = "keywords-active.txt"
+        const val MAX_DECODES_PER_CHUNK = 8
     }
 }

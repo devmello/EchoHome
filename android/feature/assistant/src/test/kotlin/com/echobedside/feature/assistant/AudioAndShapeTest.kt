@@ -32,6 +32,18 @@ class AudioAndShapeTest {
         assertTrue(g.process(quiet, -70f).isEmpty())
     }
 
+    @Test fun `steady room noise above the threshold closes the gate within seconds`() {
+        val g = VoiceGate()
+        val c = ByteArray(1280)
+        var lastOpen = 0
+        for (i in 1..1000) { g.process(c, -40f); if (g.open) lastOpen = i } // 40 s of a -40 dB fan
+        assertTrue("gate still open at chunk $lastOpen", lastOpen < 500) // shut within 20 s
+        assertTrue(g.noiseFloorDb > -50f)
+        // Speech well above that noise still opens it.
+        assertTrue(g.process(c, -20f).isNotEmpty())
+        assertTrue(g.open)
+    }
+
     @Test fun `pcm16 to float`() {
         val f = pcm16ToFloat(byteArrayOf(0x00, 0x40, 0x00, 0xC0.toByte(), 0xFF.toByte(), 0x7F))
         assertEquals(0.5f, f[0], 1e-4f)
