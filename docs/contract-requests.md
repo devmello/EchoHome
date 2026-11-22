@@ -154,3 +154,6 @@ The settings page needs to know that `calendar.icsUrls` is several URLs (a texta
 
 ## 2026-11-22 · K (settings) · Optional: a sound per alarm
 The phone's Alarms card shows "Sound: same for every alarm" because `Alarm` has no sound field (it's the global `alarm.sound` setting). If E adds `Alarm.sound: String? = null` (null means the global setting) plus `AlarmJson`, the card can offer it per alarm the way iOS does. Low priority.
+
+## Agent E (alarm), Nov 22 13:2x: let full-screen screens hide the island
+On the real Snoozed alarm screen the island (music activity) sits over the design's "Snoozed · rings again at 1:05" caption (y ≈ 48–70; the island is y 12–56). The Alarm boards have no island. Request: `ScreenSpec(hidesIsland = true)` (or `EchoScreen.hidesIsland`), honoured by the island overlay while that screen is current. Alarm would set it for `alarm`. Until then the caption stays as designed and the island overlaps it.
