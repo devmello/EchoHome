@@ -1,6 +1,7 @@
 package com.echobedside.feature.airplay
 
 import android.util.Log
+import com.echobedside.core.model.DeviceName
 import com.echobedside.core.model.EchoFeature
 import com.echobedside.core.model.EchoServices
 import com.echobedside.core.model.FeatureHost
@@ -10,7 +11,7 @@ import kotlinx.coroutines.launch
 /**
  * `:feature:airplay` (agent C — AirPlay audio).
  *
- * An audio-only AirPlay receiver ("Echo Bedside", NOTES §6) built on the `shairplay` Rust crate
+ * An audio-only AirPlay receiver (named after the device, "Echo Show", NOTES §6) built on the `shairplay` Rust crate
  * over JNI. [AirPlayService] runs it as a foreground service, publishes into `services.media`
  * (source id "airplay", [com.echobedside.core.model.MediaSourceKind.AIRPLAY]) and shows an
  * AIRPLAY_CONNECTED live activity while a sender is connected. No screens of its own: Now Playing
@@ -32,12 +33,13 @@ object AirPlayFeature : EchoFeature {
     const val KEY_MDNS = "airplay.mdns"
     internal const val KEY_HWADDR = "airplay.hwaddr"
 
-    const val DEFAULT_NAME = "Echo Bedside"
+    /** Empty [KEY_NAME] = the device name ([DeviceName], "Echo Show" by default). */
+    const val DEFAULT_NAME = DeviceName.DEFAULT
     const val MODE_AP2 = "ap2"
     const val MODE_AP1 = "ap1"
     const val MDNS_NSD = "nsd"
     const val MDNS_LIB = "lib"
-    internal val RESTART_KEYS = setOf(KEY_NAME, KEY_MODE, KEY_MDNS)
+    internal val RESTART_KEYS = setOf(KEY_NAME, KEY_MODE, KEY_MDNS, DeviceName.KEY)
 
     /** The process's services, for [AirPlayService] (same process, started from [install]). */
     @Volatile internal var services: EchoServices? = null

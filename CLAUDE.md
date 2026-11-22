@@ -1,4 +1,6 @@
-# Echo Bedside
+# Vesper
+
+Project name **Vesper** (was "Echo Bedside"; the code package `com.echobedside`, module and script names get renamed after the agents' branches are merged). On the network (AirPlay, Bluetooth, settings page) the device is **"Echo Show"** (setting `device.name`).
 
 Custom Liquid Glass smart-display software for a jailbroken Amazon Echo Show 5 (1st gen, "checkers") running unofficial LineageOS 18.1 (Android 11, API 30, armv7, 1 GB RAM, 960×480 screen).
 

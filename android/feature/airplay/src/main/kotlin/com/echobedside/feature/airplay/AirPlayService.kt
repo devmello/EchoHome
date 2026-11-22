@@ -25,6 +25,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
+import com.echobedside.core.model.DeviceName
 import com.echobedside.core.model.ActivityKind
 import com.echobedside.core.model.EchoServices
 import com.echobedside.core.model.LiveActivity
@@ -130,7 +131,7 @@ class AirPlayService : Service() {
             return
         }
         val settings = services.settings
-        val name = settings.getString(AirPlayFeature.KEY_NAME, AirPlayFeature.DEFAULT_NAME)
+        val name = settings.getString(AirPlayFeature.KEY_NAME, "").ifBlank { DeviceName.get(settings) }
         // AirPlay 1 by default (user decision): the iPhone accepts play/pause/skip over DACP; no multi-room needed.
         val ap2 = settings.getString(AirPlayFeature.KEY_MODE, AirPlayFeature.MODE_AP1) == AirPlayFeature.MODE_AP2
         libMdns = settings.getString(AirPlayFeature.KEY_MDNS, AirPlayFeature.MDNS_NSD) == AirPlayFeature.MDNS_LIB

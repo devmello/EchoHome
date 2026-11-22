@@ -28,6 +28,28 @@ echo_connect() { "$ECHO_ROOT/scripts/echo-connect.sh" </dev/null; }
 
 # The device lock: only one agent uses the Echo at a time (PARALLEL_BUILD_PROMPT.md).
 # Re-entrant within one process tree via ECHO_LOCK_HELD=1.
+# adb root (userdebug) and reconnect: adbd restarts, and over wireless debugging the client drops.
+root_echo() {
+  [ "$(adb_echo shell id -u 2>/dev/null | tr -d '\r')" = 0 ] && return 0
+  adb_echo root >/dev/null 2>&1 || true
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    sleep 2
+    echo_connect >/dev/null 2>&1 || continue
+    [ "$(adb_echo shell id -u 2>/dev/null | tr -d '\r')" = 0 ] && return 0
+  done
+  echo "adb root failed" >&2; return 1
+}
+
+# Wait for the Echo to come back after a reboot (wireless debugging gets a new port).
+wait_boot() {
+  sleep 25
+  for i in $(seq 1 60); do
+    if echo_connect >/dev/null 2>&1 && [ "$(adb_echo shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]; then return 0; fi
+    sleep 3
+  done
+  echo "The Echo didn't come back within ~3.5 min" >&2; return 1
+}
+
 lock_acquire() {
   [ "${ECHO_LOCK_HELD:-}" = 1 ] && return 0
   local who="${ECHO_AGENT:-$(basename "$CHECKOUT")} pid $$"

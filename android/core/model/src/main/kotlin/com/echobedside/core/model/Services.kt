@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Every shared service, one instance per process (created by `:app`).
@@ -24,9 +25,16 @@ import kotlinx.coroutines.flow.StateFlow
  * Read slots lazily (in view factories / on attach), never cache them during install.
  */
 class EchoServices(
-    var config: EchoConfig,
+    config: EchoConfig,
     var settings: SettingsStore,
 ) {
+    private val _config = MutableStateFlow(config)
+    /** Read [config] at use time (not once at install): secrets can change while the app runs. */
+    val configFlow: StateFlow<EchoConfig> = _config.asStateFlow()
+    var config: EchoConfig
+        get() = _config.value
+        set(v) { _config.value = v }
+
     /** App-wide scope on the main thread. Use Dispatchers.IO / Default inside for blocking work. */
     val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -37,6 +45,10 @@ class EchoServices(
     val system: SystemStateStore = DefaultSystemStateStore()
     val notifications: NotificationFeed = DefaultNotificationFeed()
     val faces: FaceRegistry = DefaultFaceRegistry()
+    /** Every feature's user settings, for the web settings page (see [SettingSpec]). */
+    val settingsSchema: SettingsSchema = DefaultSettingsSchema()
+    /** Runtime secrets; `:app` binds the encrypted store and folds it into [config].secrets. */
+    var secrets: SecretStore = InMemorySecretStore()
 
     var systemControls: SystemControls = StateOnlySystemControls(system)
     var alarms: AlarmStore = FakeAlarmStore(config.demoData)
@@ -86,6 +98,30 @@ class Secrets(
     val immichConfigured get() = immichUrl.isNotBlank() && immichApiKey.isNotBlank()
     val anthropicConfigured get() = anthropicApiKey.isNotBlank()
     val calendarConfigured get() = calendarIcsUrls.isNotEmpty()
+
+    /** Values from [store] win over these (the compiled-in ones). */
+    fun overriddenBy(store: SecretStore): Secrets {
+        fun v(key: String, built: String) = store.get(key)?.takeIf { it.isNotBlank() } ?: built
+        return Secrets(
+            haUrl = v(HA_URL, haUrl), haToken = v(HA_TOKEN, haToken),
+            immichUrl = v(IMMICH_URL, immichUrl), immichApiKey = v(IMMICH_API_KEY, immichApiKey),
+            anthropicApiKey = v(ANTHROPIC_API_KEY, anthropicApiKey), stocksApiKey = v(STOCKS_API_KEY, stocksApiKey),
+            calendarIcsUrls = store.get(CALENDAR_ICS_URLS)?.takeIf { it.isNotBlank() }?.let(::splitUrls) ?: calendarIcsUrls,
+        )
+    }
+
+    companion object {
+        // The secrets.properties names, also the SecretStore keys.
+        const val HA_URL = "ha.url"
+        const val HA_TOKEN = "ha.token"
+        const val IMMICH_URL = "immich.url"
+        const val IMMICH_API_KEY = "immich.apiKey"
+        const val ANTHROPIC_API_KEY = "anthropic.apiKey"
+        const val STOCKS_API_KEY = "stocks.apiKey"
+        const val CALENDAR_ICS_URLS = "calendar.icsUrls"
+        val KEYS = listOf(ANTHROPIC_API_KEY, CALENDAR_ICS_URLS, IMMICH_URL, IMMICH_API_KEY, HA_URL, HA_TOKEN, STOCKS_API_KEY)
+        fun splitUrls(s: String) = s.split(',', ' ', '\n').map { it.trim() }.filter { it.isNotEmpty() }
+    }
     override fun toString() =
         "Secrets(ha=$haConfigured, immich=$immichConfigured, anthropic=$anthropicConfigured, calendars=${calendarIcsUrls.size})"
 }

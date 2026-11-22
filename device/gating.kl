@@ -1,0 +1,4 @@
+# Echo Show 5 mic button ("gating" input device, scancode 116 = KEY_POWER).
+# Report KEYCODE_MUTE instead of POWER so pressing it no longer sleeps the screen.
+# The hardware still cuts the microphones on its own; :feature:system shows the HUD.
+key 116   MUTE

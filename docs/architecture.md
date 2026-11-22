@@ -1,4 +1,6 @@
-# Echo Bedside — app architecture (for every agent)
+# Vesper — app architecture (for every agent)
+
+Project name: **Vesper** (decided Nov 22, 2026; code still uses `com.echobedside` until the post-integration rename). The device shows on the network as **"Echo Show"** (`DeviceName`, setting `device.name`).
 
 Read this after `CLAUDE.md` and `NOTES.md`. The Android project is in `android/`.
 
@@ -20,6 +22,7 @@ Read this after `CLAUDE.md` and `NOTES.md`. The Android project is in `android/`
 | `:feature:assistant` | G | voice assistant: on-device wake word/STT/TTS + Claude API |
 | `:feature:camera` | H | presence, profiles |
 | `:feature:photos` | I | Immich photo frame |
+| `:feature:settings` | K | web settings page served by the Echo (phone/Mac browser), built from `services.settingsSchema` |
 
 Feature modules depend on `:core:model` and `:core:design` only (add `:core:data` if you need it). **Never on each other** — talk through the contracts in `EchoServices`.
 
@@ -31,6 +34,7 @@ Each module has `object XxxFeature : EchoFeature`. `:app` calls `install(host)` 
 - `host.registerOverlay(OverlaySpec(id, z) { ... })` for layers above every screen (island 300, banners 400, HUDs 500, Control Center 600). **Overlays are full-screen views: empty areas must not consume touches** (return false), so the screens below still get them.
 - `host.registerKeyHandler { event -> ... }` for hardware keys.
 - `host.registerFace(FaceSpec(...))` for StandBy faces.
+- `host.registerSettings(SettingsSection(id, title, order, listOf(SettingSpec(key, title, type, default, help…))))` for **every user-facing setting your feature reads**. The web settings page (`:feature:settings`, opened from a phone or Mac at the Echo's address) builds its UI from these. Apply changes live from `services.settings.changes` (no app restart). Secrets (API keys, private URLs) are `SettingType.SECRET` in `services.secrets`; read `services.config.secrets` at use time, never once at install. Debug-only keys don't belong here.
 - Bind the services you own: `host.services.alarms = MyAlarmStore(...)` (see the slot list in `Services.kt`). Read other slots lazily — in factories / on attach — never during `install`.
 - Manifest entries (permissions, services, receivers) go in **your module's** `AndroidManifest.xml`; they merge into the app.
 

@@ -1,4 +1,6 @@
-# Echo Bedside: project notes
+# Vesper (was "Echo Bedside"): project notes
+
+**Names (decided Nov 22, 2026):** the project is **Vesper** (the evening star: a bedside display that lives in the evening and the night). The device shows on the network as **"Echo Show"** (AirPlay, Bluetooth, the settings page; setting `device.name`). The code package `com.echobedside` and the module and script names get renamed in one commit after the agents' branches merge.
 
 A replacement for the stock Echo Show 5 software. The jailbroken Echo runs LineageOS, and we build our own Apple-style ("Liquid Glass") smart-display UI on top: StandBy clock faces, Night mode, alarm, an audio-only AirPlay receiver with Now Playing, home controls, an AI assistant that replaces Alexa, timers and weather. The goal is a real alternative to Apple's HomeView hub (Oct 2026, $299).
 

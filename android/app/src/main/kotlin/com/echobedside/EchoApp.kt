@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.util.Log
 import com.echobedside.core.data.HomeAssistantClient
 import com.echobedside.core.data.PrefsSettingsStore
+import com.echobedside.core.data.EncryptedSecretStore
 import com.echobedside.core.data.loadSecrets
 import com.echobedside.core.design.Fonts
 import com.echobedside.core.model.EchoConfig
@@ -31,6 +32,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 /** Install order: providers first, the clock (main consumer) last. See EchoFeature. */
 val FeatureList: List<EchoFeature> = listOf(
@@ -54,10 +56,17 @@ class EchoApp : Application(), FeatureHost {
         super.onCreate()
         Fonts.init(this)
         val settings = PrefsSettingsStore(this)
-        val secrets = loadSecrets()
+        val builtIn = loadSecrets()
+        val secretStore = EncryptedSecretStore(this)
+        val secrets = builtIn.overriddenBy(secretStore)
         val demo = settings.getBoolean(KEY_DEMO, BuildConfig.DEBUG)
         services = EchoServices(EchoConfig(BuildConfig.DEBUG, demo, secrets), settings)
+        services.secrets = secretStore
         services.navigator = navigator
+        // Secrets set from the settings page apply live (features read config.secrets at use time).
+        services.scope.launch {
+            secretStore.changes.collect { services.config = services.config.copy(secrets = builtIn.overriddenBy(secretStore)) }
+        }
         if (secrets.haConfigured) services.homeAssistant = HomeAssistantClient(secrets.haUrl, secrets.haToken, services.scope)
 
         for (f in FeatureList) {

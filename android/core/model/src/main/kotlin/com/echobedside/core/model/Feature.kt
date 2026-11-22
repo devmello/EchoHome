@@ -38,6 +38,8 @@ interface FeatureHost {
     fun registerOverlay(spec: OverlaySpec)
     /** Hardware keys reach handlers before the system (volume keys, the remapped mic button). */
     fun registerKeyHandler(handler: KeyHandler)
+    /** User settings this feature reads, shown on the web settings page (see [SettingSpec]). */
+    fun registerSettings(section: SettingsSection) = services.settingsSchema.register(section)
 }
 
 /**
