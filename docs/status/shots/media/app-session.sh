@@ -3,6 +3,7 @@
 # song list; uiautomator can't get an idle state in Eleven, so it's a plain tap), checks Now
 # Playing mirrors it, pauses it with our own transport button and checks Eleven's session paused.
 # Then checks the empty state draws nothing. Run via build-install.sh --then (holds the lock).
+# PLAYS AUDIO in Eleven: never during quiet hours (docs/status/README.md).
 D=$(cd "$(dirname "$0")" && pwd)
 A="$ADB -s $SERIAL"
 np() { $A shell am start -n com.echobedside/.MainActivity --es screen nowplaying ${1:+--es np "$1"} >/dev/null 2>&1; }

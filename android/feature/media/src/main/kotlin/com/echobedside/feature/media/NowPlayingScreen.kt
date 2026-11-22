@@ -19,6 +19,7 @@ import android.widget.FrameLayout
 import com.echobedside.core.design.Backdrop
 import com.echobedside.core.design.Motion
 import com.echobedside.core.design.PreBlur
+import com.echobedside.core.model.DeviceName
 import com.echobedside.core.model.EchoScreen
 import com.echobedside.core.model.EchoServices
 import com.echobedside.core.model.MediaControls
@@ -47,6 +48,7 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
 
     companion object {
         const val ID = "nowplaying"
+        /** How long the drift continues after pause, unless "Keep the background moving while paused" is on. */
         private const val PAUSED_DRIFT_MS = 30_000L
         private val palettes = WeakHashMap<Bitmap, AmbientPalette>()
         private const val DEBUG_SRC = "debug-preview"
@@ -89,6 +91,7 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
     private var shown = false
     private var night = false
     private var pausedAt = 0L
+    private var keepDrift = MediaSettings.pausedDrift(services.settings)
     private var paletteShown = AmbientPalette.NEUTRAL
     private var paletteAnim: ValueAnimator? = null
     private var popoverOpen = false
@@ -149,6 +152,17 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
         route.setOnClickListener { if (popoverOpen) closePopover() else openPopover() }
         popover.onButton = { disconnect() }
 
+        // Settings apply live: the device name (popover, empty state) and the paused drift.
+        empty.deviceName = DeviceName.get(services.settings)
+        observeWhileAttached(services.settings.changes) { key ->
+            when (key) {
+                DeviceName.KEY -> {
+                    empty.deviceName = DeviceName.get(services.settings)
+                    if (popoverOpen) fillPopover()
+                }
+                MediaSettings.PAUSED_DRIFT -> { keepDrift = MediaSettings.pausedDrift(services.settings); updateMotion() }
+            }
+        }
         observeWhileAttached(services.media.current) { bind(it) }
         observeWhileAttached(services.system.state) { st ->
             if (st.nightActive != night) applyNight(st.nightActive)
@@ -285,7 +299,7 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
     private fun updateMotion() {
         val s = session
         val drift = shown && s != null && !night &&
-            (s.state.playing || SystemClock.elapsedRealtime() - pausedAt < PAUSED_DRIFT_MS)
+            (s.state.playing || keepDrift || SystemClock.elapsedRealtime() - pausedAt < PAUSED_DRIFT_MS)
         if (drift && !ticker.isStarted) {
             ambient.jumpTo(wallSeconds())
             ambient.step(wallSeconds())
@@ -298,7 +312,7 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
     private fun onTick() {
         ambient.step(wallSeconds())
         val s = session
-        if (s != null && !s.state.playing && SystemClock.elapsedRealtime() - pausedAt >= PAUSED_DRIFT_MS) {
+        if (s != null && !s.state.playing && !keepDrift && SystemClock.elapsedRealtime() - pausedAt >= PAUSED_DRIFT_MS) {
             // Let the current step finish, then stop drawing.
             main.postDelayed({ updateMotion() }, 1000)
         }
@@ -319,11 +333,12 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
     private fun fillPopover() {
         val s = session ?: return
         val st = s.state
+        val device = DeviceName.get(services.settings)
         when (st.source) {
             MediaSourceKind.OTHER_APP -> {
                 popover.header = "PLAYING FROM"
                 popover.name = st.sourceLabel.ifBlank { "App" }
-                popover.subtitle = "Playing on Echo Bedside"
+                popover.subtitle = "Playing on $device"
                 popover.chips = st.route
                 popover.buttonLabel = "Stop"
                 popover.deviceIcon = R_note
@@ -331,7 +346,7 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
             MediaSourceKind.BLUETOOTH -> {
                 popover.header = "BLUETOOTH"
                 popover.name = st.sourceLabel.ifBlank { "iPhone" }
-                popover.subtitle = "Connected to Echo Bedside"
+                popover.subtitle = "Connected to $device"
                 popover.chips = st.route
                 popover.buttonLabel = "Disconnect"
                 popover.deviceIcon = R_phone
@@ -339,7 +354,7 @@ class NowPlayingScreen(context: Context, private val services: EchoServices) : F
             MediaSourceKind.AIRPLAY, MediaSourceKind.SPOTIFY -> {
                 popover.header = if (st.source == MediaSourceKind.SPOTIFY) "SPOTIFY CONNECT" else "AIRPLAY RECEIVER"
                 popover.name = st.sourceLabel.ifBlank { "iPhone" }
-                popover.subtitle = "Streaming to Echo Bedside"
+                popover.subtitle = "Streaming to $device"
                 // The sender's route ("AirPlay 2", codec, rate) from the receiver; the demo carries the design's.
                 popover.chips = st.route
                 popover.buttonLabel = "Disconnect"

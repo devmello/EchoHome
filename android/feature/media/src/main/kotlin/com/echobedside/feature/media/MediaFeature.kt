@@ -24,7 +24,8 @@ object MediaFeature : EchoFeature {
     override fun install(host: FeatureHost) {
         val services = host.services
         host.registerScreen(ScreenSpec(NowPlayingScreen.ID, order = 10) { ctx -> NowPlayingScreen(ctx, services) })
-        MusicIsland(services.media, services.island, services.scope).start()
+        host.registerSettings(MediaSettings.section)
+        MusicIsland(services.media, services.island, services.scope, services.settings).start()
         val sessions = AppSessions(host.context, services)
         // After install: the listener grant check talks to system services.
         Handler(Looper.getMainLooper()).post { sessions.start() }

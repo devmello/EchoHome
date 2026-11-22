@@ -46,7 +46,22 @@ class AppSessions(private val context: Context, private val services: EchoServic
 
     private val sessionsChanged = MediaSessionManager.OnActiveSessionsChangedListener { list -> sync(list.orEmpty()) }
 
-    init { instance = this }
+    /** "Show other apps' music"; off = nothing mirrored (already published sessions are cleared). */
+    @Volatile private var enabled = MediaSettings.otherApps(services.settings)
+
+    init {
+        instance = this
+        services.scope.launch {
+            MediaSettings.watch(services.settings, MediaSettings.OTHER_APPS, MediaSettings::otherApps).collect { on ->
+                if (on == enabled) return@collect
+                enabled = on
+                Log.i(TAG, "other apps' media ${if (on) "on" else "off"}")
+                if (started) main.post { resync() }
+            }
+        }
+    }
+
+    private fun resync() = try { sync(msm.getActiveSessions(listener)) } catch (e: SecurityException) { sync(emptyList()) }
 
     /** Safe to call repeatedly; does nothing until the listener permission is granted. */
     fun start() {
@@ -62,7 +77,7 @@ class AppSessions(private val context: Context, private val services: EchoServic
     }
 
     private fun sync(list: List<MediaController>) {
-        val wanted = list.filter { SessionMapping.isMirrored(it.packageName, context.packageName) }.associateBy { it.sessionToken }
+        val wanted = list.filter { enabled && SessionMapping.isMirrored(it.packageName, context.packageName) }.associateBy { it.sessionToken }
         tracked.keys.filter { it !in wanted }.forEach { k -> tracked.remove(k)?.release() }
         for ((token, c) in wanted) if (token !in tracked) Tracked(c).also { tracked[token] = it }.publish()
     }

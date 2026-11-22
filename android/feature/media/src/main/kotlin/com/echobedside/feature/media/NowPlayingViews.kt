@@ -519,7 +519,7 @@ internal class RouteButton(context: Context) : GlassLayout(context) {
 internal class RoutePopover(context: Context) : GlassLayout(context) {
     var header = "AIRPLAY RECEIVER"
     var name = "iPhone"
-    var subtitle = "Streaming to Echo Bedside"
+    var subtitle = "Streaming to Echo Show"
     var chips: List<String> = emptyList()
     var buttonLabel = "Disconnect"
     var deviceIcon = R_phone
@@ -625,7 +625,10 @@ internal class EmptyView(context: Context) : View(context) {
         set(v) { field = v; invalidate() }
     private val icon = Icon(context, R_airplay)
     private val title = "Nothing playing"
-    private val sub = "AirPlay to Echo Bedside from your iPhone, iPad or Mac"
+    /** [com.echobedside.core.model.DeviceName], set live by the screen. */
+    var deviceName = "Echo Show"
+        set(v) { if (v != field) { field = v; invalidate() } }
+    private val sub get() = "AirPlay to $deviceName from your iPhone, iPad or Mac"
 
     override fun onDraw(canvas: Canvas) {
         val col = { c: Int -> Night.map(c, night) }
