@@ -1,0 +1,169 @@
+package com.echobedside.feature.camera.profiles
+
+import com.echobedside.core.model.Presence
+import com.echobedside.core.model.Profile
+import com.echobedside.core.model.ProfileManager
+import com.echobedside.core.model.SettingsStore
+import com.echobedside.core.model.SwitchReason
+import com.echobedside.feature.camera.face.FaceTemplates
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
+
+/**
+ * The real [ProfileManager] (`services.profiles`), NOTES §6.6:
+ *  - profiles, the active one and "Auto by face" persist in [settings] (`camera.profiles*`).
+ *  - `enrolled` reflects whether encrypted templates exist in [templates].
+ *  - [reject] ("Not me") goes back to shared and blocks that person from face matching for
+ *    [rejectCooldownMs].
+ *  - With Auto by face on, a face-picked or manual profile goes back to shared after
+ *    [timeoutMs] of EMPTY presence (UNKNOWN, e.g. a dark room at night, doesn't count).
+ */
+class FaceProfileManager(
+    private val settings: SettingsStore,
+    private val templates: TemplateStore?,
+    private val scope: CoroutineScope,
+    presence: Flow<Presence>?,
+    demo: Boolean,
+    private val clock: () -> Long = System::currentTimeMillis,
+    var rejectCooldownMs: Long = 5 * 60_000,
+    var timeoutMs: Long = settings.getInt(KEY_TIMEOUT_MIN, 10) * 60_000L,
+) : ProfileManager {
+
+    private val _profiles = MutableStateFlow(load(demo))
+    override val profiles: StateFlow<List<Profile>> = _profiles.asStateFlow()
+    private val _active = MutableStateFlow(
+        _profiles.value.firstOrNull { it.id == settings.getString(KEY_ACTIVE, Profile.SHARED_ID) } ?: Profile.SHARED)
+    override val active: StateFlow<Profile> = _active.asStateFlow()
+    private val _auto = MutableStateFlow(settings.getBoolean(KEY_AUTO, true))
+    override val autoByFace: StateFlow<Boolean> = _auto.asStateFlow()
+
+    /** Why the active profile last changed (the greeting shows only for FACE). */
+    var lastReason: SwitchReason = SwitchReason.MANUAL; private set
+    private val blockedUntil = HashMap<String, Long>()
+
+    init {
+        if (presence != null) scope.launch {
+            presence.distinctUntilChanged().collectLatest { p ->
+                if (p == Presence.EMPTY) {
+                    delay(timeoutMs)
+                    if (_auto.value && _active.value.id != Profile.SHARED_ID) switchTo(Profile.SHARED_ID, SwitchReason.TIMEOUT)
+                }
+            }
+        }
+    }
+
+    override fun switchTo(profileId: String, reason: SwitchReason) {
+        val p = _profiles.value.firstOrNull { it.id == profileId } ?: return
+        if (reason == SwitchReason.FACE && (!_auto.value || isBlocked(profileId))) return
+        lastReason = reason
+        _active.value = p
+        settings.putString(KEY_ACTIVE, p.id)
+    }
+
+    override fun setAutoByFace(enabled: Boolean) {
+        _auto.value = enabled
+        settings.putBoolean(KEY_AUTO, enabled)
+    }
+
+    override fun reject(profileId: String) {
+        blockedUntil[profileId] = clock() + rejectCooldownMs
+        if (_active.value.id != Profile.SHARED_ID) switchTo(Profile.SHARED_ID, SwitchReason.MANUAL)
+    }
+
+    fun isBlocked(profileId: String): Boolean {
+        val until = blockedUntil[profileId] ?: return false
+        if (clock() >= until) { blockedUntil.remove(profileId); return false }
+        return true
+    }
+
+    /** Ids currently blocked by "Not me". */
+    fun blocked(): Set<String> = _profiles.value.map { it.id }.filter { isBlocked(it) }.toSet()
+
+    override fun upsert(profile: Profile) {
+        val fixed = profile.copy(enrolled = templates?.has(profile.id) ?: profile.enrolled)
+        val l = _profiles.value
+        val i = l.indexOfFirst { it.id == fixed.id }
+        _profiles.value = if (i >= 0) l.toMutableList().also { it[i] = fixed } else l + fixed
+        if (_active.value.id == fixed.id) _active.value = fixed
+        persist()
+    }
+
+    override fun delete(profileId: String) {
+        if (profileId == Profile.SHARED_ID) return
+        templates?.delete(profileId)
+        _profiles.value = _profiles.value.filterNot { it.id == profileId }
+        if (_active.value.id == profileId) switchTo(Profile.SHARED_ID, SwitchReason.MANUAL)
+        persist()
+    }
+
+    // --- face templates (owned here so `enrolled` stays true to what's on disk) ---
+
+    fun saveTemplates(t: FaceTemplates) {
+        val store = templates ?: return
+        store.save(t)
+        _profiles.value.firstOrNull { it.id == t.profileId }?.let { upsert(it) }
+    }
+
+    fun forgetFace(profileId: String) {
+        templates?.delete(profileId)
+        _profiles.value.firstOrNull { it.id == profileId }?.let { upsert(it) }
+    }
+
+    /** Everyone with templates for [embedderId] (others need re-enrolment). */
+    fun enrolledTemplates(embedderId: String): List<FaceTemplates> {
+        val store = templates ?: return emptyList()
+        return _profiles.value.filter { it.id != Profile.SHARED_ID && it.enrolled }
+            .mapNotNull { store.load(it.id) }
+            .filter { it.embedderId == embedderId }
+    }
+
+    private fun load(demo: Boolean): List<Profile> {
+        val raw = settings.getString(KEY_PROFILES, "")
+        val list = if (raw.isNotBlank()) parse(raw) else if (demo) DEMO else emptyList()
+        val fixed = list.filterNot { it.id == Profile.SHARED_ID }
+            .map { it.copy(enrolled = templates?.has(it.id) ?: false) }
+        return listOf(Profile.SHARED) + fixed
+    }
+
+    private fun persist() {
+        settings.putString(KEY_PROFILES, encode(_profiles.value.filterNot { it.id == Profile.SHARED_ID }))
+    }
+
+    companion object {
+        const val KEY_PROFILES = "camera.profiles"
+        const val KEY_ACTIVE = "camera.profiles.active"
+        const val KEY_AUTO = "camera.profiles.auto"
+        const val KEY_TIMEOUT_MIN = "camera.profiles.timeoutMin"
+
+        /** The designs' sample people (Profiles.dc.html: Maya, pink, the Float face). */
+        val DEMO = listOf(
+            Profile("maya", "Maya", 0xFFFF375F.toInt(), faceId = "float", calendarEntity = "calendar.maya"),
+            Profile("sam", "Sam", 0xFF30D158.toInt(), faceId = "digital", calendarEntity = "calendar.sam"),
+        )
+
+        fun encode(list: List<Profile>): String = JSONArray().also { a ->
+            for (p in list) a.put(JSONObject().apply {
+                put("id", p.id); put("name", p.name); put("color", p.color); put("face", p.faceId)
+                p.calendarEntity?.let { put("calendar", it) }
+            })
+        }.toString()
+
+        fun parse(raw: String): List<Profile> = try {
+            val a = JSONArray(raw)
+            List(a.length()) { i ->
+                val o = a.getJSONObject(i)
+                Profile(o.getString("id"), o.getString("name"), o.getInt("color"), o.optString("face", "digital"),
+                    if (o.has("calendar")) o.getString("calendar") else null)
+            }
+        } catch (e: Exception) { emptyList() }
+    }
+}
