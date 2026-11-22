@@ -29,6 +29,8 @@ data class MediaState(
     val sourceLabel: String = "",
     /** 0..1, the sender's volume when the source reports it. */
     val volume: Float? = null,
+    /** Short labels for Now Playing's route popover chips, e.g. ["AirPlay 2", "Lossless · ALAC", "44.1 kHz"]. */
+    val route: List<String> = emptyList(),
 ) {
     fun positionNow(now: Long = SystemClock.elapsedRealtime()): Long {
         val p = if (playing) positionMs + (now - positionSampledAt) else positionMs
@@ -46,6 +48,12 @@ interface MediaControls {
     /** 0..1. */
     fun setVolume(volume: Float)
     val canSeek: Boolean get() = true
+    /** false = next/previous do nothing for this source (e.g. AirPlay 2 senders): hide or dim them. */
+    val canSkip: Boolean get() = true
+    /** false = the sender can't be paused remotely (play/pause may only mute locally). */
+    val canPause: Boolean get() = true
+    /** Now Playing's "Disconnect": drop the sender (AirPlay, Bluetooth) or stop the app session. */
+    fun disconnect() { pause() }
 }
 
 /** A source currently known to the hub. */

@@ -47,6 +47,9 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         // A bedside clock stays on while it's in front. (Night mode dims it; it doesn't turn it off.)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // A bedside display never sits behind the (swipe) keyguard, e.g. after the mic button's KEY_POWER.
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
         window.setDecorFitsSystemWindows(false)
 
         pagerScreens = app.screens.filter { it.inPager }
@@ -125,8 +128,10 @@ class MainActivity : Activity() {
 
     private fun handleIntent(intent: Intent, initial: Boolean) {
         val extras = intent.extras
-        if (extras?.containsKey("demo") == true) {
-            val demo = extras.getBoolean("demo")
+        app.services.intents.tryEmit(intent)
+        // Only `--ez demo true|false` toggles sample data; a String `demo` is a screen arg.
+        @Suppress("DEPRECATION") val demo = extras?.get("demo")
+        if (demo is Boolean) {
             if (demo != app.services.config.demoData) {
                 app.services.settings.putBoolean(EchoApp.KEY_DEMO, demo)
                 // Fakes read the flag at startup: restart the process (the system relaunches HOME).

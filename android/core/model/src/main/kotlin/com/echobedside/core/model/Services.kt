@@ -8,14 +8,18 @@ import com.echobedside.core.model.fake.FakeWeatherProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import android.content.Intent
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Every shared service, one instance per process (created by `:app`).
  *
  * Slots start as in-memory defaults or fakes (core.model.fake) so each feature runs alone.
  * The feature that owns a contract replaces its slot in [EchoFeature.install]:
- *   system → systemControls · alarm → alarms, timers · home → weather (Open-Meteo), calendar (iCal URLs) ·
+ *   system → systemControls · alarm → alarms, timers · home → weather (Open-Meteo), calendar (iCal URLs), location ·
  *   camera → profiles (face switching) · `:app` → homeAssistant (optional), settings, config.
  * Read slots lazily (in view factories / on attach), never cache them during install.
  */
@@ -41,6 +45,14 @@ class EchoServices(
     var weather: WeatherProvider = FakeWeatherProvider(config.demoData)
     var calendar: CalendarProvider = FakeCalendarProvider(config.demoData)
     var homeAssistant: HomeAssistant = NotConfiguredHomeAssistant
+    /** Home location (see [HomeLocation]); `:feature:home` binds manual > auto > Livermore. */
+    var location: StateFlow<HomeLocation> = MutableStateFlow(HomeLocation.default(config.demoData))
+
+    /**
+     * Every launch / new intent of the HOME activity (replays the latest), so overlays can read
+     * debug extras that arrive by `onNewIntent`. Only `:app` emits.
+     */
+    val intents: MutableSharedFlow<Intent> = MutableSharedFlow(replay = 1, extraBufferCapacity = 4)
 }
 
 /**

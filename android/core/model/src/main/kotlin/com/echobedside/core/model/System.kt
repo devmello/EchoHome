@@ -62,7 +62,8 @@ class DefaultSystemStateStore : SystemStateStore {
  * isn't possible yet (e.g. Wi-Fi needs the priv-app install, NOTES §5.5).
  */
 interface SystemControls {
-    fun setBrightness(value: Float): Boolean
+    /** [showHud] = show the brightness capsule (Control Center / keys / voice); silent by default (sunrise ramp, auto). */
+    fun setBrightness(value: Float, showHud: Boolean = false): Boolean
     fun setVolume(value: Float, showHud: Boolean = true): Boolean
     fun setMicMuted(muted: Boolean): Boolean
     fun setCameraDisabled(disabled: Boolean): Boolean
@@ -75,7 +76,7 @@ interface SystemControls {
 }
 
 open class StateOnlySystemControls(private val store: SystemStateStore) : SystemControls {
-    override fun setBrightness(value: Float): Boolean { store.update { it.copy(brightness = value.coerceIn(0f, 1f)) }; return true }
+    override fun setBrightness(value: Float, showHud: Boolean): Boolean { store.update { it.copy(brightness = value.coerceIn(0f, 1f)) }; return true }
     override fun setVolume(value: Float, showHud: Boolean): Boolean { store.update { it.copy(volume = value.coerceIn(0f, 1f)) }; return true }
     override fun setMicMuted(muted: Boolean): Boolean { store.update { it.copy(micMutedSoftware = muted) }; return true }
     override fun setCameraDisabled(disabled: Boolean): Boolean { store.update { it.copy(cameraDisabled = disabled) }; return true }

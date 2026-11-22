@@ -163,7 +163,14 @@ class FakeWeatherProvider(demo: Boolean) : WeatherProvider {
         val top = now - now % hour
         Weather(
             temperature = 54, high = 61, low = 47, condition = WeatherCondition.PARTLY_CLOUDY, isNight = true,
-            hourly = (1..6).map { HourForecast(top + it * hour, 54 - it / 2, WeatherCondition.PARTLY_CLOUDY, if (it > 4) 30 else 10) },
+            hourly = (1..36).map {
+                val t = top + it * hour
+                val h = java.time.Instant.ofEpochMilli(t).atZone(java.time.ZoneId.systemDefault())
+                val tomorrow = h.toLocalDate() == java.time.LocalDate.now().plusDays(1)
+                val rain = tomorrow && h.hour in 9..14
+                HourForecast(t, 54 - minOf(it, 6) / 2, if (rain) WeatherCondition.RAIN else WeatherCondition.PARTLY_CLOUDY,
+                    when { rain -> 60 + (h.hour % 3) * 10; tomorrow && h.hour in 6..8 -> 30; it in 5..6 -> 30; else -> 10 })
+            },
             tomorrowSummary = "Rain tomorrow from 9 AM", location = "Santa Cruz",
         )
     })

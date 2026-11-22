@@ -180,9 +180,13 @@ class GlassTracker(private val view: View, private val active: () -> Boolean) {
     var y = 0f; private set
 
     private val preDraw = ViewTreeObserver.OnPreDrawListener {
-        if (active()) {
+        // Skip views that won't draw (a hidden parent): otherwise they'd invalidate every frame.
+        if (active() && view.isShown) {
             view.getLocationInWindow(loc)
-            if (loc[0].toFloat() != x || loc[1].toFloat() != y) view.invalidate()
+            if (loc[0].toFloat() != x || loc[1].toFloat() != y) {
+                x = loc[0].toFloat(); y = loc[1].toFloat()
+                view.invalidate()
+            }
         }
         true
     }

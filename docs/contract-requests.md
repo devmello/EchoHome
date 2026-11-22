@@ -68,3 +68,31 @@ Template:
 - Need: Photos.dc.html's control capsule uses a slightly different recipe from NOTES §3.2: fill .12, border .3, top rim `inset 0 1.5px 1px .5`, shadow `0 12px 32px .4`, specular `linear-gradient(170deg, .28 0%, 0 55%)`, blur 18 / brightness 1.1. `GlassPainter` only exposes `tint`, so photos uses the standard recipe with a .12 fill (via `tint`) and an 18 px / 1.1 pre-blur. The difference is barely visible on the device.
 - Proposed (low priority): optional overrides on `GlassPainter` (`borderAlpha`, `rimTopAlpha`, `shadowDy/Blur/Alpha`, `specularAngle/stops/alphas`), defaulting to `GlassTokens`.
 - Status: open
+
+## 2026-11-22 · C (airplay) · MediaControls: say which transport controls work
+- Need: AirPlay 2 senders (iPhone, Mac) don't accept play/pause/next/previous from third-party receivers (no DACP in AP2; the MRP channel needs Apple pairing, see shairplay's AP2-STATUS.md). AirPlay 1 senders do (DACP). Now Playing / the island can't tell, so their buttons do nothing for AP2. Today C maps pause() to a local mute (audio dropped, shown paused) and next/previous to no-ops in AP2.
+- Proposed (defaults keep everything working): `interface MediaControls { … val canSkip: Boolean get() = true; val canPause: Boolean get() = true }`, read by D to hide/dim buttons. C sets `canSkip = hasRemote`.
+- Re D's request above: C can fill `route` (e.g. "AirPlay 2", "44.1 kHz", "Mac name") and implement `disconnect()` (restarts the native receiver, which drops the sender; ~10 ms) once they land.
+- Status: open
+
+## 2026-11-22 · B (system) · re E: `setBrightness(value, showHud)`
+- Agree with E's request. `:feature:system`'s `RealSystemControls` already has `setBrightness(v, showHud: Boolean)`; the interface method `setBrightness(v)` shows the HUD only when the CC slider / keys call it. Until the contract changes, B treats calls made while the Control Center is closed and no HUD is up as silent? No: today they show the HUD. Please add `showHud: Boolean = true` to the interface and B will switch over (one-line change).
+- Status: open
+
+## 2026-11-22 · B (system) · `:app` MainActivity: show over the keyguard + pass intents to overlays
+- Need 1: the Echo's mic/camera button sends KEY_POWER until the key layout is remapped (see docs/status/system.md), so pressing it sleeps the screen. B wakes it again (wakelock with ACQUIRE_CAUSES_WAKEUP), but the insecure swipe keyguard then covers the launcher. Proposed: `setShowWhenLocked(true)` + `setTurnScreenOn(true)` in `MainActivity.onCreate` (a launcher on a bedside display should never sit behind a keyguard). B is not disabling the keyguard itself (that's a device security setting for the user to decide).
+- Need 2: overlays can't see launch/new-intent extras. B reads `(context as Activity).intent` once on attach for debug extras (`--es island story`, `--es cc open`, `--es banner 0`), which misses `onNewIntent`. Proposed: `EchoHost.intents: SharedFlow<Intent>` (or an `onNewIntent` hook on `OverlaySpec`). Low priority: B also has a debug broadcast.
+- Status: open
+
+## 2026-11-22 · B (system) · optional: Wi-Fi/Bluetooth/AirPlay/Spotify state in `SystemState`
+- Need: the Control Center shows Wi-Fi/BT on/off and the network name (B reads them itself) and AirPlay/Spotify "enabled" toggles, which today are local settings `system.cc.airplay` / `system.cc.spotify` that C and Spotify don't read.
+- Proposed: `SystemControls.setAirPlayEnabled/setSpotifyEnabled` routed to the owning features (or the features read those two settings keys). Wi-Fi on/off needs `CHANGE_WIFI_STATE` + priv-app on Android 11 (`WifiManager.setWifiEnabled` is a no-op for normal apps); CC opens the Wi-Fi panel instead.
+- Status: open
+
+## 2026-11-22 · B (system) · re I: GlassPainter overrides
+- Same need as I's: HUD / banner / island / CC use different recipes (Indicators.dc.html, Banners.dc.html, Island.dc.html, ControlCenter.dc.html). B keeps a local `SysGlassPainter(GlassSpec)` in `:feature:system/ui/SysGlass.kt`; it could move to `:core:design` as-is if others want it.
+- Status: open
+
+## 2026-11-22 · B (system) · correction to "re E: setBrightness" above
+- Ignore the muddled middle sentence there. Fact: in B's implementation the interface `setBrightness(v)` is already **silent** (no HUD), so E's sunrise ramp is fine today. `RealSystemControls.setBrightness(v, showHud)` exists for callers that want the capsule (voice "brighter"). Proposed: add `showHud: Boolean = false` to the interface.
+- Status: open
