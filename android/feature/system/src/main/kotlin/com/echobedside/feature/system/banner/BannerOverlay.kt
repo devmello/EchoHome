@@ -214,6 +214,13 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
     // --- drawing ---
 
     override fun onDraw(canvas: Canvas) {
+        val t0 = System.nanoTime()
+        drawBanners(canvas)
+        val ms = (System.nanoTime() - t0) / 1_000_000
+        if (ms >= 8 && ui.debugBuild) android.util.Log.d("EchoPerf", "banner onDraw ${ms} ms expanded=${q.expanded}")
+    }
+
+    private fun drawBanners(canvas: Canvas) {
         val now = Tween.now()
         var running = false
         for (t in arrayOf(y, scale, opacity, backY, backOpacity, expandA)) running = t.step(now) or running

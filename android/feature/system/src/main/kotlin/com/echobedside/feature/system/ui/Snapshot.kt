@@ -35,6 +35,7 @@ object Snapshot {
      */
     fun region(self: View, r: Rect, blurPx: Float, saturate: Float, brightness: Float): Backdrop? {
         val parent = self.parent as? ViewGroup ?: return null
+        val t0 = System.nanoTime()
         val idx = parent.indexOfChild(self)
         val w = max(1, r.width() / SCALE)
         val h = max(1, r.height() / SCALE)
@@ -57,8 +58,11 @@ object Snapshot {
             bmp.recycle()
             return null
         }
+        val t1 = System.nanoTime()
         val out = PreBlur.blur(bmp, blurPx / SCALE, downscale = 1, saturate = saturate, brightness = brightness)
         bmp.recycle()
+        val drawMs = (t1 - t0) / 1_000_000; val blurMs = (System.nanoTime() - t1) / 1_000_000
+        if (drawMs + blurMs >= 4) Log.d("EchoPerf", "region ${r.width()}x${r.height()}: draw $drawMs ms, blur $blurMs ms")
         return Backdrop(out, r.left.toFloat(), r.top.toFloat(), r.width().toFloat(), r.height().toFloat())
     }
 

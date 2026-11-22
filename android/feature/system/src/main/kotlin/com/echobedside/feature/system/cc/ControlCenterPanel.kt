@@ -185,6 +185,13 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
     private fun ink(c: Int) = if (night) Night.map(c, true) else c
 
     override fun onDraw(canvas: Canvas) {
+        val t0 = System.nanoTime()
+        drawPanel(canvas)
+        val ms = (System.nanoTime() - t0) / 1_000_000
+        if (ms >= 8 && ui.debugBuild) android.util.Log.d("EchoPerf", "cc panel onDraw ${ms} ms")
+    }
+
+    private fun drawPanel(canvas: Canvas) {
         val now = Tween.now()
         val running = brightFill.step(now) or volFill.step(now)
         drawHeader(canvas)

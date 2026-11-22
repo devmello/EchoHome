@@ -13,6 +13,7 @@ import android.graphics.Shader
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import com.echobedside.core.design.Motion
@@ -233,6 +234,13 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : View(
     // --- drawing ---
 
     override fun onDraw(canvas: Canvas) {
+        val t0 = System.nanoTime()
+        drawIsland(canvas)
+        val ms = (System.nanoTime() - t0) / 1_000_000
+        if (ms >= 8 && ui.debugBuild) Log.d("EchoPerf", "island onDraw ${ms} ms mode=${layout.mode}")
+    }
+
+    private fun drawIsland(canvas: Canvas) {
         val now = Tween.now()
         var running = false
         for (t in arrayOf(w, h, r, beadX, appear, compactA, expandedA, scrim, beadA, beadScale, bannerFade)) running = t.step(now) or running
