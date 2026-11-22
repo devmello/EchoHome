@@ -187,6 +187,7 @@ class LePeripheral(
         if (!advertising && startingMode == null) return
         try { adapter?.bluetoothLeAdvertiser?.stopAdvertising(advertiseCallback) } catch (e: Exception) { Log.w(TAG, "stopAdvertising", e) }
         advertising = false
+        // A start still in flight finishes later; onStartSuccess sees startingMode == null and undoes it.
         startingMode = null
         listener.onAdvertisingChanged(false, null)
     }
@@ -194,8 +195,16 @@ class LePeripheral(
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
             handler.post {
+                val wanted = startingMode
                 startingMode = null
                 advertising = true
+                // Stopped (or switched mode) while the start was in flight: undo it.
+                if (wanted == null || wanted != mode) {
+                    val m = mode
+                    stopAdvertising()
+                    if (m != Mode.OFF) startAdvertising(m)
+                    return@post
+                }
                 gate = (gate ?: probeGate()).copy(started = true, errorCode = null)
                 Log.i(TAG, "advertising (${mode}) mode=${settingsInEffect.mode} tx=${settingsInEffect.txPowerLevel} connectable=${settingsInEffect.isConnectable}")
                 listener.onAdvertisingChanged(true, null)

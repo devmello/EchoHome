@@ -119,10 +119,11 @@ open class PairingScreen(context: Context, private val services: EchoServices, p
 
         val prompt = s.pairing
         if (prompt != null) {
-            tTitle.draw(c, "Pairing with ${prompt.deviceName}", 64f, tTitle.baselineIn(146f, 55f), white)
             val code = prompt.passkey?.let { if (it.length == 6) it.substring(0, 3) + " " + it.substring(3) else it }
+            tTitle.draw(c, if (code != null) "Confirm the code" else "Confirm pairing", 64f, tTitle.baselineIn(146f, 55f), white)
             if (code != null) tCode.draw(c, code, 60f, tCode.baselineIn(206f, 110f), white)
-            wrap(c, tBody, if (code != null) "Check that your iPhone shows the same code, then tap Pair on both." else "Tap Pair on your iPhone and on the Echo.",
+            wrap(c, tBody, if (code != null) "“${prompt.deviceName}” should show the same code. Tap Pair on both."
+                else "Tap Pair on “${prompt.deviceName}” and on the Echo.",
                 64f, if (code != null) 322f else 222f, 470f, 30f, withAlpha(white, 0.78f))
         } else {
             tTitle.draw(c, "Pair your iPhone", 64f, tTitle.baselineIn(146f, 55f), white)

@@ -67,7 +67,11 @@ class PhoneController(private val context: Context, private val services: EchoSe
     private var audioDevice: BluetoothDevice? = null
     private var started = false
 
-    val media = BluetoothMediaSource(context, handler, { services.media }, { audioDevice?.let(::nameOf) ?: savedName() })
+    val media = BluetoothMediaSource(context, handler, { services.media }, { audioDevice?.let(::nameOf) ?: savedName() },
+        disconnectAudio = ::disconnectAudio)
+
+    /** The A2DP sink profile proxy (a binder handle, kept while Bluetooth is on). */
+    private var a2dpSink: BluetoothProfile? = null
 
     // --- settings ---
 
@@ -119,14 +123,34 @@ class PhoneController(private val context: Context, private val services: EchoSe
         dropAncs()
         media.stop()
         audioDevice = null
+        a2dpSink?.let { p -> runCatching { adapter?.closeProfileProxy(A2DP_SINK, p) } }
+        a2dpSink = null
         peripheral.onAdapterOff()
         updateBluetoothActivity()
     }
 
-    /** The pairing screen is open: discoverable + fast advertising. */
+    /**
+     * The pairing screen is open: discoverable + fast advertising. The screen is also "hidden"
+     * while the system's discoverable / pairing dialogs pause our activity, so turning off is
+     * debounced and the discoverable prompt is asked once per window, not on every resume.
+     */
     fun setPairingMode(on: Boolean, activity: Activity?) {
-        _state.update { it.copy(pairingMode = on, pairing = if (on) it.pairing else null) }
-        if (on && activity != null && adapter?.scanMode != BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE) requestDiscoverable(activity)
+        handler.removeCallbacks(pairingOff)
+        if (!on) { handler.postDelayed(pairingOff, 10_000); return }
+        _state.update { it.copy(pairingMode = true) }
+        val now = SystemClock.elapsedRealtime()
+        if (activity != null && adapter?.isEnabled == true && adapter?.scanMode != BluetoothAdapter.SCAN_MODE_CONNECTABLE_DISCOVERABLE &&
+            now - discoverableAskedAt > DISCOVERABLE_S * 1000L) {
+            discoverableAskedAt = now
+            requestDiscoverable(activity)
+        }
+        updateMode()
+        refreshStatus()
+    }
+
+    private var discoverableAskedAt = -DISCOVERABLE_S * 1000L * 2
+    private val pairingOff = Runnable {
+        _state.update { it.copy(pairingMode = false, pairing = null) }
         updateMode()
         refreshStatus()
     }
@@ -139,7 +163,7 @@ class PhoneController(private val context: Context, private val services: EchoSe
      */
     fun requestDiscoverable(activity: Activity) {
         try {
-            activity.startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300))
+            activity.startActivity(Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, DISCOVERABLE_S))
         } catch (e: Exception) { Log.w(TAG, "request discoverable", e) }
     }
 
@@ -230,17 +254,48 @@ class PhoneController(private val context: Context, private val services: EchoSe
     // --- audio ---
 
     private fun findConnectedAudio() {
-        // Already streaming when the app started: ask the A2DP sink profile who's connected.
         val a = adapter ?: return
-        if (a.getProfileConnectionState(A2DP_SINK) != BluetoothProfile.STATE_CONNECTED) return
+        if (a2dpSink != null) { connectedSinkDevice()?.let { audioConnected(it, true) }; return }
         a.getProfileProxy(context, object : BluetoothProfile.ServiceListener {
             override fun onServiceConnected(profile: Int, proxy: BluetoothProfile) {
-                val d = runCatching { proxy.connectedDevices.firstOrNull() }.getOrNull()
-                a.closeProfileProxy(profile, proxy)
-                handler.post { if (d != null) audioConnected(d, true) }
+                handler.post {
+                    a2dpSink = proxy
+                    if (services.config.debug) logHiddenApis()
+                    // Already streaming when the app started: pick it up.
+                    connectedSinkDevice()?.let { audioConnected(it, true) }
+                }
             }
-            override fun onServiceDisconnected(profile: Int) {}
+            override fun onServiceDisconnected(profile: Int) { handler.post { a2dpSink = null } }
         }, A2DP_SINK)
+    }
+
+    private fun connectedSinkDevice(): BluetoothDevice? = runCatching { a2dpSink?.connectedDevices?.firstOrNull() }.getOrNull()
+
+    /**
+     * Drops the A2DP link (the phone stays paired; it can pick the Echo again from its audio
+     * picker). BluetoothA2dpSink.disconnect is a hidden API on Android 11: reflection, false if
+     * the platform refuses (then the caller just pauses).
+     */
+    private fun disconnectAudio(): Boolean {
+        val p = a2dpSink ?: return false
+        val d = audioDevice ?: connectedSinkDevice() ?: return false
+        return try {
+            val ok = p.javaClass.getMethod("disconnect", BluetoothDevice::class.java).invoke(p, d) as? Boolean ?: false
+            Log.i(TAG, "A2DP sink disconnect ${d.address}: $ok")
+            ok
+        } catch (e: Exception) {
+            Log.w(TAG, "A2DP sink disconnect not allowed: ${e.cause ?: e}")
+            false
+        }
+    }
+
+    /** Debug: which hidden Bluetooth APIs this platform lets us call (logged once). */
+    private fun logHiddenApis() {
+        val sink = a2dpSink?.javaClass
+        fun has(c: Class<*>?, name: String, vararg args: Class<*>) = c != null && runCatching { c.getMethod(name, *args) }.isSuccess
+        Log.i(TAG, "hidden APIs: a2dpSink.disconnect=${has(sink, "disconnect", BluetoothDevice::class.java)} " +
+            "device.removeBond=${has(BluetoothDevice::class.java, "removeBond")} " +
+            "adapter.setScanMode=${has(BluetoothAdapter::class.java, "setScanMode", Int::class.javaPrimitiveType!!, Int::class.javaPrimitiveType!!)}")
     }
 
     private fun audioConnected(d: BluetoothDevice, connected: Boolean) {
@@ -378,6 +433,7 @@ class PhoneController(private val context: Context, private val services: EchoSe
         const val TAG = "EchoPhone"
         const val ACTIVITY_ID = "phone:bluetooth"
         const val ANNOUNCE_MS = 6_000L
+        const val DISCOVERABLE_S = 300
         const val KEY_NOTIFICATIONS = "phone.notifications"
         const val KEY_AUDIO = "phone.audio"
         const val KEY_ADDRESS = "phone.device.address"

@@ -39,6 +39,8 @@ class BluetoothMediaSource(
     /** The phone's name for the "from" label, e.g. "Maya's iPhone". */
     private val label: () -> String,
     private val onPlayingChanged: (Boolean) -> Unit = {},
+    /** Now Playing's Disconnect: drop the A2DP link to the phone (it stays paired). */
+    private val disconnectAudio: () -> Boolean = { false },
 ) {
     private var browser: MediaBrowser? = null
     private var controller: MediaController? = null
@@ -88,7 +90,7 @@ class BluetoothMediaSource(
             updatedAtElapsed = ps.lastPositionUpdateTime,
             artwork = md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) ?: md.getBitmap(MediaMetadata.METADATA_KEY_ART),
         )
-        val state = AvrcpMapping.toState(snap, label(), volume(), SystemClock.elapsedRealtime())
+        val state = AvrcpMapping.toState(snap, label(), volume(), SystemClock.elapsedRealtime())?.let { it.copy(route = AvrcpMapping.route(it.sourceLabel)) }
         if (state == null) { clear(); return }
         if (AvrcpMapping.sameForUi(published, state)) return
         val wasPlaying = published?.playing == true
@@ -116,7 +118,13 @@ class BluetoothMediaSource(
             // No FLAG_SHOW_UI: our own HUD (`:feature:system`) shows volume.
             a.setStreamVolume(AudioManager.STREAM_MUSIC, (volume.coerceIn(0f, 1f) * max).roundToInt(), 0)
         }
+        // AVRCP 1.6 passthrough: play/pause/next/previous work; there's no absolute seek.
         override val canSeek: Boolean get() = false
+        override val canSkip: Boolean get() = true
+        override val canPause: Boolean get() = true
+        override fun disconnect() {
+            if (!disconnectAudio()) t?.pause()
+        }
     }
 
     private val connection = object : MediaBrowser.ConnectionCallback() {

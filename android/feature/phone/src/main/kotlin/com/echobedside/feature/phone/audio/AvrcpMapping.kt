@@ -61,11 +61,17 @@ object AvrcpMapping {
         )
     }
 
+    /**
+     * Route popover chips. The sink codec (SBC/AAC) isn't readable by apps on Android 11
+     * (BluetoothA2dp.getCodecStatus is source-side only), so no codec chip.
+     */
+    fun route(phoneName: String): List<String> = listOfNotNull("Bluetooth", phoneName.ifBlank { null })
+
     /** Only republish when something a UI shows changed (positions are extrapolated by readers). */
     fun sameForUi(a: MediaState?, b: MediaState?): Boolean {
         if (a == null || b == null) return a == b
         if (a.title != b.title || a.artist != b.artist || a.album != b.album || a.artwork !== b.artwork) return false
-        if (a.playing != b.playing || a.durationMs != b.durationMs || a.sourceLabel != b.sourceLabel || a.volume != b.volume) return false
+        if (a.playing != b.playing || a.durationMs != b.durationMs || a.sourceLabel != b.sourceLabel || a.volume != b.volume || a.route != b.route) return false
         // A position jump of more than 1.5 s (seek, skip, drift) is a change; steady playback isn't.
         val t = maxOf(a.positionSampledAt, b.positionSampledAt)
         return kotlin.math.abs(a.positionNow(t) - b.positionNow(t)) <= 1500

@@ -39,8 +39,14 @@ object PhoneFeature : EchoFeature {
         val demo = if (services.config.debug) PhoneDemo(services, handler) else null
         host.registerScreen(ScreenSpec(SCREEN_ID, order = 90, inPager = false) { ctx ->
             object : PairingScreen(ctx, services, c) {
+                override fun onScreenHidden() {
+                    if (demoState == null) super.onScreenHidden()
+                }
+
                 override fun onScreenShown(args: Bundle?) {
                     val kind = args?.getString("phone_demo")
+                    // onResume re-shows with null args: keep a demo that's on screen. An intent without phone_demo ends it.
+                    if (kind == null && args == null && demoState != null) return
                     if (demo == null || kind == null) { demoState = null; super.onScreenShown(args); return }
                     when (kind) {
                         "pairing" -> demoState = PhoneDemo.pairingState(withPrompt = true)

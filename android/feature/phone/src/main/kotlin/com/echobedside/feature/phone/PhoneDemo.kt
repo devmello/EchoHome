@@ -63,7 +63,7 @@ class PhoneDemo(private val services: EchoServices, private val handler: Handler
             }
             "media" -> {
                 services.media.publish(AvrcpMapping.SOURCE_ID, MediaState("Slow Tide", "Harbor Lights", "Night Swim", null, 214_000, 61_000,
-                    SystemClock.elapsedRealtime(), true, MediaSourceKind.BLUETOOTH, device, 0.5f), demoControls)
+                    SystemClock.elapsedRealtime(), true, MediaSourceKind.BLUETOOTH, device, 0.5f, AvrcpMapping.route(device)), demoControls)
                 connected(audio = true)
             }
             "connected" -> connected(audio = false)

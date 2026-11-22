@@ -64,4 +64,9 @@ class AvrcpMappingTest {
         assertFalse(AvrcpMapping.sameForUi(a, AvrcpMapping.toState(snap(STATE_PAUSED), "x", null, 0)))
         assertFalse(AvrcpMapping.sameForUi(a, AvrcpMapping.toState(snap(title = "Other"), "x", null, 0)))
     }
+
+    @Test fun routeChips() {
+        assertEquals(listOf("Bluetooth", "Maya’s iPhone"), AvrcpMapping.route("Maya’s iPhone"))
+        assertEquals(listOf("Bluetooth"), AvrcpMapping.route(""))
+    }
 }
