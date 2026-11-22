@@ -113,6 +113,8 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
             if (current == null || services.faces.byId(current!!.spec.id) == null) showFace(selectedFaceId(), persist = false) else { arrange(); syncOverlay() }
         }
         observeWhileAttached(services.profiles.active) { followProfile() }
+        // the web settings page (or this screen) changed a choice: apply it live
+        observeWhileAttached(services.settings.changes) { k -> if (ClockSettings.affectsStandby(k)) followProfile() }
         observeWhileAttached(services.profiles.profiles) { followProfile() }
         observeWhileAttached(services.system.state) { st ->
             val n = st.nightActive
@@ -149,7 +151,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
     private fun colorFor(spec: FaceSpec): Int {
         val p = profile()
         if (p != null && p.faceId == spec.id && spec.colorOptions.isNotEmpty()) return p.color
-        return services.settings.getInt("clock.color.${spec.id}", spec.colorOptions.firstOrNull() ?: Color.WHITE)
+        return services.settings.getColor(ClockSettings.colorKey(spec.id), spec.colorOptions.firstOrNull() ?: Color.WHITE)
     }
 
     /** A face / colour the user picked: into the active profile, or settings when shared. */
@@ -162,7 +164,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
     private fun rememberColor(spec: FaceSpec, color: Int) {
         val p = profile()
         if (p != null && p.faceId == spec.id) services.profiles.upsert(p.copy(color = color))
-        else services.settings.putInt("clock.color.${spec.id}", color)
+        else services.settings.putColor(ClockSettings.colorKey(spec.id), color)
     }
 
     /** Someone was recognised (or left): show their face and colour, animated when idle. */
@@ -181,7 +183,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
 
     private fun configFor(spec: FaceSpec): FaceConfig {
         val color = colorFor(spec)
-        val complications = services.settings.getBoolean("clock.complications.${spec.id}", true)
+        val complications = services.settings.getBoolean(ClockSettings.complicationsKey(spec.id), true)
         return FaceConfig(color, complications, nightOn)
     }
 
@@ -463,7 +465,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
     override fun onPreviewTap() {
         val cur = current ?: return
         if (!cur.spec.supportsComplications) return
-        val key = "clock.complications.${cur.spec.id}"
+        val key = ClockSettings.complicationsKey(cur.spec.id)
         services.settings.putBoolean(key, !services.settings.getBoolean(key, true))
         reconfigure()
     }
@@ -571,8 +573,8 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         str("nightmode")?.let { m -> NightMode.entries.firstOrNull { it.name.equals(m, true) }?.let { services.systemControls.setNightMode(it) } }
         val cur = current
         if (cur != null) {
-            str("color")?.let { c -> runCatching { Color.parseColor(if (c.startsWith("#")) c else "#$c") }.getOrNull()?.let { rememberColor(cur.spec, it) } }
-            str("complications")?.let { services.settings.putBoolean("clock.complications.${cur.spec.id}", it.toBoolean()) }
+            str("color")?.let { c -> parseHexColor(c)?.let { rememberColor(cur.spec, it) } }
+            str("complications")?.let { services.settings.putBoolean(ClockSettings.complicationsKey(cur.spec.id), it.toBoolean()) }
             str("glass")?.toFloatOrNull()?.let { services.settings.putFloat(GlassFace.KEY_GLASS, it) }
             str("wallpaper")?.let { services.settings.putString(GlassFace.KEY_WALLPAPER, it) }
             reconfigure()

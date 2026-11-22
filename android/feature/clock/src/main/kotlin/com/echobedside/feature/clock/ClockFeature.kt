@@ -12,21 +12,23 @@ import com.echobedside.core.model.ScreenSpec
  * Faces (one design file each, design/NAME.dc.html): Digital, Analog, World, Solar, Float, Liquid Glass, Weather, Calendar.
  * StandBy: vertical swipe switches faces, long-press opens edit mode (Customize.dc.html).
  * Night: [NightController] writes `SystemState.nightActive` / `ambientLux` from the light sensor
- * and the Night mode setting; every face draws in #BE180E, StandBy dims it to 0.42.
+ * and the Night mode setting (`clock.night.*`); every face draws in #BE180E, StandBy dims it to 0.42.
  */
 object ClockFeature : EchoFeature {
     override val id = "clock"
 
     const val SCREEN_STANDBY = "standby"
-    const val KEY_FACE = "clock.face"
+    const val KEY_FACE = ClockSettings.KEY_FACE
 
     /** Created in [install], one per process. */
     lateinit var night: NightController
         private set
 
+    private val CLOCK_FACES = setOf("digital", "analog", "world", "solar", "float", "glass", "weather", "calendar")
+
     override fun install(host: FeatureHost) {
         val s = host.services
-        night = NightController(host.context, s.system, s.scope)
+        night = NightController(host.context, s)
         host.registerFace(FaceSpec("digital", "Digital", EchoColors.SWATCHES.take(8), supportsComplications = true, order = 0) { DigitalFace(it, s) })
         host.registerFace(FaceSpec("analog", "Analog", AnalogFace.COLORS, supportsComplications = true, order = 10) { AnalogFace(it, s) })
         host.registerFace(FaceSpec("world", "World", emptyList(), order = 20) { WorldFace(it, s) })
@@ -36,5 +38,6 @@ object ClockFeature : EchoFeature {
         host.registerFace(FaceSpec("weather", "Weather", emptyList(), order = 60) { WeatherFace(it, s) })
         host.registerFace(FaceSpec("calendar", "Calendar", CalendarFace.COLORS, order = 70) { CalendarFace(it, s) })
         host.registerScreen(ScreenSpec(SCREEN_STANDBY, order = 0) { StandbyScreen(it, s, night) })
+        host.registerSettings(ClockSettings.section(s.faces.faces.value.filter { it.id in CLOCK_FACES }))
     }
 }

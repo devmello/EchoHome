@@ -175,9 +175,9 @@ object WorldMap {
  * [nextCheckAt] to finish the 30 s wait.
  */
 class AutoNight(
-    private val enterLux: Float = 3f,
-    private val leaveLux: Float = 10f,
-    private val enterDelayMs: Long = 30_000,
+    var enterLux: Float = 3f,
+    var leaveLux: Float = 10f,
+    var enterDelayMs: Long = 30_000,
 ) {
     var active = false
         private set

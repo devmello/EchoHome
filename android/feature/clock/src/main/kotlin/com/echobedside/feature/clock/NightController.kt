@@ -9,8 +9,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
-import com.echobedside.core.model.SystemStateStore
-import kotlinx.coroutines.CoroutineScope
+import com.echobedside.core.model.EchoServices
+import com.echobedside.core.model.NightMode
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -21,13 +21,15 @@ import kotlin.math.max
  * Drives [com.echobedside.core.model.SystemState.nightActive] and `ambientLux` (owned by
  * `:feature:clock`). One per process, created in [ClockFeature.install].
  *
- *  - Night mode setting (`SystemState.nightMode`, set by edit mode or Control Center):
- *    ON / OFF force it; AUTO follows the light sensor through [AutoNight]
- *    (enter < 3 lux for 30 s, leave > 10 lux).
+ *  - Night mode (`SystemState.nightMode`, set by edit mode, Control Center or the settings page,
+ *    persisted as `clock.night.mode`): ON / OFF force it; AUTO follows the light sensor through
+ *    [AutoNight] (default: enter < 3 lux for 30 s, leave > 10 lux; `clock.night.*` settings).
  *  - The light sensor (`Sensor.TYPE_LIGHT`, on-change) is registered only while StandBy is
  *    shown ([start] / [stop]); a mode change is applied at any time.
  */
-class NightController(context: Context, private val system: SystemStateStore, scope: CoroutineScope) : SensorEventListener {
+class NightController(context: Context, private val services: EchoServices) : SensorEventListener {
+    private val system = services.system
+    private val settings = services.settings
     private val sensors = context.getSystemService(SensorManager::class.java)
     private val light: Sensor? = sensors?.getDefaultSensor(Sensor.TYPE_LIGHT)
     private val handler = Handler(Looper.getMainLooper())
@@ -40,7 +42,37 @@ class NightController(context: Context, private val system: SystemStateStore, sc
     val hasSensor: Boolean get() = light != null
 
     init {
-        scope.launch { system.state.map { it.nightMode }.distinctUntilChanged().collect { apply() } }
+        readThresholds()
+        services.scope.launch {
+            // after install: apply the saved mode, then keep the setting and the state in step
+            settingMode()?.let { if (it != system.state.value.nightMode) services.systemControls.setNightMode(it) }
+            launch {
+                system.state.map { it.nightMode }.distinctUntilChanged().collect { m ->
+                    val v = m.name.lowercase()
+                    if (settings.getString(ClockSettings.KEY_NIGHT_MODE, "auto") != v) settings.putString(ClockSettings.KEY_NIGHT_MODE, v)
+                    apply()
+                }
+            }
+            settings.changes.collect { k ->
+                when (k) {
+                    ClockSettings.KEY_NIGHT_MODE -> settingMode()?.let { if (it != system.state.value.nightMode) services.systemControls.setNightMode(it) }
+                    ClockSettings.KEY_NIGHT_ENTER_LUX, ClockSettings.KEY_NIGHT_LEAVE_LUX, ClockSettings.KEY_NIGHT_DELAY_SEC -> {
+                        readThresholds()
+                        apply(); if (listening) schedule()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun settingMode(): NightMode? =
+        settings.getString(ClockSettings.KEY_NIGHT_MODE, "auto").let { v -> NightMode.entries.firstOrNull { it.name.equals(v, true) } }
+
+    private fun readThresholds() {
+        val enter = settings.getFloat(ClockSettings.KEY_NIGHT_ENTER_LUX, 3f).coerceAtLeast(0f)
+        auto.enterLux = enter
+        auto.leaveLux = settings.getFloat(ClockSettings.KEY_NIGHT_LEAVE_LUX, 10f).coerceAtLeast(enter + 1f)
+        auto.enterDelayMs = settings.getInt(ClockSettings.KEY_NIGHT_DELAY_SEC, 30).coerceIn(0, 3600) * 1000L
     }
 
     fun start() {

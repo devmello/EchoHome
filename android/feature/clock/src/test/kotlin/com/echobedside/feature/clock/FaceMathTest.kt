@@ -197,6 +197,25 @@ class ColorsTest {
     }
 }
 
+class SettingsFormatTest {
+    @Test fun citiesRoundTripAsTextList() {
+        val text = WorldFace.DEFAULT_CITIES.joinToString(",") { WorldFace.encodeCity(it) }
+        val back = WorldFace.parseCities(text)
+        assertEquals(WorldFace.DEFAULT_CITIES.map { it.name }, back.map { it.name })
+        assertEquals("Asia/Kolkata", back[2].zone.id)
+        // the older ";" form still parses, and at most three are kept
+        assertEquals(3, WorldFace.parseCities("A|UTC|0|0;B|UTC|1|1;C|UTC|2|2;D|UTC|3|3").size)
+    }
+
+    @Test fun hexColours() {
+        assertEquals(0xFFFF375F.toInt(), parseHexColor("#FF375F"))
+        assertEquals(0xFFFF375F.toInt(), parseHexColor("ff375f"))
+        assertNull(parseHexColor("#FFF"))
+        assertNull(parseHexColor("nope00"))
+        assertEquals("#FF9F0A", hexColor(0xFFFF9F0A.toInt()))
+    }
+}
+
 class RainWindowTest {
     @Test fun centresOnTheRain() {
         // the fake's tomorrow: 10 % overnight, 30 % at 6–8, 60–80 % at 9–14, 10 % after

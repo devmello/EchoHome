@@ -51,6 +51,9 @@ class WorldFace(context: Context, services: EchoServices) : SpecFace(context, se
     init {
         observeWhileAttached(services.alarms.next) { nextAlarm = it; refresh(force = false) }
         observeWhileAttached(services.weather.weather) { refresh(force = false) }
+        observeWhileAttached(services.settings.changes) { k ->
+            if (k == KEY_CITIES) { cities = parseCities(services.settings.getString(KEY_CITIES, "")); minuteKey = -1; refresh(force = true) }
+        }
         observeWhileAttached(services.location) { refresh(force = false) }
         cities = parseCities(services.settings.getString(KEY_CITIES, ""))
     }
@@ -175,12 +178,15 @@ class WorldFace(context: Context, services: EchoServices) : SpecFace(context, se
             City("Hyderabad", TimeZone.getTimeZone("Asia/Kolkata"), 17.39, 78.49),
         )
 
+        fun encodeCity(c: City) = "${c.name}|${c.zone.id}|${c.lat}|${c.lon}"
+
+        /** "City|Zone|lat|lon" entries separated by "," (settings TEXT_LIST) or ";"; max three. */
         fun parseCities(s: String): List<City> {
             if (s.isBlank()) return DEFAULT_CITIES
-            return s.split(';').mapNotNull { e ->
+            return s.split(';', ',').mapNotNull { e ->
                 val p = e.split('|')
                 if (p.size < 4) null else runCatching { City(p[0], TimeZone.getTimeZone(p[1]), p[2].toDouble(), p[3].toDouble()) }.getOrNull()
-            }.ifEmpty { DEFAULT_CITIES }
+            }.take(3).ifEmpty { DEFAULT_CITIES }
         }
     }
 }

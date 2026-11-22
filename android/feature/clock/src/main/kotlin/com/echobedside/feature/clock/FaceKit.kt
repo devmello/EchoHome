@@ -8,6 +8,7 @@ import android.text.format.DateFormat
 import android.view.View
 import com.echobedside.core.design.SpecText
 import com.echobedside.core.model.EchoServices
+import com.echobedside.core.model.SettingsStore
 import com.echobedside.core.model.FaceConfig
 import com.echobedside.core.model.FaceView
 import java.util.Calendar
@@ -108,3 +109,25 @@ fun drawIcon(canvas: Canvas, d: Drawable, x: Float, y: Float, size: Float, tint:
 }
 
 fun Context.icon(id: Int): Drawable = getDrawable(id)!!.mutate()
+
+/** "#RRGGBB" (SettingType.COLOR) or "RRGGBB" → opaque colour; null if malformed. */
+fun parseHexColor(s: String): Int? {
+    val h = s.trim().removePrefix("#")
+    if (h.length != 6) return null
+    return h.toLongOrNull(16)?.let { (0xFF000000L or it).toInt() }
+}
+
+fun hexColor(c: Int): String = "#%06X".format(c and 0xFFFFFF)
+
+/** A COLOR setting ("#RRGGBB"); also reads the Int that builds before the settings page stored. */
+fun SettingsStore.getColor(key: String, default: Int): Int {
+    val s = try { getString(key, "") } catch (_: ClassCastException) {
+        return try { getInt(key, default) } catch (_: ClassCastException) { default }
+    }
+    return parseHexColor(s) ?: default
+}
+
+fun SettingsStore.putColor(key: String, color: Int) {
+    remove(key) // an older build may have stored an Int under this key
+    putString(key, hexColor(color))
+}
