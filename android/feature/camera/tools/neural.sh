@@ -1,6 +1,7 @@
 #!/bin/bash
 # Neural face pipeline on the live camera (agent H): recognize bench (BlazeFace + align +
-# MobileFaceNet each frame), both detectors on the same frames, then PSS after the camera is off.
+# the selected embedder (default EdgeFace-XXS) each frame), both detectors on the same frames, then PSS
+# back on the home screen (models released; in a lit room presence keeps the camera on at 2 fps).
 #   ./scripts/build-install.sh --no-build --wait 1 --then 'android/feature/camera/tools/neural.sh'
 # ~75 s under the device lock.
 set -e

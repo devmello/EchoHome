@@ -12,6 +12,7 @@ import com.echobedside.feature.camera.face.LbpEmbedder
 import com.echobedside.feature.camera.face.Landmark
 import com.echobedside.feature.camera.face.Letterbox
 import com.echobedside.feature.camera.face.MatchPolicy
+import com.echobedside.feature.camera.face.ModelFiles
 import com.echobedside.feature.camera.face.Similarity
 import com.echobedside.feature.camera.face.SyntheticFace
 import com.echobedside.feature.camera.face.alignFace
@@ -212,15 +213,45 @@ class EmbedderPolicyTest {
     }
 }
 
+class EmbedderModelsTest {
+    @Test fun registryIsConsistent() {
+        val ids = ModelFiles.EMBEDDERS.map { it.id }
+        assertEquals(ids.size, ids.toSet().size)
+        assertEquals(ModelFiles.EMBEDDERS.size, ModelFiles.EMBEDDERS.map { it.key }.toSet().size)
+        assertEquals(ModelFiles.EDGEFACE_XXS, ModelFiles.EMBEDDERS[0])
+        assertEquals(ModelFiles.EMBEDDERS[0], ModelFiles.embedder("no-such-model"))
+        assertEquals(ModelFiles.EMBEDDERS[0], ModelFiles.embedder("mobilefacenet")) // dropped: back to the default
+        assertEquals(ModelFiles.EDGEFACE_XS, ModelFiles.embedder("edgeface-xs"))
+    }
+
+    @Test fun referencesAndAssetsExist() {
+        val assets = java.io.File("src/main/assets")
+        for (m in ModelFiles.EMBEDDERS + listOf(null)) {
+            val path = m?.path ?: ModelFiles.DETECTOR
+            assertTrue("missing $path", java.io.File(assets, path).isFile)
+            if (m != null) {
+                val ref = java.io.File(assets, m.reference)
+                assertTrue("missing ${m.reference}", ref.isFile)
+                assertEquals(512, ref.readText().trim().split(',').size)
+            }
+        }
+    }
+}
+
 class SettingsSectionTest {
     @Test fun cameraSectionDeclaresTheKeysTheCodeReads() {
         val s = CameraFeature.settingsSection()
         val keys = s.settings.associateBy { it.key }
-        assertEquals(setOf("camera.stage.presence", CameraPipeline.KEY_DUTY, FaceProfileManager.KEY_AUTO, CameraPipeline.KEY_THRESHOLD, FaceProfileManager.KEY_TIMEOUT_MIN), keys.keys)
+        assertEquals(setOf("camera.stage.presence", CameraPipeline.KEY_DUTY, FaceProfileManager.KEY_AUTO, CameraPipeline.KEY_EMBEDDER,
+            CameraPipeline.KEY_THRESHOLD, FaceProfileManager.KEY_TIMEOUT_MIN), keys.keys)
+        val model = keys.getValue(CameraPipeline.KEY_EMBEDDER)
+        assertEquals(SettingType.CHOICE, model.type); assertTrue(model.advanced)
+        assertEquals(ModelFiles.EMBEDDERS.map { it.key }, model.options.map { it.first })
+        assertEquals(ModelFiles.EMBEDDERS[0].key, model.default)
         assertTrue(keys.getValue(CameraPipeline.KEY_DUTY).advanced)
         assertTrue(keys.getValue(CameraPipeline.KEY_THRESHOLD).advanced)
         assertFalse(keys.getValue(FaceProfileManager.KEY_AUTO).advanced)
-        assertEquals(MatchPolicy.NEURAL.floor, keys.getValue(CameraPipeline.KEY_THRESHOLD).default.toFloat(), 0f)
+        assertEquals(ModelFiles.EMBEDDERS[0].policy.floor, keys.getValue(CameraPipeline.KEY_THRESHOLD).default.toFloat(), 0f)
         assertEquals(SettingType.INT, keys.getValue(FaceProfileManager.KEY_TIMEOUT_MIN).type)
         assertEquals("10", keys.getValue(FaceProfileManager.KEY_TIMEOUT_MIN).default)
     }

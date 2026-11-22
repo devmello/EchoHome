@@ -28,9 +28,11 @@ class ModelSelfTest(private val context: Context, private val runs: Int = 20) {
 
     /**
      * One embedder variant in a fresh process (PSS isn't muddied by an earlier model's freed heap):
-     * [model] fp16|fp32|int8, [threads], [xnnpack].
+     * [model] is an asset base name (`models/<model>.tflite`, e.g. edgeface_xs_fp16), checked
+     * against `models/selftest_drawn112_<family>.txt` (family = name without the last `_part`).
      */
     fun variant(model: String, threads: Int, xnnpack: Boolean): List<String> {
+        SystemClock.sleep(SETTLE_MS)
         val frame = SyntheticFace.frame(320, 240, 160f, 120f, 40f)
         val e = SyntheticFace.eyes(160f, 120f, 40f)
         val box = FaceBox((e[0] + e[2]) / 2, (e[1] + e[3]) / 2, e[2] - e[0], 1f)
@@ -40,7 +42,7 @@ class ModelSelfTest(private val context: Context, private val runs: Int = 20) {
         repeat(runs) { alignFace(frame, box, face) }
         val align = (SystemClock.elapsedRealtimeNanos() - ta) / runs
         val pss0 = gcPss()
-        val emb = TfliteEmbedder("v", { ModelFiles.load(context, "models/mobilefacenet_w600k_$model.tflite") }, threads, xnnpack)
+        val emb = TfliteEmbedder("v", { ModelFiles.load(context, "models/$model.tflite") }, threads, xnnpack)
         val tl = SystemClock.elapsedRealtimeNanos()
         emb.embed(face)
         val first = SystemClock.elapsedRealtimeNanos() - tl
@@ -48,16 +50,23 @@ class ModelSelfTest(private val context: Context, private val runs: Int = 20) {
         repeat(runs) { emb.embed(face) }
         val per = (SystemClock.elapsedRealtimeNanos() - tr) / runs
         val loaded = pssMb()
+        val drawn = FaceImage().also { SyntheticFace.rgb(112, 112, 56f, 56f, 30f).copyInto(it.rgb) }
+        val cos = reference("models/selftest_drawn112_${model.substringBeforeLast('_')}.txt")?.let { cosine(emb.embed(drawn), it) }
         emb.release()
         val after = gcPss()
         SystemClock.sleep(3000)
         val later = gcPss()
         log("variant $model threads=$threads xnnpack=$xnnpack: ${ms(per)} ms/embedding (first ${ms(first)}, interpreter ${emb.loadMs} ms); " +
-            "pss ${"%.1f".format(pss0)} → loaded ${"%.1f".format(loaded)} (+${"%.1f".format(loaded - pss0)}) → released ${"%.1f".format(after)} → +3 s ${"%.1f".format(later)} MB; align ${ms(align)} ms")
+            "cos vs original ${cos?.let { "%.4f".format(it) } ?: "-"}; pss ${"%.1f".format(pss0)} → loaded ${"%.1f".format(loaded)} (+${"%.1f".format(loaded - pss0)}) → released ${"%.1f".format(after)} → +3 s ${"%.1f".format(later)} MB; align ${ms(align)} ms")
         return out
     }
 
+    private fun reference(path: String): FloatArray? = try {
+        context.assets.open(path).bufferedReader().use { r -> r.readText().trim().split(',').map { it.toFloat() }.toFloatArray() }
+    } catch (_: java.io.IOException) { null }
+
     fun run(): List<String> {
+        SystemClock.sleep(SETTLE_MS)
         val frames = listOf(Triple(160f, 120f, 40f), Triple(110f, 140f, 30f), Triple(200f, 100f, 55f), Triple(160f, 120f, 18f))
             .map { (x, y, r) -> Triple(SyntheticFace.frame(320, 240, x, y, r), SyntheticFace.eyes(x, y, r), r) }
         val pss0 = gcPss()
@@ -82,20 +91,23 @@ class ModelSelfTest(private val context: Context, private val runs: Int = 20) {
 
         // The exact 112×112 drawing (no camera conversion), for comparing with the desktop reference.
         val drawn = FaceImage().also { SyntheticFace.rgb(112, 112, 56f, 56f, 30f).copyInto(it.rgb) }
-        val onnx = context.assets.open(ModelFiles.SELFTEST_REF).bufferedReader().use { r -> r.readText().trim().split(',').map { it.toFloat() }.toFloatArray() }
-        val e = TfliteEmbedder("selftest", { ModelFiles.load(context, ModelFiles.EMBEDDER) }, xnnpack = ModelFiles.EMBEDDER_XNNPACK)
-        val tl = SystemClock.elapsedRealtimeNanos()
-        e.embed(face)
-        val load = SystemClock.elapsedRealtimeNanos() - tl
-        val tr = SystemClock.elapsedRealtimeNanos()
-        repeat(runs) { e.embed(face) }
-        val per = (SystemClock.elapsedRealtimeNanos() - tr) / runs
-        val loaded = pssMb()
-        val mine = e.embed(drawn)
-        log("embed ${ModelFiles.EMBEDDER_ID}: first ${ms(load)} ms (interpreter ${e.loadMs} ms), then ${ms(per)} ms/embedding; " +
-            "pss loaded ${"%.1f".format(loaded)} MB; cos vs original ONNX on the drawn face ${"%.4f".format(cosine(mine, onnx))}")
-        e.release()
-        log("pss after embedder release ${"%.1f".format(gcPss())} MB")
+        for (m in ModelFiles.EMBEDDERS) {
+            val ref = reference(m.reference)
+            val e = TfliteEmbedder("selftest", { ModelFiles.load(context, m.path) }, m.threads, m.xnnpack)
+            val before = gcPss()
+            val tl = SystemClock.elapsedRealtimeNanos()
+            e.embed(face)
+            val load = SystemClock.elapsedRealtimeNanos() - tl
+            val tr = SystemClock.elapsedRealtimeNanos()
+            repeat(runs) { e.embed(face) }
+            val per = (SystemClock.elapsedRealtimeNanos() - tr) / runs
+            val loaded = pssMb()
+            val mine = e.embed(drawn)
+            log("embed ${m.id}: first ${ms(load)} ms (interpreter ${e.loadMs} ms), then ${ms(per)} ms/embedding; " +
+                "pss +${"%.1f".format(loaded - before)} MB; cos vs original framework on the drawn face ${ref?.let { "%.4f".format(cosine(mine, it)) } ?: "-"}")
+            e.release()
+            log("pss after ${m.key} release ${"%.1f".format(gcPss())} MB")
+        }
         val lbp = LbpEmbedder()
         val tb = SystemClock.elapsedRealtimeNanos()
         repeat(runs) { lbp.embed(face) }
@@ -126,6 +138,9 @@ class ModelSelfTest(private val context: Context, private val runs: Int = 20) {
             "eye-mid error px ${err.joinToString("/") { "%.1f".format(it) }}; first=$first")
         return first
     }
+
+    /** The app's other features finish starting up first (their PSS isn't counted as the model's). */
+    private companion object { const val SETTLE_MS = 10_000L }
 
     private fun ms(ns: Long) = "%.1f".format(ns / 1e6)
 }

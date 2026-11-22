@@ -1,6 +1,6 @@
 # Camera: presence + profiles (agent H, `:feature:camera`)
 
-Branch `worktree-agent-aa37f514d836924ba`. Spec: NOTES §6.5, §6.6, `design/Profiles.dc.html`.
+Branch `camera-fast-embedder` (phase 3, faster face model; phases 1–2 merged in main 808b3d2). Spec: NOTES §6.5, §6.6, `design/Profiles.dc.html`.
 
 ## Capture gate (step 1): PASSED, no camera patch needed
 
@@ -27,7 +27,7 @@ Measured Nov 22, 2026 ~04:00 on the Echo (`--es screen camera-probe`, `tools/pro
   - Detector: **MediaPipe BlazeFace short-range** (TFLite, XNNPACK, letterboxed 128×128 RGB, gives six landmarks). `android.media.FaceDetector` is the fallback if the model can't load, and the `camera.detector=legacy` option.
   - Quality filter: eye distance ≥22 px, confidence ≥0.45, crop inside the frame, mean luma 40–225, Laplacian-variance sharpness, left/right symmetry (frontal). Measured on the grey geometry crop, as before.
   - **Alignment**: the 112×112 RGB crop is warped onto the ArcFace template. It uses a least-squares similarity (Umeyama) from BlazeFace's eyes, nose and mouth. Without landmarks (legacy detector) it uses the eye midpoint and distance. Colour comes from the NV21 chroma.
-  - **Embedding**: InsightFace MobileFaceNet `w600k_mbf` (ArcFace loss), dynamic-range int8, TFLite built-in kernels, 512-d. Sources, checksums, licences and conversion are in `android/feature/camera/MODELS.md`. LBP is the fallback if the model fails to load or run (`FallbackEmbedder`), and `camera.embedder=lbp` (debug) forces it.
+  - **Embedding**: Idiap **EdgeFace-XXS** (default, ~60 ms) or **EdgeFace-XS γ0.6** (setting "Face model", ~100 ms), CosFace loss, fp16 weights on TFLite + XNNPACK, 2 threads, 512-d. MobileFaceNet (phase 2, ~0.35 s) is dropped. Sources, checksums, licences and conversion are in `android/feature/camera/MODELS.md`. LBP is the fallback if the model fails to load or run (`FallbackEmbedder`), and `camera.embedder=lbp` (debug) forces it.
   - Cosine against 3–5 templates per person, then the per-embedder `MatchPolicy` (see "Thresholds" below). Switch after 2 consecutive matches, ≤3 tries.
   - **Models load on the first detection frame** of a burst or enrolment and are **freed whenever the camera stops**: the end of a burst (back to presence size), the end of enrolment, the screen off, an error. Both happen under one lock on the camera thread.
   - "Not me" blocks that person for 5 min.
@@ -35,6 +35,7 @@ Measured Nov 22, 2026 ~04:00 on the Echo (`--es screen camera-probe`, `tools/pro
   - Presence detection (`camera.stage.presence`)
   - Duty-cycled presence (advanced)
   - Auto by face
+  - Face model (advanced; `camera.embedder`: `edgeface-xxs` "EdgeFace-XXS (fastest)", the default, or `edgeface-xs` "EdgeFace-XS (more accurate)"). It's swapped live: the old interpreter is released and the next try loads the new one. Templates from the other model are ignored, so people re-enrol.
   - Match threshold (advanced; `camera.match.threshold`, the neural floor, 0.25–0.6)
   - Return to Shared after N minutes (`camera.profiles.timeoutMin`, 1–120)
 
@@ -60,7 +61,7 @@ Measured Nov 22, 2026 ~04:00 on the Echo (`--es screen camera-probe`, `tools/pro
 - **Debug screens**:
   - `camera-probe` (capture gate).
   - `camera-bench --es stage presence|presence-duty|detect|detect-compare|recognize|selftest` (holds a stage for measuring, logs per-stage timings). `detect-compare` runs both detectors on every frame.
-  - `selftest` needs no camera and no person. It runs both detectors on drawn cartoon faces (`SyntheticFace`), then alignment and the embedder, with PSS readings. It checks the embedding against the original ONNX model's output for the same drawing. `--es model <name> --es threads N --es xnnpack false` tests one variant.
+  - `selftest` needs no camera and no person. It runs both detectors on drawn cartoon faces (`SyntheticFace`), then alignment and the embedder, with PSS readings. It runs every shipped embedder in turn and checks each against the original PyTorch model's output for the same drawing. It waits 10 s first, so other features starting up aren't counted as model PSS. `--es model <name> --es threads N --es xnnpack false` tests one variant.
   - `profiles-demo --es step empty|detecting|recognized|personalized|cycle` (design review without a camera).
 - **Tools** (in `android/feature/camera/tools/`):
   - `probe.sh`: the capture gate.
@@ -69,7 +70,7 @@ Measured Nov 22, 2026 ~04:00 on the Echo (`--es screen camera-probe`, `tools/pro
   - `shots.sh`: every Profiles screenshot.
   - `variants.sh`: embedder variants, a fresh process each.
   - `neural.sh`: live recognize bench, detect-compare, PSS after the camera is off.
-- **Tests**: 92 JVM tests. New: similarity fit, the landmark → template transform (eye order irrelevant), alignment on a drawn face, NV21 → RGB, letterbox, BlazeFace anchors, decode with weighted NMS on synthetic tensors, embedder fallback, neural threshold clamping, the settings section, and live settings. The original 76 cover covering frame differencing (noise, global shift, small changes, dark frames, strided, pixel-stride-2 and direct buffers), hysteresis, cosine and the matcher (thresholds, margin, exclusion), consecutive-match logic, LBP, the quality filter, the crop, the SecretBox envelope (round trip, layout, fresh IV, tampering, wrong AAD or key, truncation, version, IV length), TemplateStore (encrypted on disk, AAD binding, path safety) and FaceProfileManager (persistence, Auto, Not me cool-down, timeout with virtual time).
+- **Tests**: 94 JVM tests. New in phase 3: the embedder registry (unique ids and keys, XXS default, unknown or `mobilefacenet` keys fall back to the default, assets and 512-value references present) and the Face model setting. Phase 2: similarity fit, the landmark → template transform (eye order irrelevant), alignment on a drawn face, NV21 → RGB, letterbox, BlazeFace anchors, decode with weighted NMS on synthetic tensors, embedder fallback, neural threshold clamping, the settings section, and live settings. The original 76 cover covering frame differencing (noise, global shift, small changes, dark frames, strided, pixel-stride-2 and direct buffers), hysteresis, cosine and the matcher (thresholds, margin, exclusion), consecutive-match logic, LBP, the quality filter, the crop, the SecretBox envelope (round trip, layout, fresh IV, tampering, wrong AAD or key, truncation, version, IV length), TemplateStore (encrypted on disk, AAD binding, path safety) and FaceProfileManager (persistence, Auto, Not me cool-down, timeout with virtual time).
 
 ## Measured on the Echo (debug build, Nov 22, 2026 04:28–04:44, dark room)
 
@@ -89,7 +90,59 @@ CPU is % of one core over 30 s (`tools/measure.sh`; CLK_TCK 100). The camera HAL
 - **Recognition (LBP, phase 1)**: 16–17 ms per crop + LBP embedding + match (max 149 ms on the first, JIT), ≤3 tries per arrival.
 - **RAM**: the whole pipeline is ≈ +30 MB while the camera is on (app +2–6 MB, cameraserver +1.1, camerahalserver +27), under the ~40 MB budget. It's all released with the camera.
 
-## Neural pipeline, measured on the Echo (debug build, Nov 22, 2026 05:29–05:45, dark room)
+## Fast embedder (EdgeFace), measured on the Echo (debug build, Nov 22, 2026 12:58–13:03, lit room)
+
+The lead's goal: ~100 ms or less per embedding, with accuracy close to MobileFaceNet. The candidates were EdgeFace-XS (γ0.6), EdgeFace-XXS and GhostFaceNet.
+- EdgeFace was converted first. It has an official checkpoint release (`otroshi/edgeface` on GitHub, checked against the git blob SHA-1s).
+- Both EdgeFace sizes met the bar, so GhostFaceNet wasn't converted.
+- Sources, licence, conversion and the desktop checks are in MODELS.md.
+
+The device was still shared (load average 5–8), so timings are on the slow side.
+
+**Self-test** (camera off, one fresh process, 2 threads, XNNPACK):
+
+| | EdgeFace-XXS fp16 (default) | EdgeFace-XS fp16 (option) | MobileFaceNet int8 (phase 2) |
+|---|---|---|---|
+| ms / embedding | **61.0** | **102.2** | 346 (437 under today's load) |
+| first embedding (interpreter create) | 193 ms (92 ms) | 276 ms (156 ms) | 387 ms (7 ms) |
+| PSS while loaded | +16.8 MB | +22.9 MB | +11.4 MB |
+| cos vs original framework on the drawn face | **1.0000** | **1.0000** | 0.9887 |
+| MACs / LFW (published) | 47 M / 99.57 % | 76 M / 99.73 % | 440 M / ~99.5 % |
+
+- **Both pass the bar** (cos ≥ 0.98 to the reference, LFW ≥ 99.3 %).
+  - **XXS is the default.** It's the fastest, and its LFW is only 0.16 points under XS.
+  - XS stays as the "more accurate" setting, for a household where XXS confuses two people. It's still 3–4× faster than MobileFaceNet.
+- **Format:** fp16 weights on XNNPACK are the fastest form of both models. fp32 is ~5 ms slower; dynamic int8 is 2.3× slower and less accurate. The variants table is in MODELS.md. XNNPACK takes all but 24 nodes, in 19 partitions.
+- **Threads:** 4 threads gave nothing over 2 (XS fp32 118.0 vs 118.3 ms), so 2 stay.
+- **PSS:** XNNPACK unpacks the fp16 weights to fp32 and keeps a workspace, so EdgeFace takes more resident memory than its file size. After all the models were released, PSS was back to its starting value + 3.6 MB (86.2 vs 82.6 MB). The rest is the self-test's own frames and JIT.
+- **Same run, other stages:**
+  - BlazeFace 61 ms/frame (FaceDetector 73 ms); load 51 ms, +7.2 MB.
+  - Alignment 13 ms.
+  - LBP 9 ms.
+
+**Live camera** (`tools/neural.sh`, 15 s per stage). The room was lit (mean luma 123) but nobody was in front of the camera, so the quality filter saw only TOO_SMALL.
+
+| Stage | app CPU | camera total | PSS app / cs / HAL | Per-frame app timings |
+|---|---|---|---|---|
+| `recognize`: detect + align + embed (XXS) on **every** frame (worst case) | 112 % | 158 % | 105.3 / 5.9 / 50.3 MB | detect 57.6 ms, align 11.7 ms, embed **56.4 ms** (max 70.2), model loads 118 ms avg (2) |
+| `detect-compare` | 95 % | 140 % | 108.5 / 6.1 / 50.5 MB | BlazeFace 53.0 ms vs FaceDetector 80.9 ms. No face on either. |
+| Back on home: presence only, models released | 6 % | 54 % | **88.0** / 5.4 / 49.9 MB | |
+
+- **The "back on home" row isn't camera-off.**
+  - In a lit room the home screen keeps presence running: Camera1 at 176×144, one frame per 500 ms. `dumpsys media.camera` showed our client connected. That's why the HAL stays at ~50 MB.
+  - Phase 2's 16.5 MB HAL figure was taken in a dark room, where the camera releases itself.
+  - When the burst ended the app dropped 17.3 MB (105.3 → 88.0): both models plus the 320×240 buffers.
+- **One recognition try** is now ~58 + 12 + 56 ≈ **126 ms** (it was ~420 ms). There are ≤3 tries per arrival, so "Hi Maya" can come ~1 s after the arrival. Most of that is the 0.6 s camera restart and the 2 matching frames.
+- **Budget:**
+  - Live, the two models cost ~17 MB, inside +20 MB.
+  - The self-test's per-model figures (XXS +16.8, XS +22.9) are upper bounds that include allocator growth.
+  - With XS selected, the live total would be ~6 MB higher, just over +20 MB.
+- **APK:**
+  - The debug APK is 34,501,644 B.
+  - Model payload, all stored uncompressed: XXS 2,642,176 B, XS 3,750,728 B, BlazeFace 229,746 B, `libtensorflowlite_jni.so` 2,366,508 B. The two references are ~2 KB each, compressed.
+  - Compared with the MobileFaceNet build: **+2.76 MB** (XS + XXS − MobileFaceNet's 3,629,496 B). Dropping XS would make it −0.99 MB.
+
+## Neural pipeline (phase 2, MobileFaceNet; superseded), measured on the Echo (debug build, Nov 22, 2026 05:29–05:45, dark room)
 
 Other agents' processes were running on the Echo at the same time (load average ~5), so the timings are noisy and on the slow side.
 
@@ -134,17 +187,24 @@ The network is 440 M MACs, about 1.5 GMAC/s on this CPU, so every variant takes 
 
 ## Thresholds (neural `MatchPolicy`)
 
-- **Floor 0.36.** ArcFace-loss embeddings put different people's cosines around 0, with a spread of ~0.06–0.10 for MobileFaceNet-class models. 0.36 is ≥3.5 spreads above that, roughly the FAR 1e-4 to 1e-5 point usually quoted for this model family.
+Both EdgeFace models use the same `MatchPolicy.NEURAL` rule as MobileFaceNet did.
+- EdgeFace is trained with CosFace (large-margin cosine) loss. That gives the same cosine geometry as ArcFace: different people centre on ~0, and the same person scores well above.
+- EdgeFace's published numbers are verification accuracies and TARs, at least as good as MobileFaceNet w600k's:
+  - XS: LFW 99.73 %, IJB-C TAR 94.85 % at FAR 1e-4.
+  - XXS: LFW 99.57 %.
+- Neither the paper nor the repo publishes a cosine threshold. So the floor stays where margin-loss models usually have FAR ≈ 1e-4 to 1e-5.
+
+- **Floor 0.36.** Margin-loss embeddings put different people's cosines around 0, with a spread of ~0.06–0.10. 0.36 is ≥3.5 spreads above that.
 - **Per person: weakest pair of their 5 enrolment shots − 0.10, kept within 0.36–0.55.**
   - The same person across angles and light usually scores 0.45–0.8.
   - The slack lets a live frame be a bit worse than enrolment.
   - The 0.55 ceiling stops a very consistent enrolment (pairs at 0.8) from demanding ≥0.7 live.
 - **Margin 0.05 over the runner-up,** so relatives don't flip-flop.
 - **Then 2 consecutive matches,** with "Not me" as the safety net.
-- **LBP keeps its old rule** (floor 0.5, slack 0.01, margin 0.02). Templates carry the embedder id (`mbf-w600k-int8-v1`), so LBP templates from before are ignored and the person needs to re-enrol.
-- **Not checked on real faces.** The brief allowed downloading only weights (no face dataset), and nobody was in front of the camera.
+- **LBP keeps its old rule** (floor 0.5, slack 0.01, margin 0.02). Templates carry the embedder id (`edgeface-xxs-fp16-v1` or `edgeface-xs-g06-fp16-v1`). Older templates are ignored and the person needs to re-enrol: LBP, MobileFaceNet (`mbf-w600k-int8-v1`), or ones from the other EdgeFace model.
+- **Not checked on real faces.** The brief allowed downloading only weights (no face dataset), and nobody was in front of the camera. On our crops, EdgeFace's spread of different-people scores may differ a little from MobileFaceNet's, so recalibrate once real people are enrolled.
 - **How to recalibrate on the Echo:**
-  1. Enrol each person. Logcat (tag `EchoCamera`) prints `enrolled <id> with mbf-w600k-int8-v1: weakest pair X, threshold Y` (numbers only).
+  1. Enrol each person. Logcat (tag `EchoCamera`) prints `enrolled <id> with edgeface-xxs-fp16-v1: weakest pair X, threshold Y` (numbers only).
   2. Walk in a few times and have other people walk in. Each try logs `match try n: <id|-> score=S second=R`.
   3. Set **Match threshold** (advanced, web settings) about halfway between the highest stranger score and the lowest genuine score.
   4. If two enrolled people's `score − second` is often under 0.05, raise the margin in `MatchPolicy.NEURAL`.
@@ -167,18 +227,17 @@ Sources, versions, checksums, licences and conversion are in `android/feature/ca
 | What | Used | Licence |
 |---|---|---|
 | Face detection | MediaPipe BlazeFace short-range v1 (float16 TFLite, 230 KB); fallback `android.media.FaceDetector` | Apache-2.0 / AOSP |
-| Face embedding | InsightFace MobileFaceNet `w600k_mbf` (buffalo_sc v0.7), dynamic-range int8 TFLite (3.6 MB); fallback LBP histograms | **non-commercial research only**, allowed for this non-commercial open-source project by user decision (NOTES §6.6) / ours |
+| Face embedding | Idiap EdgeFace-XXS (default, 2.6 MB) and EdgeFace-XS γ0.6 (3.8 MB), fp16 TFLite from the official checkpoints; fallback LBP histograms | Code BSD-3-Clause. Weights trained on WebFace4M/12M: **non-commercial research only**, allowed for this non-commercial open-source project by user decision (NOTES §6.6). LBP: ours |
 | Runtime | `org.tensorflow:tensorflow-lite:2.17.0` → LiteRT 1.0.1 (no AndroidX), armeabi-v7a only | Apache-2.0 |
 
 ## Left / open
 
-- **Embedding time misses the ~100 ms target.** It is ~350 ms per embedding because the network is 440 M MACs. Options for the lead:
-  - (a) Accept it: ≤3 tries per arrival, so "Hi <name>" comes ~1.5 s after someone walks in.
-  - (b) Full-integer (static) quantisation. That needs a few hundred real aligned faces for calibration, which we don't have, and it can't be checked without a face set either.
-  - (c) A smaller ArcFace-class model, ~150 M MACs (e.g. EdgeFace-XS or GhostFaceNet), if one is approved and has an upstream weights release. `FaceEmbedder` and the embedder id make that a drop-in.
-- **Not verified on the device (the room was dark the whole session):**
+- **Embedding time: done** (option c). EdgeFace-XXS takes 56–61 ms and XS ~102 ms; MobileFaceNet took ~350 ms.
+  - Open choice for the lead: drop XS to save 3.75 MB of APK, and ~6 MB of PSS when XS is selected. It's kept because it's the higher-accuracy option and costs nothing unless selected.
+  - Existing enrolments (MobileFaceNet ids) must be redone after this update. There's no migration, because templates hold only embeddings, never images.
+- **Not verified on the device** (the room was dark in phases 1–2; in phase 3 it was lit, but nobody was in front of the camera):
   - Real presence triggering on motion in light.
-  - BlazeFace vs FaceDetector on a real face (`detect-compare`), the quality thresholds, enrolment end to end, and the neural match thresholds (see "Thresholds").
+  - BlazeFace vs FaceDetector on a real face (`detect-compare`), the quality thresholds, enrolment end to end, the EdgeFace match thresholds (see "Thresholds"), and XXS vs XS on real household faces.
   - Run `tools/probe.sh`, enrol someone in `profiles`, and walk in, in daylight.
 - **Integration (contract requests filed):**
   - The clock should apply `profiles.active` (face + colour).
