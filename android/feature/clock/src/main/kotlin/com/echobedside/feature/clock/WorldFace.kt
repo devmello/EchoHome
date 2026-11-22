@@ -8,6 +8,7 @@ import com.echobedside.core.design.Night
 import com.echobedside.core.design.SpecText
 import com.echobedside.core.design.withAlpha
 import com.echobedside.core.model.EchoServices
+import com.echobedside.core.model.HomeLocation
 import com.echobedside.core.model.NextAlarm
 import com.echobedside.core.model.observeWhileAttached
 import java.util.TimeZone
@@ -50,6 +51,7 @@ class WorldFace(context: Context, services: EchoServices) : SpecFace(context, se
     init {
         observeWhileAttached(services.alarms.next) { nextAlarm = it; refresh(force = false) }
         observeWhileAttached(services.weather.weather) { refresh(force = false) }
+        observeWhileAttached(services.location) { refresh(force = false) }
         cities = parseCities(services.settings.getString(KEY_CITIES, ""))
     }
 
@@ -60,7 +62,7 @@ class WorldFace(context: Context, services: EchoServices) : SpecFace(context, se
     override fun update(): Boolean {
         val now = cal.timeInMillis
         val key = now / 60_000
-        val loc = HomeLocation.from(services)
+        val loc = services.location.value
         val al = nextAlarm?.let { TimeText.clock(it.triggerAtMillis, is24) }
         if (key == minuteKey && loc == location && al == alarmLabel) return false
         location = loc

@@ -108,23 +108,3 @@ fun drawIcon(canvas: Canvas, d: Drawable, x: Float, y: Float, size: Float, tint:
 }
 
 fun Context.icon(id: Int): Drawable = getDrawable(id)!!.mutate()
-
-/**
- * Where the World / Weather faces are (sample: Santa Cruz). Read from settings
- * (`clock.location.name|lat|lon`); with demo data on, defaults to the designs' Santa Cruz.
- * See docs/contract-requests.md: a shared home location in `:core` would replace this.
- */
-data class HomeLocation(val name: String, val lat: Double, val lon: Double) {
-    companion object {
-        val SANTA_CRUZ = HomeLocation("Santa Cruz", 36.97, -122.03)
-
-        fun from(services: EchoServices): HomeLocation? {
-            val s = services.settings
-            val lat = s.getFloat("clock.location.lat", Float.NaN)
-            val lon = s.getFloat("clock.location.lon", Float.NaN)
-            val name = s.getString("clock.location.name", "")
-            if (!lat.isNaN() && !lon.isNaN()) return HomeLocation(name.ifEmpty { services.weather.weather.value?.location ?: "" }, lat.toDouble(), lon.toDouble())
-            return if (services.config.demoData) SANTA_CRUZ else null
-        }
-    }
-}

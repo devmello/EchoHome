@@ -30,6 +30,8 @@ import com.echobedside.core.model.FaceSpec
 import com.echobedside.core.model.FaceView
 import com.echobedside.core.model.NightMode
 import com.echobedside.core.model.Presence
+import com.echobedside.core.model.Profile
+import com.echobedside.core.model.SwitchReason
 import com.echobedside.core.model.observeWhileAttached
 import kotlin.math.abs
 
@@ -43,6 +45,8 @@ import kotlin.math.abs
  *    card, with glass controls ([EditOverlay]): Night toggle, Done, page dots, colour capsule.
  *    Tapping the face toggles its complications (faces that have them).
  *    Choices persist in settings: `clock.face`, `clock.color.<id>`, `clock.complications.<id>`.
+ *  - **Profiles**: while the camera has recognised someone (`services.profiles.active` is not
+ *    shared), StandBy shows that person's `faceId` + `color`, and edits go into their profile.
  *  - **Night** (Night.dc.html): faces draw in #BE180E and the stage dims to 0.42 (1.6 s ease);
  *    a tap (or presence from the camera) wakes it to full for 6 s. The light sensor runs only
  *    while this screen is shown ([NightController]).
@@ -101,7 +105,9 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
             override fun getOutline(view: View, outline: Outline) =
                 outline.setRoundRect(0, 0, view.width, view.height, EDIT_RADIUS / EDIT_SCALE * editProgress)
         }
-        observeWhileAttached(services.faces.faces) { if (current == null || services.faces.byId(current!!.spec.id) == null) showFace(selectedFaceId()) else syncOverlay() }
+        observeWhileAttached(services.faces.faces) { if (current == null || services.faces.byId(current!!.spec.id) == null) showFace(selectedFaceId(), persist = false) else syncOverlay() }
+        observeWhileAttached(services.profiles.active) { followProfile() }
+        observeWhileAttached(services.profiles.profiles) { followProfile() }
         observeWhileAttached(services.system.state) { st ->
             val n = st.nightActive
             if (n != nightOn) {
@@ -122,11 +128,53 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
     // ------------------------------------------------------------------ faces
 
     private fun faces(): List<FaceSpec> = services.faces.faces.value
-    private fun selectedFaceId(): String = services.settings.getString(ClockFeature.KEY_FACE, "digital")
+    /**
+     * The recognised person's profile (camera, `services.profiles.active`), latest copy; null for
+     * [Profile.SHARED], which means the user's own choice in settings.
+     */
+    private fun profile(): Profile? {
+        val a = services.profiles.active.value
+        if (a.id == Profile.SHARED_ID) return null
+        return services.profiles.profiles.value.firstOrNull { it.id == a.id } ?: a
+    }
+
+    private fun selectedFaceId(): String = profile()?.faceId ?: services.settings.getString(ClockFeature.KEY_FACE, "digital")
+
+    private fun colorFor(spec: FaceSpec): Int {
+        val p = profile()
+        if (p != null && p.faceId == spec.id && spec.colorOptions.isNotEmpty()) return p.color
+        return services.settings.getInt("clock.color.${spec.id}", spec.colorOptions.firstOrNull() ?: Color.WHITE)
+    }
+
+    /** A face / colour the user picked: into the active profile, or settings when shared. */
+    private fun rememberFace(id: String) {
+        val p = profile()
+        if (p != null) { if (p.faceId != id) services.profiles.upsert(p.copy(faceId = id)) }
+        else services.settings.putString(ClockFeature.KEY_FACE, id)
+    }
+
+    private fun rememberColor(spec: FaceSpec, color: Int) {
+        val p = profile()
+        if (p != null && p.faceId == spec.id) services.profiles.upsert(p.copy(color = color))
+        else services.settings.putInt("clock.color.${spec.id}", color)
+    }
+
+    /** Someone was recognised (or left): show their face and colour, animated when idle. */
+    private fun followProfile() {
+        val cur = current ?: return
+        val want = selectedFaceId()
+        if (want != cur.spec.id) {
+            val i = indexOf(want)
+            if (shown && !editing && !dragging && switchAnim == null && i >= 0) slideTo(i, persist = false)
+            else showFace(want, persist = false)
+        }
+        reconfigure()
+        syncOverlay()
+    }
     private fun indexOf(id: String?) = faces().indexOfFirst { it.id == id }
 
     private fun configFor(spec: FaceSpec): FaceConfig {
-        val color = services.settings.getInt("clock.color.${spec.id}", spec.colorOptions.firstOrNull() ?: Color.WHITE)
+        val color = colorFor(spec)
         val complications = services.settings.getBoolean("clock.complications.${spec.id}", true)
         return FaceConfig(color, complications, nightOn)
     }
@@ -169,8 +217,8 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         stage.removeView(slot.face.view)
     }
 
-    /** Shows face [id] immediately (no animation). */
-    fun showFace(id: String) {
+    /** Shows face [id] immediately (no animation); [persist] = the user chose it. */
+    fun showFace(id: String, persist: Boolean = true) {
         val spec = services.faces.byId(id) ?: faces().firstOrNull() ?: return
         if (spec.id == current?.spec?.id) return
         switchAnim?.cancel()
@@ -178,7 +226,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         remove(neighbour); neighbour = null
         remove(current)
         current = create(spec).also { it.face.view.translationY = 0f; if (shown) it.face.onScreenShown(null) }
-        services.settings.putString(ClockFeature.KEY_FACE, spec.id)
+        if (persist) rememberFace(spec.id)
         syncOverlay()
     }
 
@@ -216,7 +264,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
                 current = n; neighbour = null
                 n.face.view.translationY = 0f
                 if (shown) n.face.onScreenShown(null)
-                services.settings.putString(ClockFeature.KEY_FACE, n.spec.id)
+                rememberFace(n.spec.id)
                 syncOverlay()
             } else {
                 remove(neighbour); neighbour = null
@@ -247,7 +295,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
     }
 
     /** Switches to face [index] with the slide animation (page dots). */
-    private fun slideTo(index: Int) {
+    private fun slideTo(index: Int, persist: Boolean = true) {
         val cur = current ?: return
         val from = indexOf(cur.spec.id)
         if (index == from || index !in faces().indices || switchAnim != null) return
@@ -255,10 +303,10 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         neighbourDir = if (index > from) 1 else -1
         neighbour = create(faces()[index])
         neighbour!!.face.view.translationY = neighbourDir * stage.height.toFloat()
-        settleTo()
+        settleTo(persist)
     }
 
-    private fun settleTo() {
+    private fun settleTo(persist: Boolean) {
         val cur = current ?: return
         val n = neighbour ?: return
         animateStage(0f, -neighbourDir * stage.height.toFloat()) {
@@ -266,7 +314,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
             current = n; neighbour = null
             n.face.view.translationY = 0f
             if (shown) n.face.onScreenShown(null)
-            services.settings.putString(ClockFeature.KEY_FACE, n.spec.id)
+            if (persist) rememberFace(n.spec.id)
             syncOverlay()
         }
     }
@@ -368,7 +416,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
 
     override fun onPickColor(color: Int) {
         val cur = current ?: return
-        services.settings.putInt("clock.color.${cur.spec.id}", color)
+        rememberColor(cur.spec, color)
         reconfigure()
         syncOverlay()
     }
@@ -455,7 +503,7 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
     override fun onScreenShown(args: Bundle?) {
         shown = true
         handleArgs(args)
-        if (current == null) showFace(selectedFaceId())
+        if (current == null) showFace(selectedFaceId(), persist = false)
         current?.face?.onTimeChanged()
         current?.face?.onScreenShown(args)
         night.start()
@@ -476,11 +524,12 @@ class StandbyScreen(context: Context, private val services: EchoServices, privat
         // null = resume / home: keep edit mode (it ends on Done or when the screen is hidden)
         if (args == null) return
         fun str(k: String): String? = args.get(k)?.toString()
+        str("profile")?.let { services.profiles.switchTo(it, SwitchReason.MANUAL) }
         str("face")?.let { showFace(it) }
         str("nightmode")?.let { m -> NightMode.entries.firstOrNull { it.name.equals(m, true) }?.let { services.systemControls.setNightMode(it) } }
         val cur = current
         if (cur != null) {
-            str("color")?.let { c -> runCatching { Color.parseColor(if (c.startsWith("#")) c else "#$c") }.getOrNull()?.let { services.settings.putInt("clock.color.${cur.spec.id}", it) } }
+            str("color")?.let { c -> runCatching { Color.parseColor(if (c.startsWith("#")) c else "#$c") }.getOrNull()?.let { rememberColor(cur.spec, it) } }
             str("complications")?.let { services.settings.putBoolean("clock.complications.${cur.spec.id}", it.toBoolean()) }
             str("glass")?.toFloatOrNull()?.let { services.settings.putFloat(GlassFace.KEY_GLASS, it) }
             str("wallpaper")?.let { services.settings.putString(GlassFace.KEY_WALLPAPER, it) }

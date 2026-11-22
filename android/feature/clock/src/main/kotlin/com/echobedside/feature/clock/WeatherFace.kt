@@ -100,6 +100,7 @@ class WeatherFace(context: Context, services: EchoServices) : SpecFace(context, 
 
     init {
         observeWhileAttached(services.weather.weather) { weather = it; minuteKey = -1; refresh(force = false) }
+        observeWhileAttached(services.location) { minuteKey = -1; refresh(force = false) }
     }
 
     private fun animated() = !config.night
@@ -125,13 +126,13 @@ class WeatherFace(context: Context, services: EchoServices) : SpecFace(context, 
         minuteKey = key
         contentDirty = true
         val w = weather
-        val loc = HomeLocation.from(services)
+        val loc = services.location.value
         val zone = TimeZone.getDefault()
 
         // sunrise / sunset: from the weather source, else computed for the home location
         var rise = w?.sunriseMillis
         var set = w?.sunsetMillis
-        if ((rise == null || set == null) && loc != null) SunMath.sunriseSunset(now, loc.lat, loc.lon, zone)?.let { rise = it.first; set = it.second }
+        if (rise == null || set == null) SunMath.sunriseSunset(now, loc.lat, loc.lon, zone)?.let { rise = it.first; set = it.second }
         val r = rise; val s = set
         val newSky = when {
             r == null || s == null -> { val hr = cal.get(Calendar.HOUR_OF_DAY); if (hr in 7..16) Sky.DAY else if (hr == 6 || hr in 17..18) Sky.DUSK else Sky.NIGHT }
@@ -142,7 +143,7 @@ class WeatherFace(context: Context, services: EchoServices) : SpecFace(context, 
         if (newSky != sky || skyShader == null) { sky = newSky; skyShader = null; cloud1?.recycle(); cloud1 = null; cloud2?.recycle(); cloud2 = null }
         restartTick()
 
-        place = w?.location?.ifEmpty { null } ?: loc?.name.orEmpty()
+        place = w?.location?.ifEmpty { null } ?: loc.name
         if (w == null) {
             temp = "--"; condition = ""; highLow = ""; header = ""; hours = emptyList(); rain = IntArray(0); rainSummary = ""
         } else {
@@ -160,14 +161,10 @@ class WeatherFace(context: Context, services: EchoServices) : SpecFace(context, 
                     iconFor(f.condition, isDayHour(h, r, s, zone, f.timeMillis)), false, "${f.temperature}°")
             }
             hours = list.map { Hour(it.label, it.icon, it.icon === icSun, it.temp) }
-            // tomorrow's rain: hourly entries that fall tomorrow, else the design's sample in demo mode
+            // tomorrow's rain: 10 of tomorrow's hourly entries, centred on the rain
             val tomorrow = Calendar.getInstance(zone).apply { timeInMillis = now; add(Calendar.DAY_OF_YEAR, 1) }.get(Calendar.DAY_OF_YEAR)
             val tm = w.hourly.filter { Calendar.getInstance(zone).apply { timeInMillis = it.timeMillis }.get(Calendar.DAY_OF_YEAR) == tomorrow }
-            rain = when {
-                tm.isNotEmpty() -> tm.take(10).map { it.precipChance }.toIntArray()
-                services.config.demoData -> SAMPLE_RAIN
-                else -> IntArray(0)
-            }
+            rain = rainWindow(tm.map { it.precipChance }, RAIN_BARS)
             rainSummary = w.tomorrowSummary ?: ""
         }
         sunriseLabel = r?.let { TimeText.clock(it, is24) } ?: "--"
@@ -390,7 +387,7 @@ class WeatherFace(context: Context, services: EchoServices) : SpecFace(context, 
 
     companion object {
         private const val HOUR = 3_600_000L
-        private val SAMPLE_RAIN = intArrayOf(10, 18, 34, 62, 88, 96, 80, 54, 30, 16)
+        const val RAIN_BARS = 10
 
         /** The design's 46 stars (seeded LCG: seed = (seed·9301 + 49297) mod 233280). */
         private val STARS: List<Star> = run {

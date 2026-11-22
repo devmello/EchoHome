@@ -196,3 +196,18 @@ class ColorsTest {
         assertEquals(3, WorldFace.parseCities("").size)
     }
 }
+
+class RainWindowTest {
+    @Test fun centresOnTheRain() {
+        // the fake's tomorrow: 10 % overnight, 30 % at 6–8, 60–80 % at 9–14, 10 % after
+        val day = (0..23).map { h -> when (h) { in 9..14 -> 60 + (h % 3) * 10; in 6..8 -> 30; else -> 10 } }
+        assertEquals(day.subList(7, 17), rainWindow(day, 10).toList())
+    }
+
+    @Test fun shortListsAreKeptAndEdgesClamp() {
+        assertEquals(listOf(5, 6), rainWindow(listOf(5, 6), 10).toList())
+        val late = List(20) { if (it >= 18) 90 else 0 }
+        assertEquals(late.subList(10, 20), rainWindow(late, 10).toList())
+        assertEquals(List(10) { 0 }, rainWindow(List(24) { 0 }, 10).toList())
+    }
+}

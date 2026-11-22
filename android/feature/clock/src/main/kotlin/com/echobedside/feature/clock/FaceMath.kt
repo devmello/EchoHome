@@ -290,3 +290,17 @@ object Colors {
 
     fun isWhite(c: Int) = (c and 0xFFFFFF) == 0xFFFFFF
 }
+
+/**
+ * Weather face "TOMORROW" bars: [n] consecutive hourly precipitation chances out of tomorrow's
+ * [hours] (in hour order), centred on the precipitation-weighted mean hour so the rain sits in the
+ * middle of the chart. A dry day centres on the middle of the list.
+ */
+fun rainWindow(hours: List<Int>, n: Int): IntArray {
+    if (hours.size <= n) return hours.toIntArray()
+    val total = hours.sum()
+    val centre = if (total <= 0) (hours.size - 1) / 2.0
+        else hours.withIndex().sumOf { (i, p) -> i.toDouble() * p } / total
+    val start = Math.round(centre - (n - 1) / 2.0).toInt().coerceIn(0, hours.size - n)
+    return hours.subList(start, start + n).toIntArray()
+}
