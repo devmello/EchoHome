@@ -292,6 +292,38 @@ object Colors {
 }
 
 /**
+ * Night by the clock (`clock.night.mode = schedule`): on from [startMin] to [endMin] (minutes
+ * after local midnight; the window may cross midnight). start == end means never.
+ */
+data class NightSchedule(val startMin: Int, val endMin: Int) {
+    fun isNight(minuteOfDay: Int): Boolean = when {
+        startMin == endMin -> false
+        startMin < endMin -> minuteOfDay in startMin until endMin
+        else -> minuteOfDay >= startMin || minuteOfDay < endMin
+    }
+
+    /** Minutes from [minuteOfDay] to the next start or end (1..1440). */
+    fun minutesToNextChange(minuteOfDay: Int): Int {
+        fun until(t: Int) = ((t - minuteOfDay) % DAY + DAY) % DAY
+        val a = until(startMin).takeIf { it > 0 } ?: DAY
+        val b = until(endMin).takeIf { it > 0 } ?: DAY
+        return minOf(a, b)
+    }
+
+    companion object {
+        private const val DAY = 1440
+        /** "HH:mm" (SettingType.TIME) → minutes after midnight, or null. */
+        fun parse(s: String): Int? {
+            val p = s.trim().split(':')
+            if (p.size != 2) return null
+            val h = p[0].toIntOrNull() ?: return null
+            val m = p[1].toIntOrNull() ?: return null
+            return if (h in 0..23 && m in 0..59) h * 60 + m else null
+        }
+    }
+}
+
+/**
  * Weather face "TOMORROW" bars: [n] consecutive hourly precipitation chances out of tomorrow's
  * [hours] (in hour order), centred on the precipitation-weighted mean hour so the rain sits in the
  * middle of the chart. A dry day centres on the middle of the list.

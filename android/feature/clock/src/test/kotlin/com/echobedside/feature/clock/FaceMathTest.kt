@@ -216,6 +216,35 @@ class SettingsFormatTest {
     }
 }
 
+class NightScheduleTest {
+    @Test fun overnightWindow() {
+        val s = NightSchedule(22 * 60, 7 * 60)
+        assertTrue(s.isNight(23 * 60))
+        assertTrue(s.isNight(0))
+        assertTrue(s.isNight(6 * 60 + 59))
+        assertFalse(s.isNight(7 * 60))
+        assertFalse(s.isNight(12 * 60))
+        assertTrue(s.isNight(22 * 60))
+        assertEquals(60, s.minutesToNextChange(21 * 60))      // → 22:00
+        assertEquals(7 * 60, s.minutesToNextChange(0))       // → 07:00
+        assertEquals(15 * 60, s.minutesToNextChange(7 * 60)) // at 07:00 the next change is 22:00
+    }
+
+    @Test fun sameDayWindowAndNever() {
+        val s = NightSchedule(13 * 60, 14 * 60)
+        assertTrue(s.isNight(13 * 60 + 30))
+        assertFalse(s.isNight(14 * 60))
+        assertFalse(NightSchedule(600, 600).isNight(600))
+    }
+
+    @Test fun parsesTimes() {
+        assertEquals(22 * 60, NightSchedule.parse("22:00"))
+        assertEquals(7 * 60 + 5, NightSchedule.parse("07:05"))
+        assertNull(NightSchedule.parse("24:00"))
+        assertNull(NightSchedule.parse("7"))
+    }
+}
+
 class RainWindowTest {
     @Test fun centresOnTheRain() {
         // the fake's tomorrow: 10 % overnight, 30 % at 6–8, 60–80 % at 9–14, 10 % after
