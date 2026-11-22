@@ -13,7 +13,7 @@ import org.junit.Test
 class PairingTest {
     private val clock = longArrayOf(1_000_000L)
     private val store = InMemoryPairStore()
-    private val p = Pairing(store, { clock[0] }, { 1_763_800_000_000L })
+    private val p = Pairing(store, { clock[0] }, { 1_795_330_000_000L })
 
     private fun start(): String = (p.start("Safari on iPhone") as PairResult.Started).pairId
     private fun wrong(code: String) = (0..999_999).map { it.toString().padStart(6, '0') }.first { it != code }

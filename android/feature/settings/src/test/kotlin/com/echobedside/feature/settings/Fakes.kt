@@ -7,6 +7,9 @@ import com.echobedside.core.model.SettingSpec
 import com.echobedside.core.model.SettingType
 import com.echobedside.core.model.SettingsSection
 import com.echobedside.core.model.SettingsStore
+import com.echobedside.core.model.AlarmStore
+import com.echobedside.core.model.fake.FakeAlarmStore
+import com.echobedside.feature.settings.api.AlarmsApi
 import com.echobedside.feature.settings.api.Assets
 import com.echobedside.feature.settings.api.EventHub
 import com.echobedside.feature.settings.api.SettingsApi
@@ -51,10 +54,11 @@ fun demoSections(actionLog: MutableList<String> = mutableListOf()): List<Setting
             help = "Auto turns the screen red and dim when the room is dark."),
         SettingSpec("clock.nightLux", "Night below", SettingType.FLOAT, "4", min = 0f, max = 40f, step = 0.5f, advanced = true, help = "Lux"),
     )),
-    SettingsSection("alarm", "Alarms", 30, listOf(
+    SettingsSection("alarm", "Alarms & timers", 40, listOf(
         SettingSpec("alarm.snooze", "Snooze minutes", SettingType.INT, "9", min = 1f, max = 20f, step = 1f),
         SettingSpec("alarm.sunrise", "Sunrise before alarm", SettingType.TIME, "00:20", help = "How long the screen brightens before the alarm."),
         SettingSpec("alarm.volume", "Alarm volume", SettingType.FLOAT, "0.7", min = 0f, max = 1f, step = 0.05f),
+        SettingSpec("alarm.sound", "Alarm sound", SettingType.CHOICE, "system", options = listOf("system" to "Default alarm sound", "chime" to "Soft chime", "beeps" to "Beeps")),
     )),
     SettingsSection("home", "Weather & glances", 50, listOf(
         SettingSpec("weather.location", "Location", SettingType.LOCATION, "", help = "Leave on automatic to use the Echo's internet location."),
@@ -71,10 +75,11 @@ fun newApi(
     actionLog: MutableList<String> = mutableListOf(),
     builtIn: Secrets = Secrets(),
     assetsDir: File? = null,
+    alarms: AlarmStore = FakeAlarmStore(demo = true),
 ): SettingsApi {
     val schema = DefaultSettingsSchema()
     demoSections(actionLog).forEach(schema::register)
-    val pairing = Pairing(InMemoryPairStore(), { clock[0] }, { 1_763_800_000_000L })
+    val pairing = Pairing(InMemoryPairStore(), { clock[0] }, { 1_795_330_000_000L })
     return SettingsApi(
         schema = schema,
         settings = { settings },
@@ -83,11 +88,12 @@ fun newApi(
         deviceName = { settings.getString("device.name", "Echo Show").ifBlank { "Echo Show" } },
         pairing = pairing,
         events = EventHub(heartbeatMs = 200),
-        assets = Assets { name ->
+        assets = Assets(cached = false) { name ->
             val dir = assetsDir ?: File("src/main/assets/settings-web")
             File(dir, name).takeIf { it.isFile }?.readBytes()
-        },
+        }, // read from disk each time, so the dev server shows edits live
         runAction = { spec -> spec.onAction?.invoke() },
+        alarms = AlarmsApi({ alarms }, { it() }),
     )
 }
 

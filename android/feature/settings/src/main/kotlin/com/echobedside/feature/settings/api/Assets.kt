@@ -9,7 +9,7 @@ import java.util.zip.GZIPOutputStream
  * The web app's static files (assets/settings-web/ on the Echo), loaded on first request and kept
  * with a gzipped copy and an ETag (well under 100 KB in all).
  */
-class Assets(private val load: (String) -> ByteArray?) {
+class Assets(private val cached: Boolean = true, private val load: (String) -> ByteArray?) {
     class Asset(val bytes: ByteArray, val gzip: ByteArray?, val mime: String, val etag: String)
 
     private val cache = ConcurrentHashMap<String, Asset>()
@@ -21,7 +21,7 @@ class Assets(private val load: (String) -> ByteArray?) {
         val bytes = load(name) ?: return null
         val gz = if (mime.startsWith("image/png")) null else gzip(bytes).takeIf { it.size < bytes.size }
         val etag = "\"" + MessageDigest.getInstance("SHA-1").digest(bytes).take(8).joinToString("") { "%02x".format(it) } + "\""
-        return Asset(bytes, gz, mime, etag).also { cache[name] = it }
+        return Asset(bytes, gz, mime, etag).also { if (cached) cache[name] = it }
     }
 
     companion object {

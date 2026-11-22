@@ -98,7 +98,7 @@ button { cursor: pointer; }
 }
 .glass::before {
   content: ""; position: absolute; inset: 0; border-radius: inherit;
-  background: var(--spec); pointer-events: none; opacity: .7;
+  background: var(--spec); pointer-events: none; opacity: .5;
 }
 .glass > * { position: relative; }
 
@@ -133,7 +133,11 @@ button { cursor: pointer; }
 .top {
   position: sticky; top: 0; z-index: 5;
   padding: calc(env(safe-area-inset-top) + 14px) 16px 8px;
-  background: linear-gradient(var(--bg) 40%, transparent);
+  /* A toolbar: the content scrolls under frosted glass. */
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  backdrop-filter: blur(20px) saturate(1.8);
+  border-bottom: .5px solid var(--sep);
 }
 .title-row, .chips, .sections, .foot { max-width: 680px; margin-left: auto; margin-right: auto; }
 .title-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
@@ -199,13 +203,13 @@ textarea.field { height: auto; min-height: 92px; padding: 10px 14px; resize: ver
 .masked { -webkit-text-security: disc; }
 .field::placeholder { color: var(--text-3); }
 .inline-field { width: auto; max-width: 52%; text-align: right; }
-.time { width: 120px; text-align: center; }
+.time { width: 150px; text-align: center; }
 
 /* Segmented control */
 .seg { display: flex; padding: 2px; border-radius: 18px; background: var(--fill); gap: 2px; flex: none; max-width: 100%; }
 .seg.wide { width: 100%; }
 .seg button {
-  flex: 1; min-width: 0; height: 32px; border: 0; border-radius: 16px; background: none; padding: 0 12px;
+  flex: 1; min-width: 44px; height: 32px; border: 0; border-radius: 16px; background: none; padding: 0 12px;
   font-size: 14px; font-weight: 600; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   transition: background .2s, color .2s;
 }
@@ -237,7 +241,7 @@ input[type="range"]::-moz-range-thumb { width: 28px; height: 28px; border: 0; bo
 .swatches { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
 .swatch {
   width: 32px; height: 32px; border-radius: 50%; border: 0; padding: 0; position: relative;
-  box-shadow: inset 0 0 0 .5px rgba(255,255,255,.3);
+  box-shadow: inset 0 0 0 1px rgba(128,128,128,.4);
   transition: transform .35s var(--ease-spring);
 }
 .swatch:active { transform: scale(.9); }
@@ -305,3 +309,38 @@ details summary::-webkit-details-marker { display: none; }
 @media (prefers-reduced-transparency: reduce) {
   .glass { -webkit-backdrop-filter: none; backdrop-filter: none; background: color-mix(in srgb, var(--bg) 86%, var(--text) 14%); }
 }
+
+/* ---------- Alarms (iOS Clock style) ---------- */
+.alarm-head .row-main { min-height: 36px; }
+.alarm-next { color: var(--text-2); font-size: 15px; font-weight: 500; }
+.add-alarm {
+  width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--fill); color: var(--orange);
+  font-size: 26px; font-weight: 400; line-height: 1; display: grid; place-items: center; flex: none; padding: 0 0 2px;
+}
+.alarm-row { padding-top: 10px; padding-bottom: 12px; }
+.alarm-face { flex: 1; min-width: 0; border: 0; background: none; padding: 0; text-align: left; display: flex; flex-direction: column; }
+.alarm-time { font-size: 50px; line-height: 1.05; font-weight: 300; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.alarm-ampm { font-size: 24px; font-weight: 400; margin-left: 4px; letter-spacing: 0; }
+.alarm-sub { font-size: 15px; color: var(--text); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alarm-row.off .alarm-time, .alarm-row.off .alarm-sub { color: var(--text-3); }
+.empty { color: var(--text-2); font-size: 15px; }
+.alarm-editor { margin-top: 12px; padding: 2px 14px; border-radius: 18px; background: var(--fill); }
+.alarm-editor.new { margin: 0 18px 14px; }
+.ed-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; }
+.ed-col { padding: 11px 0; }
+.ed-row + .ed-row, .ed-row + .ed-col, .ed-col + .ed-row, .ed-col + .ed-col, .ed-actions { border-top: .5px solid var(--sep); }
+.ed-label { font-weight: 500; display: flex; flex-direction: column; }
+.ed-col .ed-label { margin-bottom: 8px; }
+.ed-label small { font-size: 13px; font-weight: 400; color: var(--text-2); }
+.alarm-editor .field { background: var(--fill-strong); }
+.alarm-time-input { width: 150px; text-align: center; font-size: 20px; font-weight: 600; }
+.days { display: flex; gap: 6px; justify-content: space-between; }
+.day {
+  flex: 1; max-width: 42px; aspect-ratio: 1; border: 0; border-radius: 50%; background: var(--fill-strong); padding: 0;
+  font-size: 15px; font-weight: 600; color: var(--text-2); transition: background .2s, color .2s, transform .35s var(--ease-spring);
+}
+.day:active { transform: scale(.9); }
+.day[aria-pressed="true"] { background: var(--orange); color: #000; }
+.ed-actions { display: flex; align-items: center; justify-content: flex-end; gap: 18px; padding: 10px 0; }
+.ed-actions .saved { margin-right: auto; }
+.btn-primary.small { width: auto; height: 38px; padding: 0 18px; border-radius: 19px; font-size: 15px; }

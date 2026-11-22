@@ -169,7 +169,7 @@ object Reader {
             SettingType.INT -> try { s.getInt(k, d.toIntOrNull() ?: 0) } catch (e: ClassCastException) {
                 safeString(s, k, d).toDoubleOrNull()?.toInt() ?: d.toIntOrNull() ?: 0
             }
-            SettingType.FLOAT -> try { s.getFloat(k, d.toFloatOrNull() ?: 0f).toDouble() } catch (e: ClassCastException) {
+            SettingType.FLOAT -> try { s.getFloat(k, d.toFloatOrNull() ?: 0f).toString().toDouble() } catch (e: ClassCastException) {
                 safeString(s, k, d).toDoubleOrNull() ?: d.toDoubleOrNull() ?: 0.0
             }
             SettingType.TEXT_LIST -> JSONArray(safeString(s, k, d).split(',').map { it.trim() }.filter { it.isNotEmpty() })

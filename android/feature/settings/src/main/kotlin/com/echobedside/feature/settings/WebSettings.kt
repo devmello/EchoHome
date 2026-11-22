@@ -14,6 +14,7 @@ import com.echobedside.core.data.loadSecrets
 import com.echobedside.core.model.DeviceName
 import com.echobedside.core.model.EchoServices
 import com.echobedside.core.model.SettingSpec
+import com.echobedside.feature.settings.api.AlarmsApi
 import com.echobedside.feature.settings.api.Assets
 import com.echobedside.feature.settings.api.EventHub
 import com.echobedside.feature.settings.api.SettingsApi
@@ -24,6 +25,7 @@ import com.echobedside.feature.settings.pair.Pairing
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -31,6 +33,7 @@ import org.json.JSONObject
 import java.net.Inet4Address
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicReference
 
 /** Where a phone reaches the settings page. */
@@ -65,6 +68,7 @@ internal class WebSettings(private val app: Context, private val services: EchoS
         events = events,
         assets = Assets { name -> try { app.assets.open("settings-web/$name").use { it.readBytes() } } catch (e: java.io.IOException) { null } },
         runAction = ::runOnMain,
+        alarms = AlarmsApi({ services.alarms }, ::onMain),
     )
     private val server = HttpServer(api::handle, log = { Log.i(TAG, it) })
 
@@ -148,16 +152,28 @@ internal class WebSettings(private val app: Context, private val services: EchoS
         }
         scope.launch { services.settingsSchema.sections.drop(1).collect { if (events.hasClients()) events.publish("schema", "{}") } }
         scope.launch { pairing.browsers.drop(1).collect { if (events.hasClients()) events.publish("pairs", "{}") } }
+        // services.alarms is bound by :feature:alarm, installed before this feature.
+        scope.launch {
+            val store = services.alarms
+            combine(store.alarms, store.next) { a, n -> a to n }.drop(1).collect { (a, n) ->
+                if (events.hasClients()) events.publish("alarms", AlarmsApi.listJson(a, n).toString())
+            }
+        }
     }
 
-    /** ACTIONs run on the main thread (SettingSpec contract); the HTTP thread waits up to 10 s. */
+    /** ACTIONs run on the main thread (SettingSpec contract). */
     private fun runOnMain(spec: SettingSpec): String? {
         val action = spec.onAction ?: return null
-        if (Looper.myLooper() == Looper.getMainLooper()) return action()
-        val result = AtomicReference<Result<String?>>()
+        return try { onMain(action) as String? } catch (e: TimeoutException) { "Still running on the Echo" }
+    }
+
+    /** Runs [block] on the main thread and waits for it (up to 10 s) from an HTTP thread. */
+    private fun onMain(block: () -> Any?): Any? {
+        if (Looper.myLooper() == Looper.getMainLooper()) return block()
+        val result = AtomicReference<Result<Any?>>()
         val done = CountDownLatch(1)
-        main.post { result.set(runCatching(action)); done.countDown() }
-        if (!done.await(10, TimeUnit.SECONDS)) return "Still running on the Echo"
+        main.post { result.set(runCatching(block)); done.countDown() }
+        if (!done.await(10, TimeUnit.SECONDS)) throw TimeoutException()
         return result.get().getOrThrow()
     }
 

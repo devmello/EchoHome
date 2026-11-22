@@ -1,6 +1,7 @@
 package com.echobedside.feature.settings.api
 
 import com.echobedside.core.model.Alarm
+import com.echobedside.core.model.AlarmJson
 import com.echobedside.core.model.AlarmStore
 import com.echobedside.core.model.NextAlarm
 import com.echobedside.feature.settings.http.HttpRequest
@@ -15,7 +16,7 @@ import java.util.UUID
  * The alarm list over [AlarmStore] (services.alarms, `:feature:alarm`), serialised here so no
  * `:core` change is needed:
  *  - `GET /api/alarms` → `{alarms: [...], next: {id, at} | null}`
- *  - `POST /api/alarms` `{time, days, label, enabled, sunrise}` → the new alarm
+ *  - `POST /api/alarms` `{time | hour+minute, days: [1..7], label, enabled, sunrise}` → the new alarm
  *  - `PUT /api/alarms/<id>` with any of those fields → the updated alarm
  *  - `DELETE /api/alarms/<id>`
  * The sound is global (setting `alarm.sound`, on the schema), not per alarm. Every store call
@@ -74,14 +75,8 @@ class AlarmsApi(
         private val TIME = Regex("^([01]?\\d|2[0-3]):([0-5]\\d)$")
         const val MAX_LABEL = 40
 
-        fun toJson(a: Alarm): JSONObject = JSONObject()
-            .put("id", a.id)
-            .put("time", "%02d:%02d".format(a.hour, a.minute))
-            .put("days", JSONArray(DayOfWeek.values().filter { it in a.days }.map { it.name.take(3) }))
-            .put("label", a.label)
-            .put("enabled", a.enabled)
-            .put("sunrise", a.sunrise)
-            .putOpt("profileId", a.profileId)
+        /** [AlarmJson] (days are ISO numbers, Monday = 1) plus "time" ("HH:mm") for the page. */
+        fun toJson(a: Alarm): JSONObject = AlarmJson.toJson(a).put("time", "%02d:%02d".format(a.hour, a.minute))
 
         fun listJson(list: List<Alarm>, next: NextAlarm?): JSONObject = JSONObject()
             .put("alarms", JSONArray().apply { for (a in list.sortedBy { it.hour * 60 + it.minute }) put(toJson(a)) })
@@ -106,6 +101,10 @@ class AlarmsApi(
                         if (s.length > MAX_LABEL || s.any { it < ' ' }) throw ValidationException("Label: one line, at most $MAX_LABEL characters")
                         a.copy(label = s.ifEmpty { "Alarm" })
                     }
+                    "hour" -> a.copy(hour = int(v, 0..23, "Hour"))
+                    "minute" -> a.copy(minute = int(v, 0..59, "Minute"))
+                    "sunriseMinutes" -> a.copy(sunriseMinutes = int(v, 0..120, "Sunrise minutes"))
+                    "snoozeMinutes" -> a.copy(snoozeMinutes = int(v, 1..60, "Snooze minutes"))
                     "enabled" -> a.copy(enabled = v as? Boolean ?: throw ValidationException("On/off: expected true or false"))
                     "sunrise" -> a.copy(sunrise = v as? Boolean ?: throw ValidationException("Sunrise: expected true or false"))
                     "id" -> a // ignored: the path / a new UUID decides
@@ -115,8 +114,16 @@ class AlarmsApi(
             return a
         }
 
+        private fun int(v: Any?, range: IntRange, what: String): Int {
+            val n = (v as? Number)?.toDouble() ?: throw ValidationException("$what: expected a number")
+            if (n != Math.rint(n) || n.toInt() !in range) throw ValidationException("$what: ${range.first}–${range.last}")
+            return n.toInt()
+        }
+
+        /** 1 (Monday) … 7 (Sunday), as in [AlarmJson], or "MON" … "SUN". */
         private fun day(v: Any?): DayOfWeek {
-            val s = (v as? String)?.uppercase() ?: throw ValidationException("Repeat: days are MON…SUN")
+            if (v is Number) return int(v, 1..7, "Repeat").let(DayOfWeek::of)
+            val s = (v as? String)?.uppercase() ?: throw ValidationException("Repeat: days are 1–7 (Monday = 1)")
             return DayOfWeek.values().firstOrNull { it.name.startsWith(s) && s.length >= 3 } ?: throw ValidationException("Repeat: unknown day $s")
         }
     }

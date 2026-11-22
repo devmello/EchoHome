@@ -35,9 +35,10 @@ object SchemaJson {
         val o = JSONObject()
             .put("key", spec.key).put("title", spec.title).put("type", spec.type.name)
             .putOpt("help", spec.help).put("advanced", spec.advanced)
-        spec.min?.let { o.put("min", it.toDouble()) }
-        spec.max?.let { o.put("max", it.toDouble()) }
-        spec.step?.let { o.put("step", it.toDouble()) }
+        // Float.toString → Double keeps 0.05 as 0.05 (not 0.05000000074505806).
+        spec.min?.let { o.put("min", it.toString().toDouble()) }
+        spec.max?.let { o.put("max", it.toString().toDouble()) }
+        spec.step?.let { o.put("step", it.toString().toDouble()) }
         when (spec.type) {
             SettingType.SECRET -> {
                 o.put("secret", secretState(spec.key, secrets, effective))

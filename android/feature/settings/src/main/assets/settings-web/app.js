@@ -127,6 +127,7 @@ let advanced = store.get('advanced', '0') === '1';
 
 async function loadApp() {
   schema = await api('GET', '/api/schema');
+  try { alarmsData = await api('GET', '/api/alarms'); } catch (e) { alarmsData = null; }
   $('#pair').hidden = true;
   $('#app').hidden = false;
   render();
@@ -142,7 +143,16 @@ function render() {
   const chips = $('#chips');
   main.textContent = '';
   chips.textContent = '';
+  let alarmsPlaced = false;
+  const placeAlarms = () => {
+    if (alarmsPlaced || !alarmsData) return;
+    alarmsPlaced = true;
+    main.append(h('section', { class: 'section', id: 's-alarms', 'aria-labelledby': 'h-alarms' },
+      h('h2', { id: 'h-alarms', text: 'Alarms' }), h('div', { class: 'group glass', id: 'alarm-list' })));
+    chips.append(chip('alarms', 'Alarms'));
+  };
   for (const s of schema.sections) {
+    if (s.id === 'alarm' || (s.order >= 40 && s.id !== 'general')) placeAlarms();
     const specs = s.settings.filter((x) => advanced || !x.advanced);
     if (!specs.length && s.id !== 'general') continue;
     const group = h('div', { class: 'group glass' }, specs.map((spec) => row(spec)));
@@ -151,13 +161,19 @@ function render() {
       h('h2', { id: `h-${s.id}`, text: s.title }),
       group,
       s.help && h('p', { class: 'section-help', text: s.help })));
-    chips.append(h('a', { class: 'glass', href: `#s-${s.id}`, text: s.title, onclick: (e) => {
-      e.preventDefault();
-      document.getElementById(`s-${s.id}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
-    } }));
+    chips.append(chip(s.id, s.title));
   }
+  placeAlarms();
   if (lastPairs) renderPairs(lastPairs);
+  renderAlarms();
   window.scrollTo(0, keep);
+}
+
+function chip(id, title) {
+  return h('a', { class: 'glass', href: `#s-${id}`, text: title, onclick: (e) => {
+    e.preventDefault();
+    document.getElementById(`s-${id}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } });
 }
 
 /** One row: title, control, help, inline error, saved tick. */
@@ -174,7 +190,7 @@ function row(spec) {
     save: (value) => save(spec.key, value, ctx),
   };
   const r = (RENDER[spec.type] || RENDER.TEXT)(spec, ctx);
-  el.append(h('div', { class: 'row-main' }, title, r.inline), r.below, spec.help && h('p', { class: 'help', text: spec.help }), err);
+  el.append(...[h('div', { class: 'row-main' }, title, r.inline), r.below, spec.help && h('p', { class: 'help', text: spec.help }), err].filter(Boolean));
   rows.set(spec.key, { spec, set: r.set, busy: r.busy || (() => el.contains(document.activeElement)) });
   return el;
 }
@@ -392,16 +408,18 @@ const RENDER = {
       : h('input', { class: 'field', type: 'password', placeholder: hints.placeholder || 'Paste here', autocomplete: 'off',
           autocapitalize: 'off', spellcheck: 'false', 'data-1p-ignore': true, 'aria-labelledby': ctx.titleId,
           onkeydown: (e) => { if (e.key === 'Enter') f.blur(); } });
+    f.addEventListener('input', () => { show.hidden = !f.value; });
     const commit = async () => {
       const v = f.value.trim();
       if (!v) return;
-      if (await ctx.save(f.value)) f.value = '';
+      if (await ctx.save(f.value)) { f.value = ''; show.hidden = true; }
     };
     f.addEventListener('change', commit);
     const show = h('button', { type: 'button', class: 'text-btn', onclick: () => {
       const hidden = multi ? f.classList.toggle('masked') : (f.type = f.type === 'password' ? 'text' : 'password') === 'password';
       show.textContent = hidden ? 'Show' : 'Hide';
     } }, 'Show');
+    show.hidden = true;
     const clear = h('button', { type: 'button', class: 'text-btn danger', onclick: async () => {
       if (confirm(`Remove the ${spec.title} from the Echo?`)) ctx.save(null);
     } }, 'Clear');
@@ -433,6 +451,161 @@ const RENDER = {
   },
 };
 
+// ---------- alarms (iOS Clock style) ----------
+let alarmsData = null;   // {alarms: [...], next: {id, at} | null}
+let openAlarm = null;    // id of the alarm whose editor is open, or 'new'
+// Days are ISO numbers (Monday = 1). 2024-01-01 was a Monday.
+const DAY_NAMES = [1, 2, 3, 4, 5, 6, 7].map((d) => new Date(Date.UTC(2024, 0, d)).toLocaleDateString(undefined, { weekday: 'short', timeZone: 'UTC' }));
+const DAY_LETTERS = [1, 2, 3, 4, 5, 6, 7].map((d) => new Date(Date.UTC(2024, 0, d)).toLocaleDateString(undefined, { weekday: 'narrow', timeZone: 'UTC' }));
+const HOUR12 = new Intl.DateTimeFormat(undefined, { hour: 'numeric' }).resolvedOptions().hour12 !== false;
+
+function timeParts(t) {
+  const [hh, mm] = t.split(':').map(Number);
+  if (!HOUR12) return [`${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`, ''];
+  return [`${hh % 12 || 12}:${String(mm).padStart(2, '0')}`, hh < 12 ? 'AM' : 'PM'];
+}
+
+function repeatText(days) {
+  if (!days.length) return '';
+  const set = days.slice().sort().join('');
+  if (set === '1234567') return 'every day';
+  if (set === '12345') return 'weekdays';
+  if (set === '67') return 'weekends';
+  return days.slice().sort().map((d) => DAY_NAMES[d - 1]).join(', ');
+}
+
+function nextText(next) {
+  if (!next) return 'No alarms on';
+  const mins = Math.max(0, Math.round((next.at - Date.now()) / 60000));
+  if (mins < 60) return `Next alarm in ${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `Next alarm in ${hrs} hr ${mins % 60} min`;
+  return `Next alarm ${new Date(next.at).toLocaleString(undefined, { weekday: 'long', hour: 'numeric', minute: '2-digit' })}`;
+}
+
+async function alarmCall(method, path, body) {
+  try { return await api(method, path, body); } catch (e) {
+    if (e.status === 401) showPair(); else toast(e.message, true);
+    return null;
+  }
+}
+
+function renderAlarms() {
+  const box = document.getElementById('alarm-list');
+  if (!box || !alarmsData) return;
+  box.textContent = '';
+  box.append(h('div', { class: 'row alarm-head' }, h('div', { class: 'row-main' },
+    h('span', { class: 'row-title alarm-next', text: nextText(alarmsData.next) }),
+    h('button', { type: 'button', class: 'add-alarm', 'aria-label': 'Add alarm', onclick: () => { openAlarm = 'new'; renderAlarms(); } }, '+'))));
+  if (openAlarm === 'new') box.append(alarmEditor(null));
+  if (!alarmsData.alarms.length && openAlarm !== 'new') box.append(h('div', { class: 'row empty', text: 'No alarms yet. Tap + to add one.' }));
+  for (const a of alarmsData.alarms) {
+    const [time, ampm] = timeParts(a.time);
+    const sub = [a.label, repeatText(a.days)].filter(Boolean).join(', ');
+    const sw = h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': `${a.label} ${a.time}`,
+      onchange: async () => {
+        const r = await alarmCall('PUT', `/api/alarms/${encodeURIComponent(a.id)}`, { enabled: sw.checked });
+        if (r) { Object.assign(a, r.alarm); renderAlarms(); } else sw.checked = a.enabled;
+      } });
+    sw.checked = a.enabled;
+    const open = openAlarm === a.id;
+    const row = h('div', { class: `row alarm-row${a.enabled ? '' : ' off'}${open ? ' open' : ''}` },
+      h('div', { class: 'row-main' },
+        h('button', { type: 'button', class: 'alarm-face', 'aria-expanded': open, onclick: () => { openAlarm = open ? null : a.id; renderAlarms(); } },
+          h('span', { class: 'alarm-time' }, time, ampm && h('span', { class: 'alarm-ampm', text: ampm })),
+          h('span', { class: 'alarm-sub', text: sub })),
+        sw));
+    box.append(row);
+    if (open) row.append(alarmEditor(a));
+  }
+}
+
+/** Edits to an existing alarm apply as you go; a new one is added with the Add alarm button. */
+function alarmEditor(a) {
+  const isNew = !a;
+  const draft = a ? { ...a, days: [...a.days] } : (() => {
+    const d = new Date(Date.now() + 3600e3);
+    return { time: `${String(d.getHours()).padStart(2, '0')}:00`, days: [], label: 'Alarm', enabled: true, sunrise: true };
+  })();
+  const ok = h('span', { class: 'saved', 'aria-hidden': 'true' }, svg(CHECK), 'Saved');
+  let okTimer;
+  const patch = async (fields) => {
+    Object.assign(draft, fields);
+    if (isNew) return;
+    const r = await alarmCall('PUT', `/api/alarms/${encodeURIComponent(a.id)}`, fields);
+    if (r) {
+      Object.assign(a, r.alarm);
+      ok.classList.add('show'); clearTimeout(okTimer); okTimer = setTimeout(() => ok.classList.remove('show'), 1400);
+    }
+  };
+  const time = h('input', { class: 'field alarm-time-input', type: 'time', value: draft.time, 'aria-label': 'Time',
+    onchange: () => time.value && patch({ time: time.value }) });
+  const days = h('div', { class: 'days', role: 'group', 'aria-label': 'Repeat' }, [1, 2, 3, 4, 5, 6, 7].map((d) => {
+    const b = h('button', { type: 'button', class: 'day', 'aria-pressed': String(draft.days.includes(d)), 'aria-label': DAY_NAMES[d - 1], text: DAY_LETTERS[d - 1],
+      onclick: () => {
+        const on = !draft.days.includes(d);
+        b.setAttribute('aria-pressed', on);
+        patch({ days: on ? [...draft.days, d].sort() : draft.days.filter((x) => x !== d) });
+      } });
+    return b;
+  }));
+  const label = h('input', { class: 'field', type: 'text', value: draft.label, maxlength: 40, 'aria-label': 'Label', autocomplete: 'off',
+    onkeydown: (e) => { if (e.key === 'Enter') label.blur(); }, onchange: () => patch({ label: label.value }) });
+  const sunrise = h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': 'Sunrise light', onchange: () => patch({ sunrise: sunrise.checked }) });
+  sunrise.checked = draft.sunrise;
+
+  // The sound is one setting for every alarm (alarm.sound on the schema), so it's edited here too.
+  const soundSpec = currentSpec('alarm.sound');
+  let sound = null;
+  if (soundSpec && soundSpec.type === 'CHOICE') {
+    const lab = h('span');
+    const sel = h('select', { 'aria-label': 'Sound' }, soundSpec.options.map(([v, l]) => h('option', { value: v, text: l })));
+    const setLab = () => { const o = soundSpec.options.find(([v]) => v === sel.value); lab.textContent = o ? o[1] : sel.value; };
+    sel.addEventListener('change', async () => {
+      setLab();
+      try {
+        const r = await api('PUT', '/api/settings', { 'alarm.sound': sel.value });
+        if (r.values && r.values['alarm.sound']) applyChange(r.values['alarm.sound'], true);
+      } catch (e) { toast(e.message, true); }
+    });
+    sel.value = soundSpec.value;
+    setLab();
+    sound = h('div', { class: 'ed-row' }, h('span', { class: 'ed-label' }, 'Sound', h('small', { text: 'Same for every alarm' })),
+      h('span', { class: 'select' }, lab, svg(CHEV), sel));
+  }
+
+  const actions = isNew
+    ? h('div', { class: 'ed-actions' },
+        h('button', { type: 'button', class: 'text-btn', onclick: () => { openAlarm = null; renderAlarms(); } }, 'Cancel'),
+        h('button', { type: 'button', class: 'btn-primary small', onclick: async () => {
+          const r = await alarmCall('POST', '/api/alarms', { time: time.value || draft.time, days: draft.days, label: label.value, sunrise: sunrise.checked, enabled: true });
+          if (!r) return;
+          openAlarm = null;
+          alarmsData = (await alarmCall('GET', '/api/alarms')) || alarmsData;
+          renderAlarms();
+          toast(`Alarm set for ${timeParts(r.alarm.time).join(' ').trim()}`);
+        } }, 'Add alarm'))
+    : h('div', { class: 'ed-actions' }, ok,
+        h('button', { type: 'button', class: 'text-btn danger', onclick: async () => {
+          if (!confirm(`Delete the ${a.label} alarm?`)) return;
+          if (await alarmCall('DELETE', `/api/alarms/${encodeURIComponent(a.id)}`)) {
+            openAlarm = null;
+            alarmsData.alarms = alarmsData.alarms.filter((x) => x.id !== a.id);
+            renderAlarms();
+          }
+        } }, 'Delete alarm'),
+        h('button', { type: 'button', class: 'text-btn', onclick: () => { openAlarm = null; renderAlarms(); } }, 'Done'));
+
+  return h('div', { class: `alarm-editor${isNew ? ' new' : ''}` },
+    h('div', { class: 'ed-row' }, h('span', { class: 'ed-label', text: 'Time' }), time),
+    h('div', { class: 'ed-col' }, h('span', { class: 'ed-label', text: 'Repeat' }), days),
+    h('div', { class: 'ed-col' }, h('span', { class: 'ed-label', text: 'Label' }), label),
+    h('div', { class: 'ed-row' }, h('span', { class: 'ed-label' }, 'Sunrise light', h('small', { text: 'The screen brightens before it rings' })), sunrise),
+    sound,
+    actions);
+}
+
+
 // ---------- paired browsers ----------
 let lastPairs = null;
 async function loadPairs() {
@@ -444,12 +617,13 @@ function renderPairs(data) {
   if (!box) return;
   box.textContent = '';
   box.append(h('div', { class: 'subhead', text: 'Paired browsers' }));
-  const fmt = (t) => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const fmt = (t) => new Date(t).toLocaleDateString(undefined, new Date(t).getFullYear() === new Date().getFullYear() ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
+  const day = 864e5;
   for (const b of data.browsers) {
     box.append(h('div', { class: 'row' }, h('div', { class: 'row-main' },
       h('span', { class: 'row-title' }, h('span', {},
         h('span', { class: 't', text: b.name }), ' ', b.current && h('span', { class: 'badge', text: 'This browser' }),
-        h('br'), h('span', { class: 'browser-meta', text: `Paired ${fmt(b.createdAt)} · last used ${fmt(b.lastSeenAt)}` }))),
+        h('br'), h('span', { class: 'browser-meta', text: `Paired ${fmt(b.createdAt)}${b.lastSeenAt - b.createdAt > day ? ` · used ${fmt(b.lastSeenAt)}` : ''}` }))),
       h('button', { type: 'button', class: 'text-btn danger', onclick: async () => {
         const msg = b.current ? 'Forget this browser? You’ll need a new code from the Echo to come back.' : `Forget ${b.name}?`;
         if (!confirm(msg)) return;
@@ -467,7 +641,7 @@ let es = null;
 let retryTimer;
 function setStatus(state) {
   $('#dot').className = `dot ${state === 'on' ? 'on' : 'wait'}`;
-  $('#status-text').textContent = state === 'on' ? 'Connected · changes apply right away' : 'Reconnecting to the Echo…';
+  $('#status-text').textContent = state === 'on' ? 'Connected' : 'Reconnecting to the Echo…';
 }
 
 function openEvents() {
@@ -477,6 +651,12 @@ function openEvents() {
   es.addEventListener('change', (e) => { try { applyChange(JSON.parse(e.data)); } catch (x) { /* ignore */ } });
   es.addEventListener('schema', async () => { schema = await api('GET', '/api/schema'); render(); });
   es.addEventListener('pairs', () => loadPairs());
+  es.addEventListener('alarms', (e) => {
+    try { alarmsData = JSON.parse(e.data); } catch (x) { return; }
+    const box = document.getElementById('alarm-list');
+    if (!box) return render();
+    if (!box.contains(document.activeElement)) renderAlarms();
+  });
   es.onerror = () => {
     setStatus('wait');
     // EventSource retries on its own; if pairing was revoked it never succeeds, so check.
@@ -495,7 +675,7 @@ function closeEvents() { if (es) { es.close(); es = null; } clearTimeout(retryTi
 // Coming back to a backgrounded tab / home-screen app: resync everything.
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible' || $('#app').hidden) return;
-  try { schema = await api('GET', '/api/schema'); render(); loadPairs(); if (!es || es.readyState === EventSource.CLOSED) openEvents(); }
+  try { schema = await api('GET', '/api/schema'); alarmsData = await api('GET', '/api/alarms').catch(() => alarmsData); render(); loadPairs(); if (!es || es.readyState === EventSource.CLOSED) openEvents(); }
   catch (e) { if (e.status === 401) showPair(); }
 });
 
