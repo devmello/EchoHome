@@ -202,8 +202,8 @@ class ReceiverStateTest {
 class ServiceInfoTest {
     private val sample = """
         port=7000
-        raop_name=AABBCCDDEEFF@Echo Bedside
-        airplay_name=Echo Bedside
+        raop_name=AABBCCDDEEFF@Echo Show
+        airplay_name=Echo Show
         ap2=true
         raop.cn=0,1
         raop.et=0,3,5
@@ -216,8 +216,8 @@ class ServiceInfoTest {
     @Test fun parses() {
         val i = ServiceInfo.parse(sample)
         assertEquals(7000, i.port)
-        assertEquals("AABBCCDDEEFF@Echo Bedside", i.raopName)
-        assertEquals("Echo Bedside", i.airplayName)
+        assertEquals("AABBCCDDEEFF@Echo Show", i.raopName)
+        assertEquals("Echo Show", i.airplayName)
         assertTrue(i.ap2)
         assertEquals(listOf("cn" to "0,1", "et" to "0,3,5", "ft" to "0x405C4A00,0x1C340"), i.raopTxt)
         assertEquals("AudioAccessory5,1", i.airplayTxt.toMap()["model"])
@@ -236,5 +236,26 @@ class SenderNameTest {
         assertEquals("MacBook Pro", SenderNameResolver.prettyHostName("MacBook-Pro.local", "10.0.0.5"))
         assertNull(SenderNameResolver.prettyHostName("10.0.0.5", "10.0.0.5"))
         assertNull(SenderNameResolver.prettyHostName("", "10.0.0.5"))
+    }
+}
+
+class AirPlaySettingsTest {
+    @Test fun sectionCoversEveryUserSetting() {
+        val section = AirPlayFeature.settingsSection()
+        val byKey = section.settings.associateBy { it.key }
+        assertEquals(
+            setOf(AirPlayFeature.KEY_ENABLED, AirPlayFeature.KEY_NAME, AirPlayFeature.KEY_MODE, AirPlayFeature.KEY_MDNS),
+            byKey.keys,
+        )
+        assertEquals("true", byKey.getValue(AirPlayFeature.KEY_ENABLED).default)
+        assertEquals("", byKey.getValue(AirPlayFeature.KEY_NAME).default)
+        assertTrue(byKey.getValue(AirPlayFeature.KEY_NAME).help!!.contains("device name"))
+        val mode = byKey.getValue(AirPlayFeature.KEY_MODE)
+        assertEquals(AirPlayFeature.MODE_AP1, mode.default)
+        assertEquals(listOf(AirPlayFeature.MODE_AP1, AirPlayFeature.MODE_AP2), mode.options.map { it.first })
+        assertFalse(mode.advanced)
+        assertTrue(byKey.getValue(AirPlayFeature.KEY_MDNS).advanced)
+        // Every CHOICE default is one of its options.
+        for (s in section.settings.filter { it.options.isNotEmpty() }) assertTrue(s.options.any { it.first == s.default })
     }
 }

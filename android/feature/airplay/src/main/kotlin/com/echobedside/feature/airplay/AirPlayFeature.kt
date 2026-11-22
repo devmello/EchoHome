@@ -5,6 +5,9 @@ import com.echobedside.core.model.DeviceName
 import com.echobedside.core.model.EchoFeature
 import com.echobedside.core.model.EchoServices
 import com.echobedside.core.model.FeatureHost
+import com.echobedside.core.model.SettingSpec
+import com.echobedside.core.model.SettingType
+import com.echobedside.core.model.SettingsSection
 import com.echobedside.core.model.SettingsStore
 import kotlinx.coroutines.launch
 
@@ -49,9 +52,41 @@ object AirPlayFeature : EchoFeature {
     internal fun enabled(settings: SettingsStore): Boolean =
         settings.getBoolean(KEY_ENABLED, true) && settings.getBoolean(KEY_CC_AIRPLAY, true)
 
+    /** The AirPlay card on the web settings page. Every key here is applied live by [install] / [AirPlayService]. */
+    internal fun settingsSection() = SettingsSection(
+        id = "airplay",
+        title = "AirPlay",
+        order = 30,
+        help = "Play audio from an iPhone, iPad or Mac on the Echo. Audio only, no screen mirroring.",
+        settings = listOf(
+            SettingSpec(
+                KEY_ENABLED, "AirPlay receiver", SettingType.BOOLEAN, default = "true",
+                help = "Show the Echo in AirPlay lists. Control Center's AirPlay switch also turns it off.",
+            ),
+            SettingSpec(
+                KEY_NAME, "AirPlay name", SettingType.TEXT, default = "",
+                help = "The name iPhones and Macs show. Leave blank to use the device name.",
+            ),
+            SettingSpec(
+                KEY_MODE, "Mode", SettingType.CHOICE, default = MODE_AP1,
+                help = "AirPlay lets the Echo pause, skip and change the volume on the phone. " +
+                    "AirPlay 2 lists the Echo as an AirPlay 2 speaker, but the Echo can't control playback " +
+                    "(pause only mutes the Echo). Neither keeps several speakers in sync.",
+                options = listOf(MODE_AP1 to "AirPlay (remote control)", MODE_AP2 to "AirPlay 2 (no remote control)"),
+            ),
+            SettingSpec(
+                KEY_MDNS, "Discovery (mDNS)", SettingType.CHOICE, default = MDNS_NSD, advanced = true,
+                help = "How the Echo announces itself. Android's service (default) costs nothing while idle; " +
+                    "the library's own responder is a fallback if iPhones can't find the Echo.",
+                options = listOf(MDNS_NSD to "Android (NsdManager)", MDNS_LIB to "Built-in responder"),
+            ),
+        ),
+    )
+
     override fun install(host: FeatureHost) {
         val s = host.services
         services = s
+        host.registerSettings(settingsSection())
         val context = host.context
         fun apply(on: Boolean) {
             try {

@@ -21,8 +21,14 @@ with cargo-ndk on the first try (no C deps; needs only liblog/libc/libm/libdl). 
 
 ## Done
 
-- **Receiver**: AirPlay 2 by default (`airplay.mode = ap2`), AirPlay 1 selectable (`ap1`).
-  Advertised as **"Echo Bedside"** (`airplay.name`), port 7000, stable MAC-style id in
+- **Settings page** (`host.registerSettings`, section "AirPlay", order 30): receiver on/off
+  (`airplay.enabled`), name (TEXT, blank = device name), mode (CHOICE: ap1 "AirPlay (remote
+  control)" / ap2 "AirPlay 2 (no remote control)"), and mDNS (`airplay.mdns`, advanced). All are
+  applied live.
+
+- **Receiver**: AirPlay 1 by default (`airplay.mode = ap1`, user decision: remote control works,
+  no multi-room needed), AirPlay 2 selectable (`ap2`). Advertised under `airplay.name`, or the
+  device name (`device.name`, "Echo Show") when that's blank. Port 7000, stable MAC-style id in
   `airplay.hwaddr`, AP2 identity seed + paired peers persisted in `files/airplay/` (so iPhones
   don't re-pair after restarts). Transient pairing (no PIN), like shairport-sync.
 - **Foreground service** `AirPlayService` (`foregroundServiceType="mediaPlayback"`, declared in the
@@ -146,9 +152,9 @@ Debug build, per thread (`/proc/<pid>/task/*/stat` over 15 s while streaming):
 
 ## Needs from the user
 
-- An **iPhone on the same Wi-Fi**: AirPlay to "Echo Bedside" from Control Center / Music for a
-  minute (AP2 buffered path), ideally once more after `adb shell am broadcast -a
-  com.echobedside.airplay.DEBUG --es mode ap1` (AP1 + DACP remote), then back with `--es mode ap2`.
+- An **iPhone on the same Wi-Fi**: AirPlay to "Echo Show" from Control Center / Music for a
+  minute (AP1 + DACP remote: try pause / skip from the Echo), ideally once more with the mode set
+  to AirPlay 2 on the settings page (AP2 buffered AAC path).
 
 ## Device setup
 
