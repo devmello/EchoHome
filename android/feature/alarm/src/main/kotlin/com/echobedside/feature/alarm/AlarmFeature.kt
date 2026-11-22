@@ -39,6 +39,8 @@ object AlarmFeature : EchoFeature {
 
         // Evaluate once every feature is installed (the phase side effects use other services).
         Handler(Looper.getMainLooper()).post {
+            // The ringing / snoozed screen has its own big time and status: no island over it.
+            host.services.island.hideOnScreen(RealAlarmStore.SCREEN_ID)
             alarms.evaluate("start")
             timers.start()
         }
