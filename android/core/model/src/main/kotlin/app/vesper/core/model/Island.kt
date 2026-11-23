@@ -46,6 +46,10 @@ enum class ActivityKind(val priority: Int, val alertByDefault: Boolean) {
     PHONE_BATTERY(28, false),
     /** The camera is checking who's there (a short burst), then "Hi <name>" for 3 s; above music so it's seen. */
     FACE_CHECK(55, false),
+    /** A reminder is due now (Done / Snooze 10 min). */
+    REMINDER(64, true),
+    /** Reminders nobody answered while they were due; stays until Done. Below music and timers. */
+    REMINDER_MISSED(32, false),
 }
 
 /** What the island shows. The renderer lays out compact (44 px) and expanded forms per type. */
@@ -105,6 +109,13 @@ sealed interface LiveContent {
      * turns into "Loaded preferences". [startedAtElapsed] (SystemClock.elapsedRealtime()) times that.
      */
     data class FaceHello(val name: String, val color: Int, val startedAtElapsed: Long = 0L) : LiveContent
+
+    /**
+     * A reminder ([ActivityKind.REMINDER]: due now) or missed ones ([ActivityKind.REMINDER_MISSED],
+     * [missedCount] ≥ 1; [text] is the newest one's). [dueAtMillis] is wall clock. The producer's
+     * actions are the pills (Done is PRIMARY); a tap elsewhere opens [LiveActivity.ownerScreen].
+     */
+    data class Reminder(val text: String, val dueAtMillis: Long, val missedCount: Int = 0, val person: String? = null) : LiveContent
 }
 
 enum class AssistantPhase { LISTENING, WORKING, SPEAKING }

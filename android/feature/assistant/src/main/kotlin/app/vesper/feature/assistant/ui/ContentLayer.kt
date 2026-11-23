@@ -539,6 +539,8 @@ class ContentLayer(context: Context, private val actions: Actions) : View(contex
         Icon.POWER -> Triple(0xFF30D158.toInt(), 0xFF04210E.toInt(), ICON_POWER)
         Icon.CALENDAR -> Triple(0xFFFF453A.toInt(), Color.WHITE, ICON_CALENDAR)
         Icon.BRIGHTNESS -> Triple(0xFFFFD60A.toInt(), 0xFF3A2A00.toInt(), ICON_SUN)
+        Icon.REMINDER -> Triple(0xFF0A84FF.toInt(), Color.WHITE, ICON_BELL)
+        Icon.LIST -> Triple(0xFF30D158.toInt(), 0xFF04210E.toInt(), ICON_LIST)
     }
 
     private fun ellipsize(s: String, t: SpecText, maxW: Float): String {
@@ -592,6 +594,8 @@ class ContentLayer(context: Context, private val actions: Actions) : View(contex
         const val ICON_ALARM = "M12 5a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm1 3v4.6l3 1.8-1 1.7-4-2.4V8zM3.3 6.6 7.1 3.4l1.3 1.5-3.8 3.2zM16.9 3.4l3.8 3.2-1.3 1.5-3.8-3.2z"
         const val ICON_POWER = "M11 2h2v10h-2zM6.3 5.2l1.4 1.4A6.5 6.5 0 1 0 16.3 6.6l1.4-1.4A8.5 8.5 0 1 1 6.3 5.2z"
         const val ICON_SUN = "M12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10zM11 1h2v3h-2zM11 20h2v3h-2zM1 11h3v2H1zM20 11h3v2h-3zM4.2 5.6l1.4-1.4 2.1 2.1-1.4 1.4zM16.3 17.7l1.4-1.4 2.1 2.1-1.4 1.4zM4.2 18.4l2.1-2.1 1.4 1.4-2.1 2.1zM16.3 6.3l2.1-2.1 1.4 1.4-2.1 2.1z"
+        const val ICON_BELL = "M12 2.5a6 6 0 0 0-6 6c0 5.8-2.2 8-3 8.8V18h18v-.7c-.8-.8-3-3-3-8.8a6 6 0 0 0-6-6zM9.4 19.5a2.7 2.7 0 0 0 5.2 0z"
+        const val ICON_LIST = "M3 4.5h4.5V9H3zM10 5.75h11v2H10zM3 10.75h4.5v4.5H3zM10 12h11v2H10zM3 17h4.5v4.5H3zM10 18.25h11v2H10z"
         const val ICON_CALENDAR = "M7 2h2v2h6V2h2v2h2a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2zM5 9v10h14V9z"
     }
 }

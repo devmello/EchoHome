@@ -24,6 +24,7 @@ import app.vesper.feature.assistant.AssistantFeature
 import app.vesper.feature.camera.CameraFeature
 import app.vesper.feature.clock.ClockFeature
 import app.vesper.feature.home.HomeFeature
+import app.vesper.feature.lists.ListsFeature
 import app.vesper.feature.media.MediaFeature
 import app.vesper.feature.phone.PhoneFeature
 import app.vesper.feature.photos.PhotosFeature
@@ -43,7 +44,7 @@ import kotlinx.coroutines.launch
  * install from a set-up one by looking at the settings store before anything else writes to it.
  */
 val FeatureList: List<VesperFeature> = listOf(
-    SetupFeature, SystemFeature, PhoneFeature, AirPlayFeature, MediaFeature, AlarmFeature, HomeFeature,
+    SetupFeature, SystemFeature, PhoneFeature, AirPlayFeature, MediaFeature, AlarmFeature, HomeFeature, ListsFeature,
     AssistantFeature, CameraFeature, PhotosFeature, ClockFeature, SettingsFeature,
 )
 

@@ -529,6 +529,12 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
                 tickIn = minOf(tickIn, SPINNER_FRAME_MS)
                 return false to true
             }
+            is LiveContent.Reminder -> {
+                val missed = ct.missedCount > 0
+                Icons.bell.drawCentered(c, 23f, cy, 24f, ink(if (missed) RED else BLUE, alpha), paint)
+                val text = if (ct.missedCount > 1) "${ct.missedCount} missed" else if (missed) "Missed: ${ct.text}" else ct.text
+                tLabel.drawRight(c, tLabel.ellipsize(text, bw - 60f), right, tLabel.baselineCentered(cy), ink(Color.WHITE, alpha))
+            }
             is LiveContent.FaceHello -> {
                 avatar(c, 23f, cy, 28f, ct, alpha)
                 // "Hi Maya" slides up and out as "Loaded preferences" slides up into place.
@@ -591,6 +597,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
             is LiveContent.PhoneBattery -> Icons.handset.drawCentered(c, cx, cy, 22f, ink(batteryColor(ct.percent, ct.charging == true), alpha), paint)
             is LiveContent.FaceCheck -> { spinner(c, cx, cy, 20f, alpha); tickIn = minOf(tickIn, SPINNER_FRAME_MS); return true }
             is LiveContent.FaceHello -> avatar(c, cx, cy, 28f, ct, alpha)
+            is LiveContent.Reminder -> Icons.bell.drawCentered(c, cx, cy, 22f, ink(if (ct.missedCount > 0) RED else BLUE, alpha), paint)
         }
         return false
     }
@@ -782,6 +789,34 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
                 tLeaveTitle.draw(c, tLeaveTitle.ellipsize(ct.title, textW), textL, tLeaveTitle.baselineIn(top, lh1), ink(Color.WHITE, alpha))
                 val sub = "Leave by ${clockText(ct.leaveAtMillis)} · ${ct.travelMinutes} min drive"
                 tTimerLabel.draw(c, tTimerLabel.ellipsize(sub, textW), textL, tTimerLabel.baselineIn(top + lh1 + 2f, lh2), ink(0xFFFFB340.toInt(), alpha))
+            }
+            is LiveContent.Reminder -> {
+                // like Leave now: padding 24, gap 16: disc 64 + bell, title 26/800 over "Reminder · 7:00 PM", the producer's pills
+                val missed = ct.missedCount > 0
+                circleButton(c, 24f, cy - 32f, 64f, if (missed) RED else BLUE, alpha)
+                Icons.bell.drawCentered(c, 24f + 32f, cy, 32f, if (night) withAlpha(Color.BLACK, alpha) else withAlpha(Color.WHITE, alpha), paint)
+                var x = bw - 24f + 10f
+                for (act in a.actions.take(2).reversed()) {
+                    val pw = 22f * 2 + tButton.width(act.label)
+                    x -= 10f + pw
+                    rect.set(x, cy - 24f, x + pw, cy + 24f)
+                    paint.shader = null; paint.style = Paint.Style.FILL
+                    val primary = act.style == IslandAction.Style.PRIMARY
+                    paint.color = ink(if (primary) BLUE else withAlpha(Color.WHITE, 0.18f), alpha)
+                    c.drawRoundRect(rect, 24f, 24f, paint)
+                    tButton.draw(c, act.label, x + 22f, tButton.baselineCentered(cy), if (night && primary) withAlpha(Color.BLACK, alpha) else ink(Color.WHITE, alpha))
+                    button(ox + x, oy + cy - 24f, pw, 48f) { invoke(act, true) }
+                }
+                val textL = 24f + 64f + 16f
+                val textW = (x - 16f - textL).coerceAtLeast(0f)
+                val title = if (ct.missedCount > 1) "${ct.missedCount} missed reminders" else ct.text
+                val sub = (if (missed) "Missed" else "Reminder") + (ct.person?.let { " for $it" } ?: "") + " · " + clockText(ct.dueAtMillis)
+                val lh1 = tLeaveTitle.normalLineHeight; val lh2 = tTimerLabel.normalLineHeight
+                val top = cy - (lh1 + lh2 + 2f) / 2f
+                tLeaveTitle.draw(c, tLeaveTitle.ellipsize(title, textW), textL, tLeaveTitle.baselineIn(top, lh1), ink(Color.WHITE, alpha))
+                tTimerLabel.draw(c, tTimerLabel.ellipsize(sub, textW), textL, tTimerLabel.baselineIn(top + lh1 + 2f, lh2), ink(if (missed) 0xFFFF8A80.toInt() else 0xFF8CC8FF.toInt(), alpha))
+                // the rest of the island opens the Lists screen
+                button(ox, oy, x, bh) { setLayout(model.collapse()); a.ownerScreen?.let { s.navigator.show(it) } }
             }
             is LiveContent.Assistant, is LiveContent.AirPlayConnected, is LiveContent.BluetoothConnected,
             is LiveContent.RainSoon, is LiveContent.PhoneBattery, is LiveContent.FaceCheck,
