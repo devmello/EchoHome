@@ -28,7 +28,7 @@ There's no board in `design/` for this. The screen is built from the glass desig
 - **Alerts** (`ReminderAlerts`):
   - A newly due reminder plays a synthesised three-note bell (1.6 s, USAGE_ALARM, `Chime.kt`) unless Do Not Disturb is on or the "Chime for reminders" setting is off. Volume is 0.55, or 0.18 in Night.
   - Banner `reminder:<id>` (Reminders, bell) with Done (primary) and Snooze 10 min. It's taken down when the reminder is no longer due.
-  - Island `reminder:<id>` (REMINDER, Snooze 10 min / Done) while it's due.
+  - Island `reminder:<id>` (REMINDER, Snooze 10 min / Done) while it's due. It's published with `alert = false` while the reminder has a banner (the banner is the alert; an alert activity would expand to 580×112 and repeat Done / Snooze under it), and `alert = true` only when there's no banner (due before the app started). The screen-off overlay still wakes for any REMINDER.
   - One `reminder:missed` (REMINDER_MISSED) with the count and the newest text: Done if there's one, Show (opens `lists`) if there are more. `ownerScreen` is `lists`.
 - **Island rendering** (`:feature:system`):
   - Compact 250×44: bell plus text, "Missed: …" or "N missed".
@@ -74,7 +74,7 @@ There's no board in `design/` for this. The screen is built from the glass desig
 - Repeating reminders ("every Monday") and location reminders aren't supported. The tools say so through BAD_TIME or the model's reply.
 
 ## Not verified on the Echo
-- Everything on the device: the screen's look and touch handling, the chime's loudness on USAGE_ALARM, and the island and banner together. REMINDER is an alert kind, so the island may auto-expand while the banner shows.
+- Everything on the device: the screen's look and touch handling, the chime's loudness on USAGE_ALARM, and the island and banner together (the island stays compact while the banner shows; fixed Nov 23, unit-tested in `ReminderAlertsTest`).
 - The exact alarm firing in Doze and after a reboot.
 - The web page's TEXT_LIST round trip.
 - Memory and CPU (no `echo-perf.sh` run).

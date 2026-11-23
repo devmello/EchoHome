@@ -19,6 +19,7 @@ import java.time.ZoneId
  *  - newly due: the chime (unless Do Not Disturb; quieter in Night mode; setting `reminders.chime`)
  *    and a banner with Done (tinted) and Snooze 10 min. The banner is the alert; Do Not Disturb hides it.
  *  - due: a REMINDER island activity per reminder (compact bell + text; tap to expand Done / Snooze).
+ *    It doesn't expand on its own while the reminder has a banner ([islandAlerts]).
  *  - missed: one REMINDER_MISSED activity ("Missed: …" or "3 missed"), below music, until Done.
  * Island activities open the Lists screen and hide while it's showing (it shows them itself).
  */
@@ -45,7 +46,7 @@ internal class ReminderAlerts(private val services: VesperServices, private val 
         for ((id, v) in want) {
             if (published[id] == v.second) continue
             published[id] = v.second
-            island.publish(LiveActivity(id, v.first, v.second, actions(id, missed), ownerScreen = ListsFeature.SCREEN_ID))
+            island.publish(LiveActivity(id, v.first, v.second, actions(id, missed), alert = islandAlerts(id), ownerScreen = ListsFeature.SCREEN_ID))
         }
 
         // banners only while due
@@ -53,6 +54,15 @@ internal class ReminderAlerts(private val services: VesperServices, private val 
         for (b in banners - due) services.notifications.dismiss(b)
         banners.retainAll(due)
     }
+
+    /**
+     * An alert activity expands on its own (580×112 at the top), which would repeat the banner's
+     * Done / Snooze right under it. So a due reminder alerts in the island only when it has no
+     * banner: due before this process started (the banner is posted when it falls due), or the
+     * banner was dismissed before the island got it. Missed ones never alert.
+     */
+    private fun islandAlerts(islandId: String): Boolean =
+        islandId != ISLAND_MISSED && BANNER_PREFIX + islandId.removePrefix(ISLAND_PREFIX) !in banners
 
     private fun actions(islandId: String, missed: List<Reminder>): List<IslandAction> {
         if (islandId == ISLAND_MISSED) {
