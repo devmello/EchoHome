@@ -18,6 +18,8 @@ object MediaSettings {
     const val PAUSED_DRIFT = "media.pausedDrift"
     /** Show the MUSIC live activity in the island. */
     const val ISLAND = "media.island"
+    /** Live lyrics from lrclib.net on Now Playing. */
+    const val LYRICS = "media.lyrics"
 
     val section = SettingsSection(
         id = "media",
@@ -33,6 +35,10 @@ object MediaSettings {
                 help = "A small player at the top of other screens while music is playing.",
             ),
             SettingSpec(
+                LYRICS, "Live lyrics", SettingType.BOOLEAN, "true",
+                help = "Shows synced lyrics on Now Playing. The song title and artist (plus album and length) are sent to lrclib.net to look them up; nothing else is.",
+            ),
+            SettingSpec(
                 PAUSED_DRIFT, "Keep the background moving while paused", SettingType.BOOLEAN, "false",
                 help = "Off: the colours behind Now Playing settle 30 seconds after you pause, so the screen draws nothing.",
             ),
@@ -41,6 +47,7 @@ object MediaSettings {
 
     fun otherApps(s: SettingsStore) = s.getBoolean(OTHER_APPS, true)
     fun island(s: SettingsStore) = s.getBoolean(ISLAND, true)
+    fun lyrics(s: SettingsStore) = s.getBoolean(LYRICS, true)
     fun pausedDrift(s: SettingsStore) = s.getBoolean(PAUSED_DRIFT, false)
 
     /** The current value of [key], then every change to it. */
