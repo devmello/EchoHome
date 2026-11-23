@@ -24,6 +24,7 @@ import app.vesper.core.model.MediaSession
 import app.vesper.core.model.NextAlarm
 import app.vesper.core.model.NightMode
 import app.vesper.core.model.Profile
+import app.vesper.core.model.SleepSounds
 import app.vesper.core.model.SwitchReason
 import app.vesper.core.model.SystemState
 import app.vesper.core.model.observeWhileAttached
@@ -625,7 +626,8 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
             Hit.PREV -> media?.controls?.previous()
             Hit.PLAY -> media?.let { if (it.state.playing) it.controls.pause() else it.controls.play() }
             Hit.NEXT -> media?.controls?.next()
-            Hit.MEDIA -> { requestClose(); s.navigator.show("nowplaying") }
+            // the sleep sound (or nothing loaded) opens the Sleep screen, any other source Now Playing
+            Hit.MEDIA -> { requestClose(); s.navigator.show(if (media?.sourceId == SleepSounds.SOURCE_ID || (media == null && !ui.demo)) SleepSounds.SCREEN_ID else "nowplaying") }
             Hit.DND -> c.setDoNotDisturb(!state.doNotDisturb)
             Hit.NIGHT -> c.setNightMode(if (state.nightMode == NightMode.OFF) NightMode.AUTO else NightMode.OFF)
             Hit.MIC -> c.setMicMuted(!state.micMutedSoftware)

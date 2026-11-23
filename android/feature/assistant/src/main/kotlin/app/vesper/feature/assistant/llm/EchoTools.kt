@@ -205,6 +205,7 @@ internal class EchoTools(
             "now_playing" to ("nowplaying" to null),
             "timers" to ("timers" to null),
             "lists" to ("lists" to null),
+            "sleep" to ("sleep" to null),
             "commute" to ("commute" to null),
             "stocks" to ("stocks" to null),
             "home" to ("home" to null),
@@ -213,7 +214,7 @@ internal class EchoTools(
             "phone" to ("phone-pairing" to null),
             "settings" to ("settings-pair" to null),
         )
-        private val SCREEN_TITLES = mapOf("now_playing" to "Now playing", "phone" to "iPhone", "lists" to "Reminders & lists")
+        private val SCREEN_TITLES = mapOf("now_playing" to "Now playing", "phone" to "iPhone", "lists" to "Reminders & lists", "sleep" to "Sleep sounds")
 
         fun resolveTimer(list: List<VesperTimer>, input: JSONObject): VesperTimer? {
             val id = input.optString("timer_id", "")

@@ -67,6 +67,8 @@ class VesperServices(
     var reminders: ReminderStore = InMemoryReminderStore()
     /** Shopping and other lists (`:feature:lists` binds the persisted store). */
     var lists: ListStore = InMemoryListStore()
+    /** Sleep sounds and the bedtime routine (`:feature:sleep` binds the player). */
+    var sleep: SleepSounds = NoSleepSounds
     /** Home location (see [HomeLocation]); `:feature:home` binds manual > auto > San Francisco. */
     var location: StateFlow<HomeLocation> = MutableStateFlow(HomeLocation.default(config.demoData))
 

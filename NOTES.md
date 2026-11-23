@@ -86,6 +86,7 @@ All artboards are **960×480**, the Echo's native resolution, so the px values m
 | Echo Island (live) | `Island.dc.html` | Designed | Dynamic-Island-style live surface. Tweaks: `scene` (Story cycle, Timer, Music + timer, Assistant, Doorbell, Call, Now Playing expanded), `look` (Liquid Glass / Black), `background`. Tap to expand. See §5.4. |
 | Echo Island (states sheet) | `IslandSheet.dc.html` | Designed | 1440×1060 spec sheet: all island states side by side, with sizes. |
 | Lamp | `Lamp.dc.html` | Designed (redesigned Nov 23, 2026) | One light in detail, opened by a long press on the Home lamp tile. Tall glass brightness slider filled with the light's own colour, On/Off pill, warm ↔ cool track with 7 colour swatches (5 whites on white-only lights, brightness steps on dim-only), Reading / Relax / Night light presets, the room's other lights with switches. Tweaks: `kind` (Colour / White / Dim only), `night`. |
+| Sleep sounds | none (built in code, `:feature:sleep` `ui/SleepScreen.kt`) | **Built, no artboard** | Screen `sleep` (pager, after Now Playing). Seven sound tiles (Rain, Ocean, Fan, Crickets; White, Pink, Brown noise) as glass controls over a night gradient, a sleep-timer platter (15 / 30 / 60 / 90 / Off), Play or Pause + Stop, and the tinted primary "Good night" (the bedtime routine). Sounds are synthesised on the device. Night: red. `--es screen sleep --es sound rain`. |
 | First-run setup | none (built in code, `:feature:settings` `setup/`) | **Built, no artboard** | Screen `onboarding`, 8 pages: Welcome, Wi-Fi, Name, Location (°F/°C, 12/24 h), Your phone (QR to the settings page), People (name, colour, face), Clock and Night, Done (tour). Glass sheet over a pre-blurred wallpaper, page dots, Back / Next. Shows on a fresh install only; `--es screen onboarding --es step <n>` to review; "Run setup again" on the settings page. See `docs/status/settings.md`. |
 
 **All data in the designs is sample data:** weather, events, the "Santa Cruz" location, world-clock cities, the 7:00 alarm, and the tracks/artists/album art (all made up, original artwork). **"Hey Nova" is a placeholder wake word.**
@@ -95,7 +96,7 @@ All artboards are **960×480**, the Echo's native resolution, so the px values m
 - **System:** first-run setup (built in code without an artboard, see the table above; an artboard would let it be reviewed), software update, offline and error states, settings.
 - **Communication:** full-screen incoming call and video call, full-screen doorbell with live camera, intercom/announcement. (The island already has compact/expanded doorbell and call states.)
 - **Home:** camera grid, lock confirmation, thermostat detail.
-- **Everyday:** reminders and shopping list, sleep sounds / wind-down.
+- **Everyday:** reminders and shopping list (built in code, see `docs/status/lists.md`), sleep sounds / wind-down (built in code without an artboard, see `docs/status/sleep.md`).
 
 ---
 

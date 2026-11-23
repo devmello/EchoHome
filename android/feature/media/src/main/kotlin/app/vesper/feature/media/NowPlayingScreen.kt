@@ -26,6 +26,7 @@ import app.vesper.core.model.MediaControls
 import app.vesper.core.model.MediaSession
 import app.vesper.core.model.MediaState
 import app.vesper.core.model.MediaSourceKind
+import app.vesper.core.model.SleepSounds
 import app.vesper.core.model.observeWhileAttached
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -245,6 +246,9 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
             info.showTrack = true
             ambient.blobsVisible = true
         }
+        // Sleep sounds (`:feature:sleep`) have no lyrics: no button, no LRCLIB lookups.
+        if (lyricsEnabled) lyricsBtn.visibility = if (s.sourceId == SleepSounds.SOURCE_ID) INVISIBLE else VISIBLE
+        if (s.sourceId == SleepSounds.SOURCE_ID) setLyricsMode(false)
         val key = "${s.sourceId}|${st.title}|${st.artist}|${st.album}|${System.identityHashCode(st.artwork)}"
         if (key != trackKey) {
             trackKey = key
@@ -294,7 +298,7 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
 
     private fun setLyricsMode(on: Boolean) {
         if (on == lyricsMode) return
-        if (on && (!lyricsEnabled || session == null)) return
+        if (on && (!lyricsEnabled || session == null || session?.sourceId == SleepSounds.SOURCE_ID)) return
         lyricsMode = on
         lyricsBtn.open = on
         // The title and artist crossfade into the lyrics (which sit in their place); the scrubber
@@ -335,7 +339,7 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
 
     /** Debounced like the lyrics load (titles and artists often arrive in parts). */
     private fun schedulePrefetch(st: MediaState) {
-        if (!lyricsEnabled || !st.playing || st.title.isBlank()) return
+        if (!lyricsEnabled || !st.playing || st.title.isBlank() || session?.sourceId == SleepSounds.SOURCE_ID) return
         if (lyricsKeyOf(st) == prefetchKey) return
         main.removeCallbacks(prefetch)
         main.postDelayed(prefetch, LYRICS_DEBOUNCE_MS)
