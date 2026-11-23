@@ -28,6 +28,7 @@ import app.vesper.feature.media.MediaFeature
 import app.vesper.feature.phone.PhoneFeature
 import app.vesper.feature.photos.PhotosFeature
 import app.vesper.feature.settings.SettingsFeature
+import app.vesper.feature.settings.setup.SetupFeature
 import app.vesper.feature.system.SystemFeature
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,9 +37,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/** Install order: providers first, the clock (main consumer) last. See VesperFeature. */
+/**
+ * Install order: providers first, the clock (main consumer) last. See VesperFeature.
+ * [SetupFeature] (first-run setup, in `:feature:settings`) must stay first: it tells a fresh
+ * install from a set-up one by looking at the settings store before anything else writes to it.
+ */
 val FeatureList: List<VesperFeature> = listOf(
-    SystemFeature, PhoneFeature, AirPlayFeature, MediaFeature, AlarmFeature, HomeFeature,
+    SetupFeature, SystemFeature, PhoneFeature, AirPlayFeature, MediaFeature, AlarmFeature, HomeFeature,
     AssistantFeature, CameraFeature, PhotosFeature, ClockFeature, SettingsFeature,
 )
 

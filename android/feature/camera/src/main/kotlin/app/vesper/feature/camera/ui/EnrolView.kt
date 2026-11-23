@@ -63,12 +63,16 @@ class EnrolView(
     private var last: EnrolSample? = null
     private var flashUntil = 0L
 
+    private var returnTo: String? = null
+
     private val primary = RectF()
     private val secondary = RectF()
 
     override fun onScreenShown(args: Bundle?) {
         val id = args?.getString("profile")
         if (id == null && person != null) { if (step == Step.CAPTURE) startCapture(keepProgress = true); return }
+        // `--es return <screen>`: where Done / Cancel go (the first-run setup), else Profiles.
+        returnTo = args?.getString("return")
         person = manager.profiles.value.firstOrNull { it.id == id && it.id != Profile.SHARED_ID }
             ?: manager.profiles.value.firstOrNull { it.id != Profile.SHARED_ID }
         step = Step.CONSENT
@@ -254,7 +258,7 @@ class EnrolView(
 
     private fun close() {
         main.removeCallbacksAndMessages(null)
-        services.navigator.show("profiles")
+        services.navigator.show(returnTo ?: "profiles")
     }
 
     companion object {
