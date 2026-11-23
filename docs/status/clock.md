@@ -159,8 +159,6 @@ Measured on the Echo (debug build, `echo-perf.sh`; swipes are raw `sendevent` on
   - `widgets-default.png` (Clock + Weather)
   - `widgets-swipe-left.png`, `widgets-swipe-right.png` (after `input swipe`)
   - `widgets-calendar-alarm.png`
-  - `widgets-timers-nowplaying.png` (a running timer and Bluetooth Now Playing with art)
-  - `widgets-notplaying-calendar.png`
   - `widgets-air-sunmoon.png`
 - A horizontal swipe on a tile pages (widgets → Now Playing, StandBy → widgets), checked by screenshot.
 - **Unverified on the device**:
