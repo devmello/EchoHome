@@ -18,6 +18,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.MessageQueue
 import android.os.SystemClock
+import android.text.format.DateFormat
 import android.util.Log
 import android.view.MotionEvent
 import android.view.VelocityTracker
@@ -98,9 +99,14 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
     private var overlay: EditOverlay? = null
     private var dimAnim: ValueAnimator? = null
 
+    // Night sun / moon and the recognised person's line (Extras.kt); drawn over the faces
+    private val astro = AstroView(context)
+    private val personal = PersonalView(context)
+
     private val timeReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
             for (b in built.values) if (b.face.view.visibility == VISIBLE) b.face.onTimeChanged()
+            refreshExtras()
         }
     }
     private val longPress = Runnable { longPressed = true; tracking = false; setEditing(true) }
@@ -113,15 +119,23 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         addView(stage, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         // Parked neighbours sit just outside the stage; clipChildren only clips each face to its
         // own (translated) bounds, so clip the stage itself (shows once it's zoomed out in edit mode).
+        stage.addView(astro, LayoutParams(AstroView.W.toInt(), AstroView.H.toInt()))
+        stage.addView(personal, LayoutParams(PersonalView.W.toInt(), PersonalView.H.toInt()))
+        astro.visibility = GONE
         stage.addOnLayoutChangeListener { v, l, t, r, b, _, _, _, _ -> v.clipBounds = android.graphics.Rect(0, 0, r - l, b - t) }
         observeWhileAttached(services.faces.faces) { list ->
             releaseBuilt(list.mapTo(HashSet()) { it.id })
             if (current == null || services.faces.byId(current!!.spec.id) == null) showFace(selectedFaceId(), persist = false) else { arrange(); syncOverlay() }
         }
-        observeWhileAttached(services.profiles.active) { followProfile() }
+        observeWhileAttached(services.profiles.active) { followProfile(); refreshExtras() }
+        observeWhileAttached(services.alarms.alarms) { refreshExtras() }
+        observeWhileAttached(services.alarms.next) { refreshExtras() }
+        observeWhileAttached(services.calendar.events) { refreshExtras() }
+        observeWhileAttached(services.weather.weather) { refreshExtras() }
+        observeWhileAttached(services.location) { refreshExtras() }
         // the web settings page (or this screen) changed a choice: apply it live
-        observeWhileAttached(services.settings.changes) { k -> if (ClockSettings.affectsStandby(k)) followProfile() }
-        observeWhileAttached(services.profiles.profiles) { followProfile() }
+        observeWhileAttached(services.settings.changes) { k -> if (ClockSettings.affectsStandby(k)) { followProfile(); refreshExtras() } }
+        observeWhileAttached(services.profiles.profiles) { followProfile(); refreshExtras() }
         observeWhileAttached(services.system.state) { st ->
             val n = st.nightActive
             if (n != nightOn) {
@@ -129,6 +143,7 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
                 if (!n) awakeUntil = 0
                 reconfigure()
                 applyDim(animate = true)
+                refreshExtras()
             }
             syncOverlay()
         }
@@ -201,7 +216,7 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         val t0 = SystemClock.uptimeMillis()
         val f = spec.factory(context)
         f.setConfig(configFor(spec))
-        stage.addView(f.view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        stage.addView(f.view, 0, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)) // under the extras
         f.onTimeChanged()
         if (services.config.debug) Log.d("VesperClock", "created face ${spec.id} in ${SystemClock.uptimeMillis() - t0} ms")
         return Slot(spec, f).also { built[spec.id] = it }
@@ -235,6 +250,7 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
             if (d in -1..1) { v.translationY = d * h; v.visibility = VISIBLE } else v.visibility = INVISIBLE
         }
         syncFaceLayers()
+        refreshExtras()
     }
 
     /**
@@ -373,6 +389,48 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         neighbour = obtain(faces()[index])
         neighbour!!.face.view.translationY = neighbourDir * stage.height.toFloat()
         animateStage(0f, -neighbourDir * stage.height.toFloat()) { neighbour?.let { becomeCurrent(it, persist) } }
+    }
+
+    // ------------------------------------------------------------------ extras
+
+    /**
+     * Night sun / moon and the personal line. Called on the minute tick and when any input changes
+     * (profile, alarms, events, weather, location, Night, the current face); each view only
+     * invalidates when its text changed. Hidden while faces slide.
+     */
+    private fun refreshExtras() {
+        val cur = current ?: return
+        val now = System.currentTimeMillis()
+        val slots = ExtrasLayout.forFace(cur.spec.id)
+        val sliding = dragging || switchAnim != null || neighbour != null
+        val is24 = DateFormat.is24HourFormat(context)
+
+        val showAstro = nightOn && slots.astroShown && services.settings.getBoolean(ClockSettings.KEY_NIGHT_ASTRO, true) &&
+            (!cur.spec.supportsComplications || services.settings.getBoolean(ClockSettings.complicationsKey(cur.spec.id), true))
+        if (showAstro) {
+            val loc = services.location.value
+            val w = services.weather.weather.value
+            val reported = if (w?.sunriseMillis != null && w.sunsetMillis != null) w.sunriseMillis!! to w.sunsetMillis!! else null
+            val sun = SunTimes.next(now, loc.lat, loc.lon, java.util.TimeZone.getDefault(), reported)
+            astro.update(now, sun, is24, loc.lat)
+            astro.translationX = slots.astro.x; astro.translationY = slots.astro.y
+        }
+        astro.visibility = if (showAstro && !sliding) VISIBLE else GONE
+
+        val p = if (services.settings.getBoolean(ClockSettings.KEY_PERSONAL_LINE, true)) profile() else null
+        if (p == null) personal.bind(null, null, 0, null, null, nightOn)
+        else {
+            val alarmAt = Personal.alarmFor(p.id, services.alarms.alarms.value, services.alarms.next.value, now)
+            val alarmText = alarmAt?.let { (if (Personal.isTomorrowOrLater(it, now) && it - now > 24 * 3_600_000L) DAYS[java.util.Calendar.getInstance().apply { timeInMillis = it }.get(java.util.Calendar.DAY_OF_WEEK) - 1] + " " else "") + formatClock(it, is24) }
+            val ev = Personal.eventFor(p.id, services.calendar.events.value, now)
+            val eventText = ev?.let { e ->
+                val day = if (Personal.isTomorrowOrLater(e.startMillis, now)) " Tmrw" else ""
+                "${e.title}$day ${formatClock(e.startMillis, is24)}"
+            }
+            personal.bind(p.id, p.name, p.color, alarmText, eventText, nightOn)
+        }
+        personal.translationX = slots.personal.x; personal.translationY = slots.personal.y
+        personal.setSuppressed(sliding)
     }
 
     // ------------------------------------------------------------------ night
@@ -637,6 +695,11 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
             str("wallpaper")?.let { services.settings.putString(GlassFace.KEY_WALLPAPER, it) }
             reconfigure()
         }
+        // debug: a 6:15 alarm owned by Maya (to see the personal line), `off` removes it again
+        if (services.config.debug) str("fakealarm")?.let { v ->
+            if (v == "on") services.alarms.upsert(app.vesper.core.model.Alarm("debug-maya", 6, 15, label = "Maya", sunrise = false, profileId = "maya"))
+            else services.alarms.delete("debug-maya")
+        }
         if (services.config.debug) str("fakelux")?.toFloatOrNull()?.let { Log.i("VesperClock", "fake lux $it"); night.onLux(it) }
         when (str("edit")) {
             "true" -> setEditing(true, animate = false)
@@ -667,6 +730,7 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
     }
 
     companion object {
+        private val DAYS = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
         private const val EDIT_SCALE = 0.8f
         private const val EDIT_RADIUS = 34f
         /** Pivot so the 0.8× face lands at (96, 40), as in Customize.dc.html. */

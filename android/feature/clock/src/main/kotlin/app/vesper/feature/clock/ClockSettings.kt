@@ -21,12 +21,14 @@ object ClockSettings {
     const val KEY_NIGHT_DELAY_SEC = "clock.night.delaySec"
     const val KEY_NIGHT_START = "clock.night.start"
     const val KEY_NIGHT_END = "clock.night.end"
+    const val KEY_NIGHT_ASTRO = "clock.night.astro"
+    const val KEY_PERSONAL_LINE = "clock.personalLine"
     const val DEFAULT_NIGHT_START = "22:00"
     const val DEFAULT_NIGHT_END = "07:00"
 
     /** Keys whose change StandBy applies to the face on screen. */
     fun affectsStandby(key: String) =
-        key == KEY_FACE || key.startsWith("clock.color.") || key.startsWith("clock.complications.")
+        key == KEY_FACE || key == KEY_NIGHT_ASTRO || key == KEY_PERSONAL_LINE || key.startsWith("clock.color.") || key.startsWith("clock.complications.")
 
     fun section(faces: List<FaceSpec>) = SettingsSection(
         id = "clock",
@@ -56,6 +58,10 @@ object ClockSettings {
             add(SettingSpec(KEY_NIGHT_START, "Night: from", SettingType.TIME, default = DEFAULT_NIGHT_START,
                 help = "Used when Night mode is On a schedule."))
             add(SettingSpec(KEY_NIGHT_END, "Night: until", SettingType.TIME, default = DEFAULT_NIGHT_END))
+            add(SettingSpec(KEY_NIGHT_ASTRO, "Night: show sun and moon", SettingType.BOOLEAN, default = "true",
+                help = "A small line with the moon phase and sunrise / sunset on the Night face."))
+            add(SettingSpec(KEY_PERSONAL_LINE, "Show a personal line", SettingType.BOOLEAN, default = "true",
+                help = "When someone is recognised: their next alarm and event, under their face."))
             add(SettingSpec(KEY_NIGHT_ENTER_LUX, "Night: dark below (lux)", SettingType.FLOAT, default = "3",
                 min = 0f, max = 50f, step = 0.5f, advanced = true))
             add(SettingSpec(KEY_NIGHT_LEAVE_LUX, "Night: bright above (lux)", SettingType.FLOAT, default = "10",
