@@ -46,7 +46,8 @@ class VesperTools(
             "list_timers" -> ToolOutcome(JSONObject().put("timers", timersJson(s.timers.timers.value)))
             "cancel_timer" -> cancelTimer(s, input)
             "set_alarm" -> setAlarm(s, input)
-            "list_alarms" -> ToolOutcome(JSONObject().put("alarms", JSONArray(s.alarms.alarms.value.map(::alarmJson)))
+            "list_alarms" -> ToolOutcome(JSONObject().put("alarms", JSONArray(s.alarms.alarms.value.map { alarmJson(it, alarmOwner(s, it)) }))
+                .put("recognized", recognizedName(s) ?: JSONObject.NULL)
                 .put("next", s.alarms.next.value?.let { n -> JSONObject().put("alarm_id", n.alarm.id).put("at", iso(n.triggerAtMillis)).also { o -> n.reason?.let { o.put("reason", it) } } }))
             "update_alarm" -> updateAlarm(s, input)
             "delete_alarm" -> deleteAlarm(s, input)
@@ -107,12 +108,20 @@ class VesperTools(
             leaveBy = input.optBoolean("leave_by", false),
             readyMinutes = if (input.has("ready_minutes")) input.getInt("ready_minutes") else 45,
             skipHolidays = input.optBoolean("skip_holidays", false),
-            profileId = s.profiles.active.value.id.takeIf { it != Profile.SHARED_ID && input.optBoolean("mine", false) },
+            // The recognised person's own alarm unless they asked for a shared one (it rings for anyone either way).
+            profileId = alarmOwnerFor(s.profiles.active.value.id, input.optBoolean("shared", false)),
         )
         s.alarms.upsert(a)
-        return ToolOutcome(JSONObject().put("alarm", alarmJson(a)),
-            card = ResultCard.Action(a.label, "${clock(a.hour, a.minute)}${repeatText(a.days)}${if (a.leaveBy) " · leave-by" else ""}", Icon.ALARM))
+        val who = a.profileId?.let { id -> s.profiles.profiles.value.firstOrNull { it.id == id }?.name }
+        return ToolOutcome(JSONObject().put("alarm", alarmJson(a, alarmOwner(s, a))),
+            card = ResultCard.Action(a.label, "${clock(a.hour, a.minute)}${repeatText(a.days)}${if (a.leaveBy) " · leave-by" else ""}${who?.let { " · $it" } ?: ""}", Icon.ALARM))
     }
+
+    /** "shared", or the owner's name (their id if they're gone). */
+    private fun alarmOwner(s: VesperServices, a: Alarm): String =
+        a.profileId?.let { id -> s.profiles.profiles.value.firstOrNull { it.id == id }?.name ?: id } ?: "shared"
+
+    private fun recognizedName(s: VesperServices): String? = s.profiles.active.value.takeIf { it.id != Profile.SHARED_ID }?.name
 
     private fun updateAlarm(s: VesperServices, input: JSONObject): ToolOutcome {
         val old = s.alarms.alarms.value.firstOrNull { it.id == input.getString("alarm_id") }
@@ -141,8 +150,9 @@ class VesperTools(
         return ToolOutcome(JSONObject().put("deleted", a.id), card = ResultCard.Action(a.label, "Deleted", Icon.ALARM))
     }
 
-    private fun alarmJson(a: Alarm) = JSONObject()
+    private fun alarmJson(a: Alarm, owner: String? = null) = JSONObject()
         .put("alarm_id", a.id).put("label", a.label)
+        .also { o -> owner?.let { o.put("owner", it) } }
         .put("time", "%02d:%02d".format(a.hour, a.minute))
         .put("enabled", a.enabled)
         .put("days", JSONArray(a.days.sorted().map { it.name.take(3) }))
@@ -307,6 +317,9 @@ class VesperTools(
     private fun iso(ms: Long) = Instant.ofEpochMilli(ms).atZone(zone()).toLocalDateTime().withNano(0).toString()
 
     companion object {
+        /** set_alarm's owner: the recognised person ([activeId]) unless a [shared] alarm was asked for. */
+        fun alarmOwnerFor(activeId: String, shared: Boolean): String? = activeId.takeIf { it != Profile.SHARED_ID && !shared }
+
         private val WEEKDAYS = setOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)
         val HOME_DOMAINS = setOf("light", "switch", "fan", "cover", "scene", "script", "media_player")
         private val DAY_NAMES = listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
@@ -337,9 +350,9 @@ class VesperTools(
                     "leave_by" to bool("Ring earlier when the day's first calendar event with a place needs it (event start minus travel minus ready_minutes). Never later than the set time."),
                     "ready_minutes" to int("Getting-ready time for leave_by; default 45.", 0, 240),
                     "skip_holidays" to bool("Don't ring on public holidays or all-day holiday / day-off events."),
-                    "mine" to bool("Make it the active person's own alarm instead of a shared one.")),
+                    "shared" to bool("Make it a shared household alarm. By default it belongs to the person the camera recognised (shared if nobody is). Every alarm rings for whoever is in the room.")),
                 listOf("hour", "minute")),
-            ToolSpec("list_alarms", "List the alarms (with their ids) and when the next one rings."),
+            ToolSpec("list_alarms", "List the alarms (with their ids and whose each is: a name or \"shared\"), who is recognised now, and when the next one rings."),
             ToolSpec("update_alarm", "Change an alarm's time, repeat days, or turn it on or off.",
                 props("alarm_id" to str("From list_alarms."), "hour" to int("0-23", 0, 23), "minute" to int("0-59", 0, 59),
                     "enabled" to bool("On or off."), "days" to strArray("Repeat days.", DAY_NAMES),

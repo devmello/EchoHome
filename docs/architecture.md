@@ -35,6 +35,11 @@ Feature modules depend on `:core:model` and `:core:design` only (add `:core:data
 - Island: `ActivityKind.LEAVE_NOW` / `WEATHER_ALERT` / `PHONE_BATTERY` with `LiveContent.LeaveNow` / `RainSoon` / `PhoneBattery` (`:feature:system` renders them).
 - `Banner.actions` (extra expanded-banner buttons) and `NotificationFeed.recent` (last 50 banners, including gone ones).
 
+## Contracts added Nov 23 (per-person preferences)
+
+- `Profile.wallpaper` / `nightMode` / `alarmSound` (all optional, null = follow Shared, i.e. the settings `clock.glass.wallpaper`, `clock.night.mode`, `alarm.sound`). `FaceConfig.wallpaper`: StandBy passes the recognised person's wallpaper to faces with a background.
+- `Alarm.profileId` is used by the Alarms screen, the ringing screen, voice and the web page; every alarm still rings whoever is in the room.
+
 ## How a feature plugs in (no `:app` edits)
 
 Each module has `object XxxFeature : VesperFeature`. `:app` calls `install(host)` once per process, in order setup, system, phone, airplay, media, alarm, home, assistant, camera, photos, clock, settings. **`SetupFeature` (the first-run gate, in `:feature:settings`) stays first:** it tells a fresh install from a set-up one by reading the settings store before any feature writes to it. In `install`:

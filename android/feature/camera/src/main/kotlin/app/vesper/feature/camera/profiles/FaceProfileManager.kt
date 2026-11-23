@@ -155,10 +155,12 @@ class FaceProfileManager(
         const val TIMEOUT_DEFAULT_MIN = 10
 
         /**
-         * Sample people. Maya (orange, the Solar face) differs from the shared StandBy (the Liquid
-         * Glass face), so switching to her visibly changes the clock; the Profiles demo adds her.
+         * Sample people. Maya (orange, the Liquid Glass face on the Dusk wallpaper) differs from the
+         * shared StandBy (Liquid Glass on Blue, white), so switching to her visibly changes the
+         * wallpaper and the tint; the Profiles demo adds her. Her alarms ring with the soft chime.
          */
-        val DEMO_MAYA = Profile("maya", "Maya", 0xFFFF9F0A.toInt(), faceId = "solar", calendarEntity = "calendar.maya")
+        val DEMO_MAYA = Profile("maya", "Maya", 0xFFFF9F0A.toInt(), faceId = "glass", calendarEntity = "calendar.maya",
+            wallpaper = "Dusk", alarmSound = "chime")
         val DEMO = listOf(
             DEMO_MAYA,
             Profile("sam", "Sam", 0xFF30D158.toInt(), faceId = "digital", calendarEntity = "calendar.sam"),
@@ -168,15 +170,20 @@ class FaceProfileManager(
             for (p in list) a.put(JSONObject().apply {
                 put("id", p.id); put("name", p.name); put("color", p.color); put("face", p.faceId)
                 p.calendarEntity?.let { put("calendar", it) }
+                p.wallpaper?.let { put("wallpaper", it) }
+                p.nightMode?.let { put("night", it) }
+                p.alarmSound?.let { put("alarmSound", it) }
             })
         }.toString()
 
+        /** Profiles saved before a field existed load it as null (= follow Shared). */
         fun parse(raw: String): List<Profile> = try {
             val a = JSONArray(raw)
             List(a.length()) { i ->
                 val o = a.getJSONObject(i)
+                fun opt(k: String): String? = if (o.has(k) && !o.isNull(k)) o.getString(k).ifBlank { null } else null
                 Profile(o.getString("id"), o.getString("name"), o.getInt("color"), o.optString("face", "digital"),
-                    if (o.has("calendar")) o.getString("calendar") else null)
+                    opt("calendar"), wallpaper = opt("wallpaper"), nightMode = opt("night"), alarmSound = opt("alarmSound"))
             }
         } catch (e: Exception) { emptyList() }
     }

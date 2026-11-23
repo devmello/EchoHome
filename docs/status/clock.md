@@ -168,3 +168,11 @@ Measured on the Echo (debug build, `echo-perf.sh`; swipes are raw `sendevent` on
   - The 1 Hz timer tick's frame cost on its own (measured only together with other activity).
   - The source of the 3–13 idle frames above.
 - The test timer started with `timer` was cancelled afterwards.
+
+## Nov 23: per-person wallpaper and Night mode
+
+- **`Profile.wallpaper`** (`:core:model`, null = follow Shared): the recognised person's Liquid Glass wallpaper (Blue / Dusk / Graphite). StandBy passes it to the face as `FaceConfig.wallpaper` (only to faces with a background: `glass`), and `GlassFace` uses it over `clock.glass.wallpaper`. The Widgets page bakes the person's wallpaper over `clock.widgets.wallpaper` (Black stays a setting-only choice). Resolution is `PersonPrefs` (pure, `PersonPrefsTest`).
+- **Edit mode wallpaper pill** (no board has one): on Liquid Glass, a glass pill bottom-left, mirroring the colour capsule, "Wallpaper · Dusk" with the palette's colour dot. Each tap picks the next wallpaper, into the recognised person's profile, or `clock.glass.wallpaper` for Shared. The `wallpaper` launch extra writes the same way.
+- **`Profile.nightMode`** (null = follow Shared): `NightController` uses the person's mode while they're active (`auto` / `schedule` / `on` / `off`) and goes back to `clock.night.mode` when they leave. A Night change made then (edit mode, Control Center, the phone remote) goes into their mode if they have one, else the setting, so a person's choice never overwrites everyone's.
+- Demo: `FaceProfileManager.DEMO_MAYA` is now Liquid Glass on **Dusk** in orange (Shared is Liquid Glass on Blue), so `profiles-demo` shows the wallpaper change.
+- **Unverified on the Echo**: all of it (built and unit-tested only). To see it: `--es screen profiles-demo --es step personalized` (Maya on Dusk), then long-press for edit mode and tap the wallpaper pill; `--es screen widgets --es profile maya` for the Widgets page on her wallpaper. The pill's position (22, 410, 44 tall) wasn't checked against the face card's corner on screen.

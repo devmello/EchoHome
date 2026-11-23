@@ -6,6 +6,7 @@ import app.vesper.core.model.SettingsStore
 import app.vesper.core.model.SwitchReason
 import app.vesper.feature.camera.face.FaceTemplates
 import app.vesper.feature.camera.profiles.FaceProfileManager
+import app.vesper.feature.camera.profiles.PersonalStuff
 import app.vesper.feature.camera.profiles.SecretBox
 import app.vesper.feature.camera.profiles.TemplateStore
 import java.io.File
@@ -287,8 +288,52 @@ class FaceProfileManagerTest {
     }
 
     @Test fun jsonRoundTrip() {
-        val l = listOf(Profile("a", "A", 1, "float", "calendar.a"), Profile("b", "B", -2, "digital", null))
+        val l = listOf(Profile("a", "A", 1, "float", "calendar.a"), Profile("b", "B", -2, "digital", null),
+            Profile("c", "C", 3, "glass", null, wallpaper = "Dusk", nightMode = "off", alarmSound = "chime"))
         assertEquals(l, FaceProfileManager.parse(FaceProfileManager.encode(l)))
         assertEquals(emptyList<Profile>(), FaceProfileManager.parse("not json"))
+    }
+
+    @Test fun unsetPreferencesAreNotWritten() {
+        val raw = FaceProfileManager.encode(listOf(Profile("a", "A", 1)))
+        assertFalse(raw.contains("wallpaper")); assertFalse(raw.contains("night")); assertFalse(raw.contains("alarmSound"))
+    }
+
+    /** Profiles saved before per-person preferences existed load them as null (= follow Shared). */
+    @Test fun oldSavedProfilesMigrate() = runTest {
+        settings.putString(FaceProfileManager.KEY_PROFILES,
+            """[{"id":"maya","name":"Maya","color":-24822,"face":"solar","calendar":"calendar.maya"},{"id":"kid","name":"Kid","color":1}]""")
+        val m = manager(demo = true) // saved data wins over the demo seed
+        assertEquals(listOf("shared", "maya", "kid"), m.profiles.value.map { it.id })
+        val maya = m.profiles.value.first { it.id == "maya" }
+        assertEquals("solar", maya.faceId); assertEquals("calendar.maya", maya.calendarEntity)
+        assertNull(maya.wallpaper); assertNull(maya.nightMode); assertNull(maya.alarmSound)
+        assertEquals("digital", m.profiles.value.first { it.id == "kid" }.faceId)
+        // An edit persists the new fields; an empty string reads as unset.
+        m.upsert(maya.copy(wallpaper = "Graphite", nightMode = "schedule"))
+        val again = manager(demo = false).profiles.value.first { it.id == "maya" }
+        assertEquals("Graphite", again.wallpaper); assertEquals("schedule", again.nightMode); assertNull(again.alarmSound)
+        assertNull(FaceProfileManager.parse("""[{"id":"a","name":"A","color":1,"wallpaper":"","night":null}]""").single().wallpaper)
+    }
+
+    @Test fun demoMayaHasHerOwnWallpaper() {
+        val maya = FaceProfileManager.DEMO_MAYA
+        assertEquals("glass", maya.faceId)
+        assertEquals("Dusk", maya.wallpaper)
+    }
+
+    @Test fun yourStuffChipsAndCycling() {
+        val p = Profile("maya", "Maya", 1, "glass")
+        val items = PersonalStuff.items(p, "Liquid Glass", alarmCount = 2, calendarSet = false)
+        assertEquals(listOf("Clock · Liquid Glass", "Wallpaper · Everyone’s", "Night · Everyone’s", "Alarm sound · Everyone’s", "2 alarms", "Calendar · not set"),
+            items.map { it.text })
+        assertEquals(listOf(PersonalStuff.Kind.WALLPAPER, PersonalStuff.Kind.NIGHT, PersonalStuff.Kind.SOUND), items.filter { it.editable }.map { it.kind })
+        // null → Blue → Dusk → Graphite → null (Everyone's)
+        val seq = generateSequence(p) { PersonalStuff.cycle(it, PersonalStuff.Kind.WALLPAPER) }.take(5).map { it.wallpaper }.toList()
+        assertEquals(listOf(null, "Blue", "Dusk", "Graphite", null), seq)
+        assertEquals("auto", PersonalStuff.cycle(p, PersonalStuff.Kind.NIGHT).nightMode)
+        assertEquals("system", PersonalStuff.cycle(p, PersonalStuff.Kind.SOUND).alarmSound)
+        assertEquals("Night · Off", PersonalStuff.items(p.copy(nightMode = "off"), "x", 0, true)[2].text)
+        assertEquals(p, PersonalStuff.cycle(p, PersonalStuff.Kind.CLOCK))
     }
 }

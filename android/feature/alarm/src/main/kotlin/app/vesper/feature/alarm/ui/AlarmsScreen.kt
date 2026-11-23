@@ -21,10 +21,13 @@ import app.vesper.core.design.VesperColors
 import app.vesper.core.design.withAlpha
 import app.vesper.core.model.Alarm
 import app.vesper.core.model.NextAlarm
+import app.vesper.core.model.Profile
+import app.vesper.core.model.SwitchReason
 import app.vesper.core.model.VesperScreen
 import app.vesper.core.model.VesperServices
 import app.vesper.core.model.observeWhileAttached
 import app.vesper.feature.alarm.AlarmFormat
+import app.vesper.feature.alarm.AlarmPeople
 import app.vesper.feature.alarm.engine.LeaveBy
 import java.time.DayOfWeek
 import java.time.Instant
@@ -38,8 +41,16 @@ import java.util.Locale
  * and controls). The list shows every alarm with its repeat / leave-by / skip-holidays summary and
  * an on/off switch, and, above it, the next alarm with its reason ("Earlier for Dentist 9:00 · 25
  * min drive", "Skipping Thanksgiving"). Tapping a row or "New alarm" opens the editor: time, repeat
- * days, Leave-by with the getting-ready time, Skip holidays. Everything is drawn when it changes.
- * Debug: `--es screen alarms --es alarms_demo editor|editor_new`.
+ * days, Leave-by with the getting-ready time, Skip holidays, and whose alarm it is.
+ *
+ * People: with someone recognised (`services.profiles.active`) the list shows their alarms plus the
+ * shared ones, with their chip by the title; with nobody recognised it shows everyone's. Personal
+ * alarms carry a small name chip in the owner's colour. A new alarm belongs to the recognised
+ * person (the editor's "Whose alarm" chips can make it shared). Every alarm rings regardless.
+ * Everything is drawn when it changes.
+ *
+ * Debug: `--es screen alarms --es alarms_demo editor|editor_new [--es profile <id>]`; in debug
+ * builds `alarms_demo maya` adds Maya's own 6:15 weekday alarm and `alarms_demo clear` removes it.
  */
 @SuppressLint("ViewConstructor")
 class AlarmsScreen(context: Context, private val services: VesperServices) : AbsLayout(context), VesperScreen {
@@ -52,6 +63,13 @@ class AlarmsScreen(context: Context, private val services: VesperServices) : Abs
     private var shown = false
     private var next: NextAlarm? = null
     private var alarms: List<Alarm> = emptyList()
+    /** What the list shows: the recognised person's alarms plus shared ones (everyone's for Shared). */
+    private var visible: List<Alarm> = emptyList()
+    private var people: List<Profile> = emptyList()
+    private var active: Profile = Profile.SHARED
+    private val personT = SpecText(14f, 700).apply { paint.fontFeatureSettings = "" }
+    private val chipPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val chipRect = RectF()
 
     private var bg: Bitmap? = null
     private var backdrop: Backdrop? = null
@@ -84,12 +102,21 @@ class AlarmsScreen(context: Context, private val services: VesperServices) : Abs
         addBtn.onTap = { openEditor(null) }
         observeWhileAttached(services.alarms.alarms) { alarms = it; if (shown) rebuild() }
         observeWhileAttached(services.alarms.next) { next = it; invalidate() }
+        observeWhileAttached(services.profiles.active) { active = it; if (shown) rebuild() }
+        observeWhileAttached(services.profiles.profiles) { people = it; if (shown) rebuild() }
         observeWhileAttached(services.system.state) { s -> if (s.nightActive != night) { night = s.nightActive; applyNight() } }
     }
 
     override fun onScreenShown(args: Bundle?) {
         shown = true
         ensureBackground()
+        args?.getString("profile")?.let { services.profiles.switchTo(it, SwitchReason.MANUAL) }
+        active = services.profiles.active.value; people = services.profiles.profiles.value
+        // Debug: Maya's own 6:15 weekday alarm (same id as StandBy's `fakealarm`), `alarms_demo clear` removes it.
+        if (services.config.debug) when (args?.getString("alarms_demo")) {
+            "maya" -> services.alarms.upsert(Alarm(DEBUG_MAYA_ID, 6, 15, WEEKDAYS, "Run", sunrise = false, profileId = "maya"))
+            "clear" -> services.alarms.delete(DEBUG_MAYA_ID)
+        }
         rebuild()
         when (args?.getString("alarms_demo")) {
             "editor" -> openEditor(Alarm("demo", 7, 0, setOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY),
@@ -123,7 +150,8 @@ class AlarmsScreen(context: Context, private val services: VesperServices) : Abs
     }
 
     private fun openEditor(a: Alarm?) {
-        editor.open(a)
+        // A new alarm belongs to whoever is recognised; the editor's "Whose alarm" chips can make it shared.
+        editor.open(a, people.filter { it.id != Profile.SHARED_ID }, AlarmPeople.ownerForNew(active.id))
         editor.visibility = VISIBLE
     }
 
@@ -131,7 +159,8 @@ class AlarmsScreen(context: Context, private val services: VesperServices) : Abs
 
     private fun rebuild() {
         list.removeAllViews()
-        for (a in alarms.sortedWith(compareBy({ it.hour }, { it.minute }))) {
+        visible = AlarmPeople.visible(alarms, active.id)
+        for (a in visible) {
             val row = AlarmRow(context, a)
             row.glass.backdrop = backdrop
             row.glass.night = night
@@ -145,13 +174,19 @@ class AlarmsScreen(context: Context, private val services: VesperServices) : Abs
         if (night) c.drawColor(Color.BLACK) else bg?.let { c.drawBitmap(it, 0f, 0f, bgPaint) }
         val white = Night.map(Color.WHITE, night)
         title.draw(c, "Alarms", 32f, title.baselineIn(22f, 28f * 1.1f), white)
+        // A recognised person: their chip by the title ("Maya · and shared").
+        if (active.id != Profile.SHARED_ID) {
+            val x = 32f + title.width("Alarms") + 14f
+            personChip(c, active, "${active.name} · and shared", x, 22f + (28f * 1.1f - 26f) / 2, 26f)
+        }
         var y = 22f + 28f * 1.1f + 2f
-        summary.draw(c, nextText(), 32f, summary.baselineIn(y), Night.map(withAlpha(Color.WHITE, 0.78f), night))
-        next?.reason?.let {
+        val n = shownNext()
+        summary.draw(c, nextText(n), 32f, summary.baselineIn(y), Night.map(withAlpha(Color.WHITE, 0.78f), night))
+        n?.reason?.let {
             y += summary.normalLineHeight + 1f
             reasonT.draw(c, it, 32f, reasonT.baselineIn(y), Night.map(0xFFFFC46B.toInt(), night))
         }
-        if (alarms.isEmpty()) {
+        if (visible.isEmpty()) {
             val s = "No alarms"
             emptyT.draw(c, s, 480f - emptyT.width(s) / 2, emptyT.baselineIn(200f), Night.map(withAlpha(Color.WHITE, 0.86f), night))
             val h = "Tap New alarm, or say “Hey Nova, wake me at 7”"
@@ -159,8 +194,24 @@ class AlarmsScreen(context: Context, private val services: VesperServices) : Abs
         }
     }
 
-    private fun nextText(): String {
-        val n = next ?: return "No alarm set"
+    /** The next alarm among the ones listed (the store's, with its reason, when it's one of them). */
+    private fun shownNext(): NextAlarm? =
+        if (active.id == Profile.SHARED_ID) next else AlarmPeople.nextFor(visible, next, System.currentTimeMillis(), ZoneId.systemDefault())
+
+    /** A small pill: the person's colour dot and [text], at ([x], [y]); returns its width. */
+    private fun personChip(c: Canvas, p: Profile, text: String, x: Float, y: Float, h: Float, alpha: Float = 1f): Float {
+        val w = 10f + 8f + 6f + personT.width(text) + 11f
+        chipRect.set(x, y, x + w, y + h)
+        chipPaint.color = if (night) withAlpha(Night.COLOR, 0.16f * alpha) else withAlpha(p.color, 0.24f * alpha)
+        c.drawRoundRect(chipRect, h / 2, h / 2, chipPaint)
+        chipPaint.color = withAlpha(if (night) Night.COLOR else p.color, alpha)
+        c.drawCircle(x + 10f + 4f, y + h / 2, 4f, chipPaint)
+        personT.draw(c, text, x + 10f + 8f + 6f, personT.baselineIn(y, h), withAlpha(if (night) Night.COLOR else Color.WHITE, alpha))
+        return w
+    }
+
+    private fun nextText(n: NextAlarm?): String {
+        n ?: return "No alarm set"
         val zone = ZoneId.systemDefault()
         val day = Instant.ofEpochMilli(n.triggerAtMillis).atZone(zone).toLocalDate()
         val today = LocalDate.now(zone)
@@ -210,6 +261,10 @@ class AlarmsScreen(context: Context, private val services: VesperServices) : Abs
             val lineH = labelT.normalLineHeight + detailT.normalLineHeight + 3f
             val top = (h - lineH) / 2
             labelT.draw(c, alarm.label, left, labelT.baselineIn(top), white)
+            // A personal alarm: the owner's name chip after the label (shared ones have none).
+            AlarmPeople.owner(alarm, people)?.let { o ->
+                personChip(c, o, o.name, left + labelT.width(alarm.label) + 10f, top + (labelT.normalLineHeight - 22f) / 2, 22f, dim)
+            }
             detailT.draw(c, details(alarm), left, detailT.baselineIn(top + labelT.normalLineHeight + 3f), soft)
             sw.draw(c, w - 24f - 58f, (h - 34f) / 2, alarm.enabled, night)
         }
@@ -231,6 +286,7 @@ class AlarmsScreen(context: Context, private val services: VesperServices) : Abs
         }
 
         val WEEKDAYS = setOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)
+        private const val DEBUG_MAYA_ID = "debug-maya"
     }
 }
 
@@ -293,21 +349,25 @@ internal class Chip(context: Context, var label: String, size: Float = 16f) : Pr
     var night = false
         set(v) { if (field != v) { field = v; invalidate() } }
     var round = false
+    /** Fill when chosen (a person's colour on the "Whose alarm" chips); null = orange. */
+    var chosenColor: Int? = null
 
     init { pressScale = 0.92f }
 
     override fun onDraw(c: Canvas) {
         val w = width.toFloat(); val h = height.toFloat()
         r.set(0f, 0f, w, h)
+        val fill = chosenColor ?: VesperColors.ORANGE
         p.color = when {
             chosen && night -> withAlpha(Night.COLOR, 0.5f)
-            chosen -> VesperColors.ORANGE
+            chosen -> fill
             night -> withAlpha(Night.COLOR, 0.14f)
             else -> withAlpha(Color.WHITE, 0.14f)
         }
         c.drawRoundRect(r, h / 2, h / 2, p)
         val ink = when {
             night -> Night.COLOR
+            chosen && chosenColor != null && Color.luminance(fill) < 0.4f -> Color.WHITE
             chosen -> 0xFF2A1200.toInt()
             else -> Color.WHITE
         }
@@ -359,6 +419,9 @@ internal class AlarmEditor(context: Context) : AbsLayout(context) {
     private val leaveSwitch = SwitchView(context)
     private val skipSwitch = SwitchView(context)
     private val is24 = AlarmFormat.is24(context)
+    /** "Whose alarm": a chip per person (their colour) and "Everyone" (shared). */
+    private val ownerChips = ArrayList<Pair<Chip, String?>>()
+    private val ownerText = SpecText(15f, 700)
 
     init {
         setWillNotDraw(false)
@@ -416,18 +479,38 @@ internal class AlarmEditor(context: Context) : AbsLayout(context) {
             val icon = s.icon
             if (n) s.set(withAlpha(Night.COLOR, 0.2f), Night.COLOR, icon) else s.set(withAlpha(Color.WHITE, 0.16f), Color.WHITE, icon)
         }
-        listOf(am, pm).plus(dayChips).plus(readyChips).forEach { it.night = n }
+        listOf(am, pm).plus(dayChips).plus(readyChips).plus(ownerChips.map { it.first }).forEach { it.night = n }
         leaveSwitch.night = n; skipSwitch.night = n
         invalidate()
     }
 
-    fun open(a: Alarm?) {
+    /** [people]: everyone but Shared, for the "Whose alarm" chips; [newOwner]: a new alarm's owner (null = shared). */
+    fun open(a: Alarm?, people: List<Profile> = emptyList(), newOwner: String? = null) {
         isNew = a == null
-        cur = a ?: Alarm("alarm-" + System.currentTimeMillis(), 7, 0, setOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY))
+        cur = a ?: Alarm("alarm-" + System.currentTimeMillis(), 7, 0, setOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY),
+            profileId = newOwner)
         confirmDelete = false
         deleteBtn.label = "Delete"; deleteBtn.color = if (night) Night.COLOR else Color.WHITE
         deleteBtn.visibility = if (isNew) GONE else VISIBLE
+        buildOwnerChips(people)
         sync()
+    }
+
+    private fun buildOwnerChips(people: List<Profile>) {
+        ownerChips.forEach { removeView(it.first) }
+        ownerChips.clear()
+        if (people.isEmpty()) return // nobody to choose: every alarm is shared
+        var x = 480f
+        for (o in people.take(4) + listOf<Profile?>(null)) {
+            val label = o?.name ?: "Everyone"
+            val w = (ownerText.width(label) + 34f).toInt().coerceAtLeast(66)
+            if (x + w > 904f) break
+            val chip = Chip(context, label, 15f).apply { chosenColor = o?.color; night = this@AlarmEditor.night }
+            place(chip, x, 392f, w, 38)
+            chip.onTap = { cur = cur.copy(profileId = o?.id); sync() }
+            ownerChips += chip to o?.id
+            x += w + 10f
+        }
     }
 
     private fun setTime(h: Int, m: Int) {
@@ -444,6 +527,9 @@ internal class AlarmEditor(context: Context) : AbsLayout(context) {
         readyChips.forEachIndexed { i, chip -> chip.chosen = LeaveBy.READY_CHOICES[i] == cur.readyMinutes; chip.visibility = if (cur.leaveBy) VISIBLE else GONE }
         am.chosen = cur.hour < 12; pm.chosen = cur.hour >= 12
         leaveSwitch.on = cur.leaveBy; skipSwitch.on = cur.skipHolidays
+        // An owner who isn't on the list any more (deleted) reads as shared.
+        val owner = cur.profileId?.takeIf { id -> ownerChips.any { it.second == id } }
+        ownerChips.forEach { (chip, id) -> chip.chosen = id == owner }
         invalidate()
     }
 
@@ -481,6 +567,10 @@ internal class AlarmEditor(context: Context) : AbsLayout(context) {
         rowS.draw(c, "US holidays and all-day vacation,", 480f, rowS.baselineIn(282f), soft)
         rowS.draw(c, if (cur.days.isEmpty()) "day off or PTO. Repeating alarms only." else "day off or PTO.", 480f, rowS.baselineIn(300f), soft)
         c.drawLine(480f, 332f, 904f, 332f, lp)
+        if (ownerChips.isNotEmpty()) {
+            rowT.draw(c, "Whose alarm", 480f, rowT.baselineIn(344f), white)
+            rowS.draw(c, "It rings for anyone in the room either way.", 480f, rowS.baselineIn(368f), soft)
+        }
     }
 
     private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG)

@@ -24,6 +24,8 @@ import kotlin.math.max
  *  - Done (top-right): the one tinted primary action (system blue)
  *  - face switcher: a vertical glass page indicator (right), tap a dot or swipe the face
  *  - colour: a glass button that pops open into a capsule of plain-fill swatches (no glass on glass)
+ *  - wallpaper (faces with one, i.e. Liquid Glass; not in the board): a glass pill bottom-left,
+ *    "Wallpaper · Dusk", each tap picks the next one (into the recognised person's profile)
  * Empty areas don't consume touches, so swipes reach [StandbyScreen].
  */
 @SuppressLint("ViewConstructor")
@@ -35,6 +37,8 @@ class EditOverlay(context: Context, private val callbacks: Callbacks) : FrameLay
         fun onPickFace(index: Int)
         fun onPickColor(color: Int)
         fun onPreviewTap()
+        /** The wallpaper pill (faces with a wallpaper): the next one. */
+        fun onNextWallpaper()
     }
 
     private val labelText = SpecText(15f, 600, -0.01f)
@@ -45,12 +49,16 @@ class EditOverlay(context: Context, private val callbacks: Callbacks) : FrameLay
     val done = GlassPill(context, "Done", null, 20f, 20f, 15f, 700).apply { tint = withAlpha(0xFF0A84FF.toInt(), 0.62f) }
     val dots = PageDots(context)
     val colors = ColorCapsule(context)
+    /** Bottom-left, mirroring the colour capsule: "Wallpaper · Dusk", tap for the next one. */
+    val wallpaper = GlassPill(context, "Wallpaper", null, 14f, 18f, 15f, 600).apply { visibility = GONE }
     private var faceLabel = ""
 
     init {
         setWillNotDraw(false)
         clipChildren = false
         addView(night, LayoutParams(night.measureWidth().toInt(), 44).apply { leftMargin = 22; topMargin = 20 })
+        addView(wallpaper, LayoutParams(wallpaper.measureWidth().toInt(), 44).apply { leftMargin = 22; topMargin = 480 - 22 - 48 })
+        wallpaper.setOnClickListener { callbacks.onNextWallpaper() }
         addView(done, LayoutParams(done.measureWidth().toInt(), 44).apply { leftMargin = 960 - 22 - done.measureWidth().toInt(); topMargin = 20 })
         addView(dots, LayoutParams(44, 16).apply { leftMargin = 960 - 26 - 44; topMargin = 232 })
         addView(colors, LayoutParams(ColorCapsule.MAX_W, 52).apply { leftMargin = 960 - 22 - ColorCapsule.MAX_W; topMargin = 480 - 22 - 52 })
@@ -60,7 +68,15 @@ class EditOverlay(context: Context, private val callbacks: Callbacks) : FrameLay
         colors.onPick = { callbacks.onPickColor(it) }
     }
 
-    fun bind(label: String, faceCount: Int, faceIndex: Int, colorOptions: List<Int>, color: Int, nightOn: Boolean) {
+    /** [wallpaper]: the face's wallpaper name (shows the pill), or null for faces without one. */
+    fun bind(label: String, faceCount: Int, faceIndex: Int, colorOptions: List<Int>, color: Int, nightOn: Boolean, wallpaper: String? = null) {
+        this.wallpaper.visibility = if (wallpaper == null) GONE else VISIBLE
+        if (wallpaper != null) {
+            this.wallpaper.label = "Wallpaper · $wallpaper"
+            this.wallpaper.swatch = GlassFace.PALETTES[wallpaper]?.get(1)
+            val w = this.wallpaper.measureWidth().toInt()
+            (this.wallpaper.layoutParams as LayoutParams).let { lp -> if (lp.width != w) { lp.width = w; this.wallpaper.layoutParams = lp } }
+        }
         if (label != faceLabel) { faceLabel = label; invalidate() }
         night.tint = if (nightOn) withAlpha(0xFFBE180E.toInt(), 0.42f) else null
         night.fg = if (nightOn) 0xFFFFD9D4.toInt() else Color.WHITE
@@ -90,22 +106,33 @@ class EditOverlay(context: Context, private val callbacks: Callbacks) : FrameLay
 
 /** Glass capsule button: optional icon + label (Customize.dc.html Night / Done). */
 @SuppressLint("ViewConstructor")
-class GlassPill(context: Context, private val label: String, private val icon: Drawable?, private val padL: Float, private val padR: Float,
+class GlassPill(context: Context, label: String, private val icon: Drawable?, private val padL: Float, private val padR: Float,
                 size: Float, weight: Int) : View(context) {
     private val glass = GlassPainter()
     private val text = SpecText(size, weight, -0.01f)
+    private val swatchPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    var label: String = label
+        set(v) { if (field != v) { field = v; invalidate() } }
     var tint: Int? = null
         set(v) { if (field != v) { field = v; glass.tint = v; invalidate() } }
     var fg: Int = Color.WHITE
         set(v) { if (field != v) { field = v; invalidate() } }
+    /** A colour dot in place of the icon (the wallpaper pill), or null. */
+    var swatch: Int? = null
+        set(v) { if (field != v) { field = v; invalidate() } }
 
-    fun measureWidth(): Float = padL + (if (icon != null) 17f + 7f else 0f) + text.width(label) + padR
+    fun measureWidth(): Float = padL + (if (icon != null || swatch != null) 17f + 7f else 0f) + text.width(label) + padR
 
     override fun onDraw(canvas: Canvas) {
         val h = height.toFloat()
         glass.draw(canvas, 0f, 0f, width.toFloat(), h)
         var x = padL
         icon?.let { drawIcon(canvas, it, x, (h - 17f) / 2, 17f, fg); x += 17f + 7f }
+        if (icon == null) swatch?.let { c ->
+            swatchPaint.color = withAlpha(Color.WHITE, 0.85f); canvas.drawCircle(x + 8.5f, h / 2, 9.5f, swatchPaint)
+            swatchPaint.color = c; canvas.drawCircle(x + 8.5f, h / 2, 8f, swatchPaint)
+            x += 17f + 7f
+        }
         text.draw(canvas, label, x, text.baselineIn(0f, h), fg)
     }
 

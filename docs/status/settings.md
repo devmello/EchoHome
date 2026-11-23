@@ -133,3 +133,9 @@ The page uses plain HTTP on the LAN, because a local device can't get a certific
 - K · `SettingSpec.placeholder` / `multiline` (or a `SECRET_LIST` type) to replace the hints carried in `options`.
 - K · optional `Alarm.sound` for a sound per alarm.
 - (The Control Center → `settings-pair` button was already wired by B.)
+
+## Nov 23: per-person preferences and alarm owners
+
+- **People**: each person now shows their own Clock face, Wallpaper (Liquid Glass and the Widgets page), Night mode and Alarm sound as selects, with "Same as everyone" for the last three. The options come from the settings they override (`clock.face`, `clock.glass.wallpaper`, `clock.night.mode`, `alarm.sound`). `GET /api/people` adds `face`, `wallpaper`, `nightMode`, `alarmSound` ("" = Everyone's); `PUT /api/people/<id>/prefs` sets any of them, validated against those options (`RemoteDeps.schema`). The page gets a `people` event whenever a profile changes on the Echo (edit mode, the Profiles screen).
+- **Alarms**: rows end with the owner's name; the editor has "Whose alarm" (Everyone or a person). `AlarmsApi` accepts `profileId` (`[a-z0-9-]{1,40}` or null).
+- Tests: `RemoteApiTest.personPrefsListAndSet` / `personPrefsValidation`, `AlarmsApiTest.whoseAlarm`.

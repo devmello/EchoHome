@@ -129,10 +129,18 @@ class ProfilesDemoView(context: Context, private val services: VesperServices) :
     private fun apply(step: String) {
         if (step == applied) return
         applied = step
-        // Maya (FaceProfileManager.DEMO_MAYA: orange, the Solar face) is added if she isn't there,
-        // so "recognized" switches the clock to her face. She stays in the people list afterwards.
-        val maya = services.profiles.profiles.value.firstOrNull { it.id == FaceProfileManager.DEMO_MAYA.id }
-            ?: FaceProfileManager.DEMO_MAYA.also { services.profiles.upsert(it) }
+        // Maya (FaceProfileManager.DEMO_MAYA: orange, Liquid Glass on Dusk) is added if she isn't
+        // there, so "recognized" switches the clock to her face and wallpaper. She stays in the
+        // people list afterwards. A Maya saved by an older build (no wallpaper yet) gets the demo's
+        // face, wallpaper and alarm sound.
+        val demo = FaceProfileManager.DEMO_MAYA
+        val saved = services.profiles.profiles.value.firstOrNull { it.id == demo.id }
+        val maya = when {
+            saved == null -> demo.also { services.profiles.upsert(it) }
+            saved.wallpaper == null -> saved.copy(faceId = demo.faceId, color = demo.color, wallpaper = demo.wallpaper,
+                alarmSound = saved.alarmSound ?: demo.alarmSound).also { services.profiles.upsert(it) }
+            else -> saved
+        }
         val s = when (step) {
             "empty" -> DemoStep.EMPTY
             "detecting" -> DemoStep.DETECTING

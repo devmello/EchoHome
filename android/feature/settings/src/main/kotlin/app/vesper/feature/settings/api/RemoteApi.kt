@@ -10,6 +10,7 @@ import app.vesper.core.model.Profile
 import app.vesper.core.model.ProfileManager
 import app.vesper.core.model.SecretStore
 import app.vesper.core.model.Secrets
+import app.vesper.core.model.SettingsSchema
 import app.vesper.core.model.SystemControls
 import app.vesper.core.model.SystemStateStore
 import app.vesper.core.model.TimerStore
@@ -35,6 +36,8 @@ class RemoteDeps(
     val elapsed: () -> Long,
     /** System.currentTimeMillis(). */
     val wall: () -> Long = System::currentTimeMillis,
+    /** The settings schema: a person's preferences take the options of the settings they override. */
+    val schema: () -> SettingsSchema? = { null },
 )
 
 /**
@@ -48,6 +51,7 @@ class RemoteDeps(
  *  - `POST /api/remote/note` `{text}` → a banner on the Echo
  *  - `GET /api/people` → profiles with their calendar state (`set` / `unset`, never the URLs)
  *  - `PUT /api/people/<id>/calendar` `{urls: "…" | null}` → write-only, stored under [Secrets.calendarKeyFor]
+ *  - `PUT /api/people/<id>/prefs` `{face?, wallpaper?, nightMode?, alarmSound?}` → their own choices ("" = Everyone's)
  *  - `GET /api/diagnostics`, `POST /api/diagnostics/clear`
  *
  * Store calls (writes) run on the main thread via [onMain]; reading a StateFlow's value is
@@ -77,6 +81,8 @@ class RemoteApi(
             p == "/api/people" && m == "GET" -> ok(peopleJson())
             p.startsWith("/api/people/") && p.endsWith("/calendar") && (m == "PUT" || m == "POST") ->
                 calendar(p.removePrefix("/api/people/").removeSuffix("/calendar"), body(req))
+            p.startsWith("/api/people/") && p.endsWith("/prefs") && (m == "PUT" || m == "POST") ->
+                prefs(p.removePrefix("/api/people/").removeSuffix("/prefs"), body(req))
             p == "/api/diagnostics" && m == "GET" -> ok(diagnosticsJson())
             p == "/api/diagnostics/clear" && m == "POST" -> { onMain { d.crashLog().clear() }; ok(diagnosticsJson()) }
             else -> HttpResponse.error(404, "No such API")
@@ -198,11 +204,39 @@ class RemoteApi(
 
     private fun people(): List<Profile> = d.profiles().profiles.value.filter { it.id != Profile.SHARED_ID }
 
+    /** Each person with their calendar state and own preferences ("" = follow Everyone's, i.e. the shared setting). */
     fun peopleJson(): JSONObject = JSONObject().put("people", JSONArray().apply {
         for (p in people()) put(JSONObject().put("id", p.id).put("name", p.name)
             .put("color", "#%06X".format(p.color and 0xFFFFFF))
-            .put("calendar", if (d.secrets().isSet(Secrets.calendarKeyFor(p.id))) "set" else "unset"))
+            .put("calendar", if (d.secrets().isSet(Secrets.calendarKeyFor(p.id))) "set" else "unset")
+            .put("face", p.faceId).put("wallpaper", p.wallpaper.orEmpty())
+            .put("nightMode", p.nightMode.orEmpty()).put("alarmSound", p.alarmSound.orEmpty()))
     })
+
+    /**
+     * `PUT /api/people/<id>/prefs` `{face?, wallpaper?, nightMode?, alarmSound?}`: a person's own
+     * clock face, Liquid Glass wallpaper, Night mode and alarm sound. Values are the options of the
+     * setting each one overrides ([PREF_KEYS]); "" or null = follow Everyone's (not for face).
+     */
+    private fun prefs(id: String, b: JSONObject): HttpResponse {
+        val p = people().firstOrNull { it.id == id } ?: return HttpResponse.error(404, "No such person")
+        if (b.keys().asSequence().any { it !in PREF_KEYS }) throw ValidationException("Unknown field")
+        fun value(field: String, allowEmpty: Boolean): String? {
+            val raw = if (b.isNull(field)) null else b.opt(field) as? String ?: throw ValidationException("$field: expected text")
+            if (raw.isNullOrEmpty()) { if (allowEmpty) return null else throw ValidationException("$field: required") }
+            val options = d.schema()?.spec(PREF_KEYS.getValue(field))?.options?.map { it.first }
+            if (options != null && options.isNotEmpty() && raw !in options) throw ValidationException("$field: not one of the choices")
+            return raw
+        }
+        var next = p
+        if (b.has("face")) next = next.copy(faceId = value("face", allowEmpty = false)!!)
+        if (b.has("wallpaper")) next = next.copy(wallpaper = value("wallpaper", true))
+        if (b.has("nightMode")) next = next.copy(nightMode = value("nightMode", true))
+        if (b.has("alarmSound")) next = next.copy(alarmSound = value("alarmSound", true))
+        if (next != p) onMain { d.profiles().upsert(next) }
+        return ok(JSONObject().put("ok", true).put("id", p.id).put("face", next.faceId).put("wallpaper", next.wallpaper.orEmpty())
+            .put("nightMode", next.nightMode.orEmpty()).put("alarmSound", next.alarmSound.orEmpty()))
+    }
 
     private fun calendar(id: String, b: JSONObject): HttpResponse {
         val p = people().firstOrNull { it.id == id } ?: return HttpResponse.error(404, "No such person")
@@ -254,6 +288,13 @@ class RemoteApi(
     private fun ok(o: JSONObject) = HttpResponse.json(200, o.toString())
 
     companion object {
+        /** A person's preference field → the setting it overrides (its options are the allowed values). */
+        val PREF_KEYS = mapOf(
+            "face" to "clock.face",
+            "wallpaper" to "clock.glass.wallpaper",
+            "nightMode" to "clock.night.mode",
+            "alarmSound" to "alarm.sound",
+        )
         const val MAX_LABEL = 40
         const val MAX_NOTE = 280
         const val MAX_STACK = 8000

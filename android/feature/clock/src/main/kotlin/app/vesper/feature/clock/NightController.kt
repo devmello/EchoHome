@@ -11,7 +11,9 @@ import android.os.SystemClock
 import android.util.Log
 import app.vesper.core.model.VesperServices
 import app.vesper.core.model.NightMode
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -25,6 +27,8 @@ import kotlin.math.max
  *  - Night mode setting `clock.night.mode`: `auto` (light sensor), `schedule` (by the clock,
  *    `clock.night.start` → `clock.night.end`), `on`, `off`. In `SystemState.nightMode` both
  *    automatic sources are AUTO; edit mode, Control Center and the settings page stay in step.
+ *    A recognised person may have their own mode ([app.vesper.core.model.Profile.nightMode]): it
+ *    applies while they're active, and Night changes made then go into it.
  *  - Light: [AutoNight] (default enter < 3 lux for 30 s, leave > 10 lux; `clock.night.*Lux`,
  *    `delaySec`). The sensor (`Sensor.TYPE_LIGHT`, on-change) is registered only while StandBy is
  *    shown ([start] / [stop]) and only for the `auto` source.
@@ -70,15 +74,20 @@ class NightController(context: Context, private val services: VesperServices) : 
             sourceChanged()
             launch {
                 system.state.map { it.nightMode }.distinctUntilChanged().collect { m ->
-                    val saved = settings.getString(ClockSettings.KEY_NIGHT_MODE, "auto")
+                    val saved = modeSetting()
                     val v = when (m) {
                         NightMode.ON -> "on"
                         NightMode.OFF -> "off"
                         NightMode.AUTO -> if (saved == "schedule") "schedule" else "auto" // AUTO keeps its source
                     }
-                    if (saved != v) settings.putString(ClockSettings.KEY_NIGHT_MODE, v)
+                    if (saved != v) storeMode(v)
                     apply()
                 }
+            }
+            launch {
+                // A recognised person with their own Night mode (Profile.nightMode): switch to it, and back when they leave.
+                combine(services.profiles.active, services.profiles.profiles) { a, l -> PersonPrefs.person(a, l)?.nightMode }
+                    .distinctUntilChanged().drop(1).collect { readSettings(); applySettingMode(); sourceChanged() }
             }
             settings.changes.collect { k ->
                 when (k) {
@@ -93,8 +102,20 @@ class NightController(context: Context, private val services: VesperServices) : 
         }
     }
 
+    private fun person() = PersonPrefs.person(services.profiles.active.value, services.profiles.profiles.value)
+
+    /** The Night mode in force: the recognised person's own ([Profile.nightMode]), else `clock.night.mode`. */
+    private fun modeSetting(): String = PersonPrefs.nightMode(person(), settings.getString(ClockSettings.KEY_NIGHT_MODE, "auto"))
+
+    /** A Night change (edit mode, Control Center): into the person's own choice if they have one, else the setting. */
+    private fun storeMode(v: String) {
+        val p = person()
+        if (p?.nightMode != null) services.profiles.upsert(p.copy(nightMode = v))
+        else settings.putString(ClockSettings.KEY_NIGHT_MODE, v)
+    }
+
     private fun applySettingMode() {
-        val m = when (settings.getString(ClockSettings.KEY_NIGHT_MODE, "auto").lowercase()) {
+        val m = when (modeSetting()) {
             "on" -> NightMode.ON
             "off" -> NightMode.OFF
             else -> NightMode.AUTO // auto, schedule
@@ -107,7 +128,7 @@ class NightController(context: Context, private val services: VesperServices) : 
         auto.enterLux = enter
         auto.leaveLux = settings.getFloat(ClockSettings.KEY_NIGHT_LEAVE_LUX, 10f).coerceAtLeast(enter + 1f)
         auto.enterDelayMs = settings.getInt(ClockSettings.KEY_NIGHT_DELAY_SEC, 30).coerceIn(0, 3600) * 1000L
-        source = if (settings.getString(ClockSettings.KEY_NIGHT_MODE, "auto").equals("schedule", true)) Source.SCHEDULE else Source.LIGHT
+        source = if (modeSetting() == "schedule") Source.SCHEDULE else Source.LIGHT
         nightSchedule = NightSchedule(
             NightSchedule.parse(settings.getString(ClockSettings.KEY_NIGHT_START, ClockSettings.DEFAULT_NIGHT_START)) ?: 22 * 60,
             NightSchedule.parse(settings.getString(ClockSettings.KEY_NIGHT_END, ClockSettings.DEFAULT_NIGHT_END)) ?: 7 * 60)

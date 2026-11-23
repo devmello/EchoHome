@@ -77,5 +77,32 @@ class VesperToolsTest {
         assertEquals("6:40 AM", (a.card as ResultCard.Action).state)
         val id = a.content.getJSONObject("alarm").getString("alarm_id")
         assertTrue(services.alarms.alarms.value.any { it.id == id })
+        // Nobody recognised: a shared alarm.
+        assertEquals(null, services.alarms.alarms.value.first { it.id == id }.profileId)
+        assertEquals("shared", a.content.getJSONObject("alarm").getString("owner"))
+    }
+
+    @Test fun `set_alarm belongs to the recognised person unless shared is asked for`() = runBlocking {
+        services.profiles.switchTo("maya", app.vesper.core.model.SwitchReason.FACE)
+        val mine = tools.run("set_alarm", JSONObject().put("hour", 6).put("minute", 15).put("label", "Run"))
+        val mineId = mine.content.getJSONObject("alarm").getString("alarm_id")
+        assertEquals("maya", services.alarms.alarms.value.first { it.id == mineId }.profileId)
+        assertEquals("Maya", mine.content.getJSONObject("alarm").getString("owner"))
+        assertEquals("6:15 AM · Maya", (mine.card as ResultCard.Action).state)
+        val shared = tools.run("set_alarm", JSONObject().put("hour", 7).put("minute", 30).put("shared", true))
+        val sharedId = shared.content.getJSONObject("alarm").getString("alarm_id")
+        assertEquals(null, services.alarms.alarms.value.first { it.id == sharedId }.profileId)
+        // list_alarms says whose each one is and who's recognised.
+        val list = tools.run("list_alarms", JSONObject()).content
+        assertEquals("Maya", list.getString("recognized"))
+        val owners = (0 until list.getJSONArray("alarms").length()).map { list.getJSONArray("alarms").getJSONObject(it) }
+            .associate { it.getString("alarm_id") to it.getString("owner") }
+        assertEquals("Maya", owners[mineId]); assertEquals("shared", owners[sharedId])
+    }
+
+    @Test fun `alarm owner rule`() {
+        assertEquals("maya", VesperTools.alarmOwnerFor("maya", shared = false))
+        assertEquals(null, VesperTools.alarmOwnerFor("maya", shared = true))
+        assertEquals(null, VesperTools.alarmOwnerFor(app.vesper.core.model.Profile.SHARED_ID, shared = false))
     }
 }
