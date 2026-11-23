@@ -227,7 +227,21 @@ class MainActivity : Activity() {
         super.onPause()
     }
 
+    /** "EchoHome" pill over other apps when there's no navigation bar (lean SystemUI). */
+    private val homeButton by lazy { HomeButton(applicationContext) { app.services.system.state.value.nightActive } }
+
+    override fun onStart() {
+        super.onStart()
+        homeButton.hide()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations && !isFinishing) homeButton.onEchoHomeStopped(windowManager)
+    }
+
     override fun onDestroy() {
+        homeButton.hide()
         scope.cancel()
         super.onDestroy()
     }

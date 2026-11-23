@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Lean SystemUI": SystemUI starts in its Android TV configuration (TvSystemUIFactory and the TV
+     component list) instead of the phone one. No phone status bar, navigation bar, notification
+     shade, Quick Settings, keyguard, recents or screen decorations are built; EchoHome draws all of
+     that itself. Keeps notification channels, toasts, ringtone playback, storage and power warnings,
+     and SystemUI's dialogs (wireless/USB debugging approval).
+
+     Not static, so it can be switched without a reboot: ./scripts/echo-systemui-lean.sh on|off
+     (enables/disables the overlay and restarts SystemUI). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="app.vesper.overlay.systemui.lean">
+    <application android:hasCode="false" />
+    <overlay android:targetPackage="com.android.systemui" />
+</manifest>

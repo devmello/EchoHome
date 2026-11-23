@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- The "EchoHome" pill over other apps when there's no navigation bar (HomeButton, lean SystemUI). App-op, granted by adb. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <application
         android:usesNonSdkApi="true"
         android:name=".VesperApp"

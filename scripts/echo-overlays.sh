@@ -5,13 +5,15 @@
 #   bluetooth: avrcp_controller_enable_cover_art=true (album art from the iPhone over Bluetooth)
 #   framework: system_bar_background_semi_transparent=#00000000 (no dark strips at the top and
 #              bottom when the Control Center pull reveals Android's hidden bars)
+#   systemui-lean: SystemUI in its Android TV configuration. NOT static: installed disabled, switched
+#              with ./scripts/echo-systemui-lean.sh on|off (no reboot).
 # Undo: ./scripts/echo-overlays.sh --remove (also reboots).
 set -e
 . "$(dirname "$0")/lib.sh"
 BT=$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)
 JAR=$(ls -d "$ANDROID_HOME"/platforms/android-* | tail -1)/android.jar
 OUT="$ECHO_ROOT/device/overlays/build"; mkdir -p "$OUT"
-NAMES="systemui bluetooth framework"
+NAMES="systemui bluetooth framework systemui-lean"
 for n in $NAMES; do
   src="$ECHO_ROOT/device/overlays/$n"; work=$(mktemp -d)
   "$BT/aapt2" compile --dir "$src/res" -o "$work/res.zip"
