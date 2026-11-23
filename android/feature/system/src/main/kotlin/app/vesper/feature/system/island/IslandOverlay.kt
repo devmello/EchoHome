@@ -128,6 +128,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
     private val tDoorTitle = SpecText(26f, 800, -0.02f)
     private val tButton = SpecText(16f, 700)
     private val tLive = SpecText(11f, 800)
+    private val tAvatar = SpecText(14f, 800)
     private val tCallSub = SpecText(14f, 700)
     private val tCallName = SpecText(30f, 800, -0.02f)
     private val tInitial = SpecText(32f, 800)
@@ -528,8 +529,21 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
                 tickIn = minOf(tickIn, SPINNER_FRAME_MS)
                 return false to true
             }
+            is LiveContent.FaceHello -> {
+                avatar(c, 23f, cy, 28f, ct, alpha)
+                tLabel.drawRight(c, tLabel.ellipsize("Hi ${ct.name}", bw - 60f), right, tLabel.baselineCentered(cy), ink(Color.WHITE, alpha))
+            }
         }
         return false to false
+    }
+
+    /** The person's avatar: a disc in their colour with their first letter (the greeting card's, small). */
+    private fun avatar(c: Canvas, cx: Float, cy: Float, size: Float, ct: LiveContent.FaceHello, alpha: Float) {
+        paint.shader = null; paint.style = Paint.Style.FILL
+        paint.color = ink(ct.color or 0xFF000000.toInt(), alpha)
+        c.drawCircle(cx, cy, size / 2f, paint)
+        val letter = ct.name.take(1).uppercase()
+        tAvatar.drawCentered(c, letter, cx, tAvatar.baselineCentered(cy), if (night) withAlpha(Color.BLACK, alpha) else withAlpha(Color.WHITE, alpha))
     }
 
     /** A 2.5 px ring at .3 with a 90° white arc, one turn per 792 ms (the design's CSS spinner). */
@@ -566,6 +580,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
             is LiveContent.RainSoon -> Icons.rain.drawCentered(c, cx, cy, 22f, ink(RAIN, alpha), paint)
             is LiveContent.PhoneBattery -> Icons.handset.drawCentered(c, cx, cy, 22f, ink(batteryColor(ct.percent, ct.charging == true), alpha), paint)
             is LiveContent.FaceCheck -> { spinner(c, cx, cy, 20f, alpha); tickIn = minOf(tickIn, SPINNER_FRAME_MS); return true }
+            is LiveContent.FaceHello -> avatar(c, cx, cy, 28f, ct, alpha)
         }
         return false
     }
@@ -759,7 +774,8 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
                 tTimerLabel.draw(c, tTimerLabel.ellipsize(sub, textW), textL, tTimerLabel.baselineIn(top + lh1 + 2f, lh2), ink(0xFFFFB340.toInt(), alpha))
             }
             is LiveContent.Assistant, is LiveContent.AirPlayConnected, is LiveContent.BluetoothConnected,
-            is LiveContent.RainSoon, is LiveContent.PhoneBattery, is LiveContent.FaceCheck -> {}
+            is LiveContent.RainSoon, is LiveContent.PhoneBattery, is LiveContent.FaceCheck,
+            is LiveContent.FaceHello -> {}
         }
         return false
     }

@@ -50,7 +50,7 @@ Measured Nov 22, 2026 ~04:00 on the Echo (`--es screen camera-probe`, `tools/pro
 - **UI**:
   - Overlay `camera` (z 250): the top-right label + green dot whenever the camera samples ("Presence · 2 fps", "Face check", "Recognized", "Enrolling face"). It moves left of B's mic-off badge.
   - Empty-room dim (StandBy only, 0.35 opacity, 0.9 s ease).
-  - The face check is in the island (Nov 23, 2026): `FaceCheckIsland` publishes a FACE_CHECK activity while the phase is DETECTING (held 0.6 s after a burst so the 2 s bursts don't flicker). Compact: face glyph, "Checking face", spinner; bead: spinner. The spinner steps at 20 fps. The old "Who's there?" pill is gone. Island demo: `--es island facecheck`.
+  - The face check is in the island (Nov 23, 2026): `FaceCheckIsland` publishes a FACE_CHECK activity while the phase is DETECTING (held 0.6 s after a burst so the 2 s bursts don't flicker). Compact: face glyph, "Checking face", spinner; bead: spinner. The spinner steps at 20 fps. The old "Who's there?" pill is gone. When a face matches, the island says hello: the person's avatar (their colour, first letter) and "Hi <name>", for as long as the greeting is up (4 s); the greeting card with chips and "Not me" stays at the bottom. Island demos: `--es island facecheck`, `--es island facehello`. Not checked end to end on the Echo: it has no people added yet.
   - "Hi <name>" glass sheet: avatar, alarm/event chips, "Not me". 0.35 s fade plus a 0.6 s spring rise, shown for 4 s.
   - Footer "On-device recognition · no images saved".
   - Night mode maps everything to #BE180E.

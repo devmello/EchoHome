@@ -88,9 +88,16 @@ object CameraFeature : VesperFeature {
         services.profiles = manager
         pipeline = CameraPipeline(ctx, services, manager)
         pipeline.start()
-        // The face check shows in the island (the demo screen's DETECTING step too).
+        // The face check and the "Hi <name>" after a match show in the island (the demo screen's steps too).
         FaceCheckIsland(services.island, services.scope).bind(
-            combine(pipeline.ui, demo) { ui, d -> if (d != null) d.first == DemoStep.DETECTING else ui.phase == CameraPhase.DETECTING })
+            combine(pipeline.ui, demo) { ui, d ->
+                when {
+                    d == null -> FaceIsland.of(ui)
+                    d.first == DemoStep.DETECTING -> FaceIsland.Checking
+                    d.first == DemoStep.RECOGNIZED && d.second != null -> FaceIsland.Hello(d.second!!)
+                    else -> FaceIsland.Idle
+                }
+            })
 
         host.registerSettings(settingsSection { host.services.navigator.show("profiles") })
         host.registerOverlay(OverlaySpec("camera", z = 250) { c -> CameraOverlayView(c, services, pipeline) })
