@@ -24,6 +24,7 @@ import app.vesper.core.model.VesperServices
 import app.vesper.core.model.HomeAssistant
 import app.vesper.core.model.observeWhileAttached
 import app.vesper.feature.home.HomeSettings
+import app.vesper.feature.home.lamp.LampScreenView
 import app.vesper.feature.home.ui.Icons
 import app.vesper.feature.home.ui.cssLinear
 import app.vesper.feature.home.ui.drawCentered
@@ -86,6 +87,7 @@ open class HomeScreenView(
         // re-map) only hears about it on release. Per-move updates cost ~10 % CPU on the Echo.
         lamp.onPreview = null
         lamp.onSet = { p -> ui?.lamp?.let { controller.setBrightness(it.entityId, p) } }
+        lamp.onOpen = { ui?.lamp?.let { services.navigator.show(LampScreenView.SCREEN_ID, Bundle().apply { putString(LampScreenView.ARG_ENTITY, it.entityId) }) } }
         toggles.forEachIndexed { i, t -> t.onTap = { _, _ -> ui?.toggles?.getOrNull(i)?.let { controller.toggle(it.entityId) } } }
         scenes.forEachIndexed { i, s -> s.onTap = { _, _ -> ui?.scenes?.getOrNull(i)?.let { controller.activateScene(it.entityId) } } }
         secure.forEachIndexed { i, s -> s.onTap = { _, _ -> ui?.secure?.getOrNull(i)?.let { controller.toggleSecure(it.entityId) } } }

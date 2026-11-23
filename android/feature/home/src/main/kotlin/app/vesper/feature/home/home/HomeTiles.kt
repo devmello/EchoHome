@@ -174,7 +174,10 @@ class ThermostatView(context: Context, backdrop: () -> Backdrop?) : GlassTile(co
     }
 }
 
-/** 268×182 lamp: the whole tile is a brightness slider (tap or drag; 5 % steps on tap). */
+/**
+ * 268×182 lamp: the whole tile is a brightness slider (tap or drag; 5 % steps on tap). A long press
+ * anywhere, or a tap on the bulb, opens the Lamp screen ([onOpen]); a drag cancels the long press.
+ */
 @SuppressLint("ViewConstructor")
 class LampView(context: Context, backdrop: () -> Backdrop?) : GlassTile(context, 30f, backdrop) {
     override val springs = false
@@ -183,9 +186,14 @@ class LampView(context: Context, backdrop: () -> Backdrop?) : GlassTile(context,
     /** Live while dragging; [onSet] on release. */
     var onPreview: ((Int) -> Unit)? = null
     var onSet: ((Int) -> Unit)? = null
+    /** Long press, or a tap on the bulb: the Lamp screen. */
+    var onOpen: (() -> Unit)? = null
     private var shown = 0
     private var dragging = false
+    private var opened = false
     private var downX = 0f
+    private var downY = 0f
+    private val longPress = Runnable { if (!dragging) { opened = true; shown = tile?.pct ?: 0; invalidate(); onOpen?.invoke() } }
     private var amber: Shader? = null
     private var amberW = -1f
     private var spec: Shader? = null
@@ -227,18 +235,28 @@ class LampView(context: Context, backdrop: () -> Backdrop?) : GlassTile(context,
     override fun onTouchEvent(e: MotionEvent): Boolean {
         val pct = ((e.x / width).coerceIn(0f, 1f) * 100).roundToInt()
         when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { downX = e.x; dragging = false; parent?.requestDisallowInterceptTouchEvent(true) }
-            MotionEvent.ACTION_MOVE -> if (dragging || kotlin.math.abs(e.x - downX) > 12f) {
-                dragging = true; shown = pct; onPreview?.invoke(pct); invalidate()
+            MotionEvent.ACTION_DOWN -> {
+                downX = e.x; downY = e.y; dragging = false; opened = false
+                parent?.requestDisallowInterceptTouchEvent(true)
+                if (onOpen != null) postDelayed(longPress, LONG_PRESS_MS)
             }
+            MotionEvent.ACTION_MOVE -> if (!opened && (dragging || kotlin.math.abs(e.x - downX) > 12f)) {
+                if (!dragging) removeCallbacks(longPress)
+                dragging = true; shown = pct; onPreview?.invoke(pct); invalidate()
+            } else if (kotlin.math.abs(e.y - downY) > 24f) removeCallbacks(longPress)
             MotionEvent.ACTION_UP -> {
+                removeCallbacks(longPress)
+                if (opened) { opened = false; return true }
+                if (!dragging && onOpen != null && e.x in 12f..68f && e.y in 10f..66f) { onOpen?.invoke(); return true } // the bulb
                 val v = if (dragging) pct else ((e.x / width).coerceIn(0f, 1f) * 20).roundToInt() * 5
                 dragging = false; shown = v; invalidate(); onSet?.invoke(v)
             }
-            MotionEvent.ACTION_CANCEL -> { dragging = false; shown = tile?.pct ?: 0; invalidate() }
+            MotionEvent.ACTION_CANCEL -> { removeCallbacks(longPress); opened = false; dragging = false; shown = tile?.pct ?: 0; invalidate() }
         }
         return true
     }
+
+    private companion object { const val LONG_PRESS_MS = 450L }
 }
 
 /** 126×182 toggle or 148×182 lock / garage tile: icon top-left, name + state at the bottom. */
