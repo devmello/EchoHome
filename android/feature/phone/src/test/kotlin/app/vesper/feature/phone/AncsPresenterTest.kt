@@ -204,4 +204,50 @@ class AncsPresenterTest {
         p.onNotification(msg(uid = 8).copy(appId = "net.whatsapp.WhatsApp", appName = null), Change.POSTED)
         assertEquals("WhatsApp", feed.banners.value.single().appName)
     }
+
+    @Test fun negativeActionBecomesABannerButtonWithThePhonesLabel() {
+        p.onNotification(msg(neg = "Clear"), Change.POSTED)
+        val a = feed.banners.value.single().actions.single()
+        assertEquals("Clear", a.label)
+        assertEquals(IslandAction.Style.NORMAL, a.style)
+        p.onNotification(msg(uid = 8, neg = "Delete"), Change.POSTED)
+        val d = feed.banners.value.first { it.id.endsWith(":8") }.actions.single()
+        assertEquals("Delete", d.label)
+        assertEquals(IslandAction.Style.DESTRUCTIVE, d.style)
+    }
+
+    @Test fun noNegativeFlagMeansNoExtraButtons() {
+        p.onNotification(msg(flags = 0), Change.POSTED)
+        assertTrue(feed.banners.value.single().actions.isEmpty())
+    }
+
+    @Test fun tappingTheButtonPerformsOnceEvenWhenTheBannerThenCloses() {
+        p.onNotification(msg(), Change.POSTED)
+        val b = feed.banners.value.single()
+        b.actions.single().onInvoke()
+        feed.dismiss(b.id, byUser = true) // the renderer closes the banner after a tap
+        assertEquals(listOf(7L to Ancs.ACTION_NEGATIVE), performed)
+    }
+
+    @Test fun positiveActionIsPrimaryAndPerformsPositive() {
+        p.onNotification(msg(flags = Ancs.FLAG_POSITIVE_ACTION or Ancs.FLAG_NEGATIVE_ACTION).copy(positiveLabel = "Open"), Change.POSTED)
+        val b = feed.banners.value.single()
+        assertEquals("Open", b.primaryAction!!.label)
+        b.primaryAction!!.onInvoke()
+        feed.dismiss(b.id, byUser = true)
+        assertEquals(listOf(7L to Ancs.ACTION_POSITIVE), performed)
+    }
+
+    private val call = AncsNotification(3, AncsCategory.INCOMING_CALL, Ancs.FLAG_POSITIVE_ACTION or Ancs.FLAG_NEGATIVE_ACTION,
+        appId = "com.apple.mobilephone", title = "Maya", positiveLabel = "Answer", negativeLabel = "Decline")
+
+    @Test fun callOffersAnswerOnlyWhenEnabled() {
+        assertEquals(listOf("decline"), p.callActivity(call).actions.map { it.id })
+        p.offerAnswer = true
+        val acts = p.callActivity(call).actions
+        assertEquals(listOf("answer", "decline"), acts.map { it.id })
+        assertEquals(IslandAction.Style.ACCEPT, acts[0].style)
+        acts[0].onInvoke()
+        assertEquals(listOf(3L to Ancs.ACTION_POSITIVE), performed)
+    }
 }

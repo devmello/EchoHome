@@ -13,6 +13,7 @@ import app.vesper.feature.phone.ams.Ams
 import app.vesper.feature.phone.ams.AmsSession
 import app.vesper.feature.phone.ancs.Ancs
 import app.vesper.feature.phone.ancs.AncsSession
+import app.vesper.feature.phone.battery.Battery
 
 /**
  * GATT client to the iPhone's ANCS (notifications) and AMS (Now Playing), on one LE link and one
@@ -54,6 +55,8 @@ class AppleGattClient(
         fun onAmsAttribute(client: AppleGattClient, value: ByteArray?)
         /** Pairing is needed (the phone refused an unencrypted subscription). */
         fun onNeedsBond(client: AppleGattClient)
+        /** The phone's Battery Level (percent), read or notified. */
+        fun onBatteryLevel(client: AppleGattClient, percent: Int)
     }
 
     enum class State { IDLE, CONNECTING, DISCOVERING, SUBSCRIBING, READY, CLOSED }
@@ -72,6 +75,9 @@ class AppleGattClient(
     private var rc: BluetoothGattCharacteristic? = null
     private var eu: BluetoothGattCharacteristic? = null
     private var ea: BluetoothGattCharacteristic? = null
+    private var bl: BluetoothGattCharacteristic? = null
+    /** The phone exposes a Battery Level (Battery Service 0x180F). Logged once per connection. */
+    val hasBattery: Boolean get() = bl != null
 
     private sealed class Op {
         class Subscribe(val c: BluetoothGattCharacteristic) : Op()
@@ -218,9 +224,10 @@ class AppleGattClient(
         eu = ams?.getCharacteristic(Ams.ENTITY_UPDATE)
         ea = ams?.getCharacteristic(Ams.ENTITY_ATTRIBUTE)
         if (rc == null) eu = null
+        bl = g.getService(Battery.SERVICE)?.getCharacteristic(Battery.LEVEL)
         if (!hasAncs && !hasAms) {
             val found = (g.getService(Ancs.SERVICE) != null) to (g.getService(Ams.SERVICE) != null)
-            Log.i(TAG, "${device.address}: no ANCS/AMS in use (present: ancs=${found.first} ams=${found.second}; ${g.services.size} services)")
+            Log.i(TAG, "${device.address}: no ANCS/AMS in use (present: ancs=${found.first} ams=${found.second} battery=$hasBattery; ${g.services.size} services)")
             listener.onNoAppleServices(this)
             return
         }
@@ -242,9 +249,14 @@ class AppleGattClient(
         }
         enqueue(Op.Run {
             state = State.READY
-            Log.i(TAG, "${device.address}: ready (ancs=$hasAncs ams=$hasAms mtu $mtu)")
+            Log.i(TAG, "${device.address}: ready (ancs=$hasAncs ams=$hasAms battery=$hasBattery mtu $mtu)")
             listener.onReady(this)
         })
+        bl?.let { b ->
+            // After READY so a slow answer can't hold it up: notify when the phone offers it, then one read for the current value.
+            if (b.properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0) enqueue(Op.Subscribe(b))
+            enqueue(Op.Read(b) { v -> Battery.parse(v)?.let { listener.onBatteryLevel(this, it) } ?: Log.i(TAG, "battery level read: none") })
+        }
     }
 
     private val callback = object : BluetoothGattCallback() {
@@ -304,6 +316,7 @@ class AppleGattClient(
                     Ancs.DATA_SOURCE -> listener.onDataSource(this@AppleGattClient, v)
                     Ams.ENTITY_UPDATE -> listener.onAmsEntityUpdate(this@AppleGattClient, v)
                     Ams.REMOTE_COMMAND -> listener.onAmsCommands(this@AppleGattClient, v)
+                    Battery.LEVEL -> Battery.parse(v)?.let { listener.onBatteryLevel(this@AppleGattClient, it) }
                 }
             }
         }

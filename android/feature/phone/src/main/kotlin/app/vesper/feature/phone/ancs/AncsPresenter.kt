@@ -36,6 +36,8 @@ class AncsPresenter(
     var clearOnDismiss: Boolean = true,
     /** Lower-case bundle ids or app names whose notifications don't banner (calls always show). */
     var hiddenApps: Set<String> = emptySet(),
+    /** Offer Answer next to Decline on an incoming call. It answers on the iPhone: the Echo carries no call audio. */
+    var offerAnswer: Boolean = false,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     /** Banners we posted and believe are still in the feed, by uid. */
@@ -104,8 +106,15 @@ class AncsPresenter(
             }
         }
         val primary = if (n.hasPositiveAction && n.positiveLabel.isNotBlank())
-            IslandAction("ancs-positive", n.positiveLabel, IslandAction.Style.PRIMARY) { perform(n.uid, Ancs.ACTION_POSITIVE) }
+            IslandAction("ancs-positive", n.positiveLabel, IslandAction.Style.PRIMARY) { act(n.uid, Ancs.ACTION_POSITIVE) }
         else null
+        // The negative action after the primary one, with the phone's own label ("Clear", "Decline", "Delete"...).
+        // Plain for Clear, red for anything else (it may be destructive on the phone).
+        val negLabel = n.negativeLabel.trim().ifEmpty { if (n.hasNegativeAction && negativeClears(n)) "Clear" else "" }
+        val negative = if (n.hasNegativeAction && negLabel.isNotEmpty())
+            listOf(IslandAction("ancs-negative", negLabel,
+                if (negativeClears(n)) IslandAction.Style.NORMAL else IslandAction.Style.DESTRUCTIVE) { act(n.uid, Ancs.ACTION_NEGATIVE) })
+        else emptyList()
         return Banner(
             id = bannerId(n.uid),
             appName = appName,
@@ -116,21 +125,35 @@ class AncsPresenter(
             postedAtMillis = parseDate(n.date) ?: now(),
             critical = false,
             primaryAction = primary,
+            actions = negative,
             sourcePackage = n.appId.ifBlank { null },
             sourceDevice = deviceName(),
         )
     }
 
+    /**
+     * Decline always (when the phone offers it). Answer only when [offerAnswer] is on: the call is then
+     * answered on the iPhone (its audio route), so with the phone out of reach the caller hears nothing.
+     */
     fun callActivity(n: AncsNotification): LiveActivity {
-        val actions = if (n.hasNegativeAction)
-            listOf(IslandAction("decline", n.negativeLabel.ifBlank { "Decline" }, IslandAction.Style.DESTRUCTIVE) { perform(n.uid, Ancs.ACTION_NEGATIVE) })
-        else emptyList()
+        val actions = buildList {
+            if (offerAnswer && n.hasPositiveAction)
+                add(IslandAction("answer", n.positiveLabel.ifBlank { "Answer" }, IslandAction.Style.ACCEPT) { perform(n.uid, Ancs.ACTION_POSITIVE) })
+            if (n.hasNegativeAction)
+                add(IslandAction("decline", n.negativeLabel.ifBlank { "Decline" }, IslandAction.Style.DESTRUCTIVE) { perform(n.uid, Ancs.ACTION_NEGATIVE) })
+        }
         return LiveActivity(
             id = callId(n.uid),
             kind = ActivityKind.CALL,
             content = LiveContent.Call(caller = n.title.ifBlank { n.subtitle.ifBlank { "Unknown caller" } }, subtitle = "Answer on iPhone", video = false),
             actions = actions,
         )
+    }
+
+    /** A banner button was tapped: the banner closes, which must not also send Clear for it. */
+    private fun act(uid: Long, actionId: Int) {
+        posted.remove(uid)
+        perform(uid, actionId)
     }
 
     private fun hidden(n: AncsNotification): Boolean {

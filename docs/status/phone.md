@@ -268,3 +268,37 @@ If something fails, send `./scripts/echo-adb.sh logcat -d -s VesperPhone:* BtGat
 - **Bluetooth name changed:** the app sets the adapter name to `DeviceName` ("Echo Show"; it was "Echo Show 5").
 - Bonded devices: none were added or removed. Tests never paired anything. The discoverable prompt was denied each time.
 - Hidden APIs on this ROM (reflection check, debug log): `BluetoothA2dpSink.disconnect` ✔, `BluetoothDevice.removeBond` ✔, `BluetoothAdapter.setScanMode` ✘ (blocked), so discoverability goes through the system prompt.
+
+## Nov 22 evening: notification actions + iPhone battery
+
+### Notification actions
+- ANCS already fetched PositiveActionLabel (6) and NegativeActionLabel (7). Now both reach the banner:
+  - `primaryAction` = positive (PRIMARY), `Banner.actions` = the negative action with the phone's label ("Clear", "Delete", "Decline"...). NORMAL style for Clear, DESTRUCTIVE for anything else.
+  - Tapping a button performs it once. The banner closing afterwards (`dismiss(byUser = true)`) does **not** also send Clear: the presenter forgets the uid first.
+  - Echo-side dismiss still sends NegativeAction only when its label means Clear (`notifications.userDismissals`, unchanged).
+- **Calls: Decline only by default.** Answer from the Echo would connect the call on the iPhone (iOS keeps the audio on the phone; the Echo has no HFP/call audio), so the caller hears silence if the phone is out of reach. A tap on a banner is also easy to do by accident. It's an advanced setting, `phone.answerCalls` ("Offer Answer for incoming calls", default off): Answer (ACCEPT style) then appears before Decline.
+
+### iPhone battery
+- **Research (not confirmed on a device):** the web search found nothing authoritative on whether iOS exposes Battery Service 0x180F as a GATT server to accessories. From memory it appears in nRF Connect on a connected, bonded iPhone, but that's unverified. The client therefore treats it as optional: no service = no battery, nothing breaks (the connect log line says `battery=true/false`).
+- `AppleGattClient`: after READY it discovers 0x180F/0x2A19, subscribes to notifications if the characteristic has NOTIFY, then reads once. All through the existing one-op-at-a-time queue. Battery doesn't count as an Apple service (ANCS or AMS still required).
+- **Charging: `null` always**, the Battery Service has no charging flag (iOS exposes none that I know of).
+- `services.phone` is bound in `PhoneController.start`: `PhoneStatus(deviceName, connected, batteryPercent, charging = null)`. `null` until a phone was ever paired. Battery is null when not connected.
+- Island (`PHONE_BATTERY`, id `phone:battery`; policy in `battery/BatteryPolicy`):
+  - first level after a connection: 5 s;
+  - once at <= 20 % (20 s) and once at <= 10 % (20 s) per discharge;
+  - a discharge ends when the level climbs above 25 % (or charging is reported, if it ever is: ends the activity);
+  - connecting already low counts as the low announcement.
+  - Level changes while it's showing update the number, keeping the end time.
+- `:feature:system` currently renders nothing for `PhoneBattery` in some paths (`return false to false`): that's its side.
+- Tests: `BatteryPolicyTest` (10), 5 new in `AncsPresenterTest` (actions, double-perform, answer setting). All pass.
+- Debug demos: `--es phone_demo battery | battery-low | mail-actions` (battery goes through the real policy + island; `battery-low` steps 40, 20, 19, 10, 9 every 7 s).
+
+### To test once an iPhone is paired
+1. Logcat `VesperPhone`: the `ready (ancs=.. ams=.. battery=..)` line. If `battery=false`, iOS doesn't expose it and the feature stays dormant (`services.phone` battery null).
+2. If true: the island shows the battery for 5 s on connect; `services.phone.value.batteryPercent` follows the phone.
+3. Drain to 20 % / 10 % (or use a low-battery phone): one island each.
+4. Send yourself an iMessage / Mail: the expanded banner has the phone's labels; tap Clear / Open and check the phone acts once.
+5. Call the phone: Decline works; with the setting on, Answer answers on the phone.
+
+### Contract requests
+None.
