@@ -365,6 +365,8 @@ The user picked the "slimmed-down LineageOS" option over a custom firmware. A RO
 
 Profile and measure on the device after every milestone. Keep RAM under ~200 MB for the whole app, and hold 60 fps on the clock faces.
 
+Software updates (signing, update manifest, silent install, rollback): plan in `docs/software-updates.md`, not built yet.
+
 ### 8.1 Status
 
 - **Milestone 0 done (Nov 22, 2026).** Toolchain on the Mac: Homebrew `openjdk@17` (the system default is JDK 27, too new for the build; `scripts/lib.sh` sets `JAVA_HOME`), Android command-line tools at `/opt/homebrew/share/android-commandlinetools` (platform android-35, build-tools 35), Gradle 9.9.2 wrapper, AGP 9.5.2 with built-in Kotlin. Package `com.echobedside` (renamed `app.vesper` later), minSdk/targetSdk 30, armeabi-v7a. OkHttp is pinned to 4.12 because 5.x needs compileSdk 37.
