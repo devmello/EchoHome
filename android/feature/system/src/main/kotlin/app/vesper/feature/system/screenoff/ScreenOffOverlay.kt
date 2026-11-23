@@ -86,8 +86,10 @@ internal class ScreenOffOverlay(context: Context, private val ui: SystemUi) : Vi
 
     // --- policy ---
 
+    /** A due reminder wakes the screen too: it doesn't expand the island while its banner shows (`:feature:lists`). */
     private fun isAlert(kind: ActivityKind, alert: Boolean) =
-        alert || kind == ActivityKind.CALL || kind == ActivityKind.DOORBELL || kind == ActivityKind.ALARM_RINGING || kind == ActivityKind.TIMER_DONE
+        alert || kind == ActivityKind.CALL || kind == ActivityKind.DOORBELL || kind == ActivityKind.ALARM_RINGING || kind == ActivityKind.TIMER_DONE ||
+            kind == ActivityKind.REMINDER
 
     private fun readSettings() {
         enabled = s.settings.getBoolean(SystemSettings.SCREENOFF_ENABLED, true)

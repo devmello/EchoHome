@@ -44,6 +44,37 @@ object FirstRun {
     fun countsAsSettings(key: String) = key != KEY_DONE
 }
 
+/**
+ * What happens to the setup when something navigates to another screen (a launch intent's
+ * `screen`, an alarm ringing, a banner tap). The shell always closes the setup then, and the
+ * target screen shows: nothing waits behind the setup, and `setup.done` doesn't change.
+ *
+ * - A setup opened for review (`--es screen onboarding` on an Echo that's set up) stays closed.
+ * - The first-run setup ([needed]) has to be finished or skipped, so it comes back when the Echo
+ *   returns to StandBy ([home]), at the step it was on.
+ *
+ * Screens in [passThrough] (face enrolment, which comes back to the setup by itself) don't count
+ * as leaving. Fed with every `navigator.current` value; [onScreen] true = open the setup again.
+ */
+class SetupResume(
+    private val screen: String = SetupFeature.SCREEN,
+    private val home: String = SetupFeature.HOME_SCREEN,
+    private val passThrough: Set<String> = setOf(OnboardingView.SCREEN_ENROL),
+) {
+    private var inSetup = false
+    private var interrupted = false
+
+    fun onScreen(id: String, needed: Boolean): Boolean {
+        if (!needed) { inSetup = false; interrupted = false; return false }
+        when {
+            id == screen -> { inSetup = true; interrupted = false }
+            inSetup && id in passThrough -> Unit
+            inSetup -> { inSetup = false; interrupted = true }
+        }
+        return interrupted && id == home
+    }
+}
+
 /** The setup's pages, in order. Only [WELCOME] and [DONE] can't be skipped. */
 enum class SetupStep(val id: String, val optional: Boolean = true) {
     WELCOME("welcome", optional = false),

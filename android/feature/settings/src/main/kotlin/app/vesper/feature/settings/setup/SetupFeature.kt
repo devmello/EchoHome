@@ -22,7 +22,11 @@ import kotlinx.coroutines.launch
  * features write keys of their own while they start (AirPlay's identity, the detected location…).
  *
  * - Fresh install: the setup opens over StandBy on the first launch (unless the launch intent
- *   asks for a screen), and again on every start until it's finished or skipped.
+ *   asks for a screen, or another screen opened first), and again on every start until it's
+ *   finished or skipped.
+ * - Navigating to another screen (a later `--es screen X`, an alarm, a banner tap) closes the
+ *   setup without marking it done. The first-run setup comes back at the step it was on when the
+ *   Echo returns to StandBy; a review (`setup.done` already true) stays closed. See [SetupResume].
  * - `--es screen onboarding [--es step <1-8 | welcome|wifi|name|location|phone|people|clock|done>]`
  *   opens it for review at any time; it doesn't change `setup.done` until Done is tapped.
  * - "Run setup again" (General, on the settings page) resets `setup.done` and opens it.
@@ -30,6 +34,8 @@ import kotlinx.coroutines.launch
 object SetupFeature : VesperFeature {
     override val id = "setup"
     const val SCREEN = "onboarding"
+    /** StandBy (`VesperApp.HOME_SCREEN` in `:app`, which features can't import). */
+    const val HOME_SCREEN = "standby"
     private const val TAG = "VesperSetup"
     /** The settings store's file (`:core:data` PrefsSettingsStore). */
     private const val PREFS = "echo_settings"
@@ -54,12 +60,35 @@ object SetupFeature : VesperFeature {
             true
         }
 
+        val main = Handler(Looper.getMainLooper())
         // Open on the first launch of the HOME activity. Posted, so it lands after the activity
-        // has shown StandBy for the same intent (and stays on top of it).
+        // has shown StandBy for the same intent (and stays on top of it). By then a second intent
+        // may already have opened a screen (adb's `am start --es screen X` right after the system
+        // started HOME on its own): that one wins, or the setup would cover it.
         if (needed) services.scope.launch {
             val intent = services.intents.first()
-            if (intent.extras?.getString("screen") == null && needed) {
-                Handler(Looper.getMainLooper()).post { services.navigator.show(SCREEN) }
+            if (intent.extras?.getString("screen") == null && needed) main.post {
+                if (!needed) return@post
+                if (services.intents.replayCache.lastOrNull() === intent && services.navigator.current.value == HOME_SCREEN) {
+                    services.navigator.show(SCREEN)
+                } else {
+                    Log.i(TAG, "another screen opened first: the setup shows on the next start")
+                }
+            }
+        }
+
+        // The shell closes the setup when another screen opens; the first-run setup comes back
+        // once the Echo is at StandBy again (see SetupResume). Posted and re-checked, because
+        // opening a top screen passes through StandBy for a moment.
+        val resume = SetupResume()
+        services.scope.launch {
+            services.navigator.current.collect { id ->
+                if (resume.onScreen(id, needed)) main.post {
+                    if (needed && services.navigator.current.value == HOME_SCREEN) {
+                        Log.i(TAG, "back at StandBy: the first-run setup carries on")
+                        services.navigator.show(SCREEN)
+                    }
+                }
             }
         }
     }

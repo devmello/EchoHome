@@ -44,6 +44,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
@@ -178,14 +179,35 @@ class CameraPipeline(
     var externalUser = false
         set(v) { field = v; evaluate() }
     private var lux = -1f
+    /** Readings since the listener was last registered (see [firstLux]). */
+    private var luxReadings = 0
     private val sensors = context.getSystemService(SensorManager::class.java)
     private val luxListener = object : SensorEventListener {
-        override fun onSensorChanged(e: SensorEvent) {
-            lux = e.values[0]
-            // The lights came on: try again now instead of waiting out the back-off.
-            if (_ui.value.off == OffReason.DARK && lux >= 3f && lux > luxAtDark * 2f + 1f) { darkUntil = 0L; evaluate() }
-        }
+        override fun onSensorChanged(e: SensorEvent) = onLux(e.values[0])
         override fun onAccuracyChanged(s: Sensor?, a: Int) {}
+    }
+
+    /** A light reading: this pipeline's own listener, Night's published `ambientLux`, or [firstLux]. Main thread. */
+    private fun onLux(v: Float) {
+        lux = v
+        luxReadings++
+        // The lights came on: try again now instead of waiting out the back-off.
+        if (_ui.value.off == OffReason.DARK && lux >= 3f && lux > luxAtDark * 2f + 1f) { darkUntil = 0L; evaluate() }
+    }
+
+    /**
+     * The Echo's light HAL sends no reading on registration, only on change, so in a room that
+     * stays as it is [lux] would stay -1 (unknown). Night (`:feature:clock`) has the same problem
+     * and publishes a fallback reading as `SystemState.ambientLux` 1.5 s after it registers (only
+     * while StandBy is shown); that arrives through [start]'s collector. If nothing came by
+     * [FIRST_LUX_MS], read the driver's file ourselves, and only then fall back to the last
+     * published (maybe stale) `ambientLux`.
+     */
+    private val firstLux = Runnable {
+        if (!visible || luxReadings > 0) return@Runnable
+        val v = readLuxFile() ?: services.system.state.value.ambientLux ?: return@Runnable
+        Log.i(TAG, "no light event since registering: lux=$v")
+        onLux(v)
     }
 
     fun start() {
@@ -195,6 +217,10 @@ class CameraPipeline(
             services.system.state.map { it.cameraBlocked }.distinctUntilChanged().collect { evaluate() }
         }
         services.scope.launch { profiles.autoByFace.collect { evaluate() } }
+        // Night's readings come from the same sensor (or its file fallback): a new value is current.
+        services.scope.launch {
+            services.system.state.map { it.ambientLux }.distinctUntilChanged().drop(1).collect { v -> if (v != null && visible) onLux(v) }
+        }
         services.scope.launch {
             settings.changes.collect { k ->
                 if (k == KEY_REST && !restEnabled()) endRestNow()
@@ -208,8 +234,11 @@ class CameraPipeline(
     fun setVisible(v: Boolean) {
         if (v == visible) return
         visible = v
-        if (v) sensors?.getDefaultSensor(Sensor.TYPE_LIGHT)?.let { sensors.registerListener(luxListener, it, SensorManager.SENSOR_DELAY_NORMAL) }
-        else sensors?.unregisterListener(luxListener)
+        if (v) sensors?.getDefaultSensor(Sensor.TYPE_LIGHT)?.let {
+            luxReadings = 0
+            if (sensors.registerListener(luxListener, it, SensorManager.SENSOR_DELAY_NORMAL)) main.postDelayed(firstLux, FIRST_LUX_MS)
+        }
+        else { sensors?.unregisterListener(luxListener); main.removeCallbacks(firstLux) }
         evaluate()
     }
 
@@ -665,6 +694,16 @@ class CameraPipeline(
         /** With the light sensor still dark, the camera itself checks at most this often. */
         const val DARK_SAFETY_MS = 20 * 60_000L
         const val ERROR_RETRY_MS = 60_000L
+        /** After Night's own 1.5 s fallback (`NightController.FIRST_READING_MS`), so its reading comes first. */
+        const val FIRST_LUX_MS = 2_000L
+        /** Amazon's STK3x1x driver: the current lux as text ("12 lux"); same file as `NightController.LUX_FILE`. */
+        const val LUX_FILE = "/sys/bus/platform/drivers/als_ps/lux"
+
+        /** "12 lux" → 12f; null for anything else (same rule as `NightController.parseLux`). */
+        fun parseLux(text: String): Float? =
+            text.trim().removeSuffix("lux").trim().toFloatOrNull()?.takeIf { it >= 0f && it.isFinite() }
+
+        private fun readLuxFile(): Float? = try { parseLux(java.io.File(LUX_FILE).readText()) } catch (_: Exception) { null }
         /** Defaults after measuring each stage on the Echo (docs/status/camera.md). */
         val STAGE_DEFAULTS = mapOf("presence" to true, "detect" to true, "recognize" to true)
     }
