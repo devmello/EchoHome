@@ -34,11 +34,14 @@ import app.vesper.core.model.MediaControls
 import java.io.File
 import java.security.SecureRandom
 import java.util.concurrent.Executors
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 /**
  * The AirPlay receiver as a foreground service (NOTES §6): runs the native receiver, advertises it
@@ -102,6 +105,12 @@ class AirPlayService : Service() {
             }
         }
         watchNetwork()
+        // Now Playing shows the Echo's volume (keys, Control Center, the sender's slider all land there).
+        mainScope.launch {
+            services.system.state.map { it.volume }.distinctUntilChanged().collect { v ->
+                h.post { if (speakerVolume != v) { speakerVolume = v; if (publishedMedia) publish() } }
+            }
+        }
         if (services.config.debug) registerDebugReceiver()
     }
 
@@ -133,7 +142,7 @@ class AirPlayService : Service() {
         val settings = services.settings
         val name = settings.getString(AirPlayFeature.KEY_NAME, "").ifBlank { DeviceName.get(settings) }
         // AirPlay 1 by default (user decision): the iPhone accepts play/pause/skip over DACP; no multi-room needed.
-        val ap2 = settings.getString(AirPlayFeature.KEY_MODE, AirPlayFeature.MODE_AP1) == AirPlayFeature.MODE_AP2
+        val ap2 = settings.getString(AirPlayFeature.KEY_MODE, AirPlayFeature.MODE_AP2) == AirPlayFeature.MODE_AP2
         libMdns = settings.getString(AirPlayFeature.KEY_MDNS, AirPlayFeature.MDNS_NSD) == AirPlayFeature.MDNS_LIB
         val started = SystemClock.elapsedRealtime()
         handle = try {
@@ -202,6 +211,7 @@ class AirPlayService : Service() {
         override fun onVolume(db: Float) {
             h.post {
                 update { Reducer.volume(it, db) }
+                mirrorToSpeaker(db)
                 applyGain()
             }
         }
@@ -314,8 +324,11 @@ class AirPlayService : Service() {
     // Publishing into services.media / services.island
     // ------------------------------------------------------------------------------------------
 
+    /** The Echo's music volume, 0..1 (from services.system). Handler thread. */
+    private var speakerVolume: Float? = null
+
     private fun publish() {
-        val media = state.toMediaState(artwork)
+        val media = state.toMediaState(artwork, speakerVolume)
         if (media != null) {
             services.media.publish(SOURCE_ID, media, controls)
             publishedMedia = true
@@ -329,7 +342,9 @@ class AirPlayService : Service() {
         val label = if (state.connected) state.senderName ?: ReceiverState.DEFAULT_SENDER_LABEL else null
         if (label != publishedIsland) {
             if (label != null) {
-                services.island.publish(LiveActivity(ISLAND_ID, ActivityKind.AIRPLAY_CONNECTED, LiveContent.AirPlayConnected(label)))
+                // Not on Now Playing: its header already says "AirPlay" and who's playing.
+                services.island.publish(LiveActivity(ISLAND_ID, ActivityKind.AIRPLAY_CONNECTED, LiveContent.AirPlayConnected(label),
+                    ownerScreen = NOW_PLAYING_SCREEN))
             } else {
                 services.island.end(ISLAND_ID)
             }
@@ -375,6 +390,7 @@ class AirPlayService : Service() {
     private fun doSetVolume(fraction: Float) {
         val db = AirPlayMath.dbForFraction(fraction)
         update { Reducer.volume(it, db) }
+        mirrorToSpeaker(db)
         applyGain()
         if (state.hasRemote) remote(NativeBridge.CMD_VOLUME, AirPlayMath.dacpVolume(fraction))
     }
@@ -434,8 +450,24 @@ class AirPlayService : Service() {
         applyGain()
     }
 
-    /** The sender's volume as a linear gain. */
-    private fun baseGain(): Float = state.volumeDb?.let(AirPlayMath::gain) ?: 1f
+    /**
+     * The sender's volume is the Echo's speaker volume ([mirrorToSpeaker]), as with Bluetooth
+     * absolute volume, so the stream itself plays at full scale; only the sender's mute silences it.
+     * (A software gain on top of the music stream made the iPhone at full volume as quiet as the
+     * Echo's own level, e.g. 5 of 15.)
+     */
+    private fun baseGain(): Float = if ((state.volumeDb ?: 0f) <= -100f) 0f else 1f
+
+    /** The sender's volume slider sets the Echo's music volume (the island shows the change). */
+    private fun mirrorToSpeaker(db: Float) {
+        if (db <= -100f) return // mute: the gain handles it, the speaker level stays for unmute
+        val am = getSystemService(AudioManager::class.java) ?: return
+        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val index = (AirPlayMath.volumeFraction(db) * max).roundToInt().coerceIn(0, max)
+        if (am.getStreamVolume(AudioManager.STREAM_MUSIC) != index) {
+            try { am.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0) } catch (e: SecurityException) { Log.w(TAG, "volume: $e") }
+        }
+    }
 
     private fun applyGain() {
         player?.setGain(AudioFocusPolicy.gain(baseGain(), focus))
@@ -563,6 +595,7 @@ class AirPlayService : Service() {
     }
 
     companion object {
+        private const val NOW_PLAYING_SCREEN = "nowplaying"
         private const val TAG = "VesperAirPlay"
         const val SOURCE_ID = "airplay"
         const val ISLAND_ID = "airplay"

@@ -87,8 +87,11 @@ internal data class ReceiverState(
         return if (durationMs > 0) p.coerceIn(0, durationMs) else p.coerceAtLeast(0)
     }
 
-    /** What goes into `services.media`; null = nothing to show yet (or any more). */
-    fun toMediaState(artwork: Bitmap?): MediaState? {
+    /**
+     * What goes into `services.media`; null = nothing to show yet (or any more). [speakerVolume] is
+     * the Echo's own music volume (0..1), which Now Playing shows; without it, the sender's.
+     */
+    fun toMediaState(artwork: Bitmap?, speakerVolume: Float? = null): MediaState? {
         if (!anyConnection || (!streaming && title == null)) return null
         return MediaState(
             title = title ?: "",
@@ -101,7 +104,7 @@ internal data class ReceiverState(
             playing = playing && !locallyPaused,
             source = MediaSourceKind.AIRPLAY,
             sourceLabel = senderName ?: DEFAULT_SENDER_LABEL,
-            volume = volumeDb?.let(AirPlayMath::volumeFraction),
+            volume = speakerVolume ?: volumeDb?.let(AirPlayMath::volumeFraction),
             route = route(),
         )
     }

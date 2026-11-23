@@ -251,8 +251,8 @@ class AirPlaySettingsTest {
         assertEquals("", byKey.getValue(AirPlayFeature.KEY_NAME).default)
         assertTrue(byKey.getValue(AirPlayFeature.KEY_NAME).help!!.contains("device name"))
         val mode = byKey.getValue(AirPlayFeature.KEY_MODE)
-        assertEquals(AirPlayFeature.MODE_AP1, mode.default)
-        assertEquals(listOf(AirPlayFeature.MODE_AP1, AirPlayFeature.MODE_AP2), mode.options.map { it.first })
+        assertEquals(AirPlayFeature.MODE_AP2, mode.default)
+        assertEquals(listOf(AirPlayFeature.MODE_AP2, AirPlayFeature.MODE_AP1), mode.options.map { it.first })
         assertFalse(mode.advanced)
         assertTrue(byKey.getValue(AirPlayFeature.KEY_MDNS).advanced)
         // Every CHOICE default is one of its options.
