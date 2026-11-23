@@ -34,6 +34,8 @@ internal class LyricsView(context: Context) : View(context) {
         const val ANCHOR = 38f
         const val SCROLL_MS = 360L
         const val MASK_LIMIT = 16
+        /** The word sweep redraws at ~15 fps: on this device every frame costs about the same wherever it draws. */
+        const val SWEEP_FRAME_MS = 66L
 
         /** Brightness of a line `d` lines after the current one (d < 0: already sung). */
         fun alphaAt(d: Float): Float = when {
@@ -142,7 +144,19 @@ internal class LyricsView(context: Context) : View(context) {
     }
 
     /** Stops the scroll animation and the word sweep (screen hidden). */
-    fun stop() { anim.cancel(); playing = false; if (synced) cur = target.toFloat() }
+    fun stop() { anim.cancel(); playing = false; removeCallbacks(frame); framePending = false; if (synced) cur = target.toFloat() }
+
+    // One self-sustaining frame chain at most (extra invalidations must not start more chains).
+    private var framePending = false
+    private var frameTop = 0
+    private var frameBottom = 0
+    private val frame = Runnable { framePending = false; if (playing) invalidate(0, frameTop, W.toInt(), frameBottom) }
+
+    private fun scheduleFrame(top: Int, bottom: Int) {
+        if (framePending) return
+        framePending = true; frameTop = top; frameBottom = bottom
+        postDelayed(frame, SWEEP_FRAME_MS)
+    }
 
     /** The sweep runs only while playing; paused shows the line as it is. Call again after a seek. */
     fun setPlaying(p: Boolean) { playing = p; invalidate() }
@@ -201,6 +215,7 @@ internal class LyricsView(context: Context) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         val white = Night.map(Color.WHITE, night)
+        canvas.clipRect(0f, 0f, W, H) // the parent doesn't clip children (glass shadows), so clip here
         message?.let {
             small.draw(canvas, it, 0f, small.baselineIn(ANCHOR, LINE_H), withAlpha(white, 0.6f)); return
         }
@@ -218,7 +233,7 @@ internal class LyricsView(context: Context) : View(context) {
                         val t = positionMs()
                         if (t < actLineEnd) {
                             // Still to be sung (or being sung): redraw just this line each frame while playing.
-                            if (playing) postInvalidateOnAnimation(0, y.toInt() - 2, W.toInt(), (y + heights[i]).toInt() + 2)
+                            if (playing) scheduleFrame(y.toInt() - 2, (y + heights[i]).toInt() + 2)
                             if (t >= actLineStart) { sweep(canvas, i, y, t, a, white); continue }
                         }
                     }
@@ -306,5 +321,5 @@ internal class LyricsView(context: Context) : View(context) {
         return true
     }
 
-    override fun onDetachedFromWindow() { anim.cancel(); clearMasks(); super.onDetachedFromWindow() }
+    override fun onDetachedFromWindow() { anim.cancel(); removeCallbacks(frame); framePending = false; clearMasks(); super.onDetachedFromWindow() }
 }
