@@ -52,6 +52,13 @@ object ClockSettings {
             add(SettingSpec(WorldFace.KEY_CITIES, "World: cities", SettingType.TEXT_LIST,
                 default = WorldFace.DEFAULT_CITIES.joinToString(",") { WorldFace.encodeCity(it) },
                 help = "Up to three, each \"City|Time zone|latitude|longitude\", e.g. London|Europe/London|51.5|-0.13."))
+            add(SettingSpec(WidgetStacks.KEY_LEFT, "Widgets: left stack", SettingType.CHOICE, default = WidgetStacks.DEFAULT_LEFT.id,
+                options = WidgetStacks.options(),
+                help = "The page right of StandBy shows two widget stacks side by side. Swipe up or down on a stack to change it."))
+            add(SettingSpec(WidgetStacks.KEY_RIGHT, "Widgets: right stack", SettingType.CHOICE, default = WidgetStacks.DEFAULT_RIGHT.id,
+                options = WidgetStacks.options()))
+            add(SettingSpec(WidgetStacks.KEY_WALLPAPER, "Widgets: wallpaper", SettingType.CHOICE, default = WidgetStacks.DEFAULT_WALLPAPER,
+                options = (GlassFace.PALETTES.keys + WidgetStacks.WALLPAPER_BLACK).map { it to it }))
             add(SettingSpec(KEY_NIGHT_MODE, "Night mode", SettingType.CHOICE, default = "auto",
                 options = listOf("auto" to "Automatic (dark room)", "schedule" to "On a schedule", "on" to "Always on", "off" to "Off"),
                 help = "Night shows every face in dim red. Automatic turns it on when the room stays dark; a schedule uses the times below."))

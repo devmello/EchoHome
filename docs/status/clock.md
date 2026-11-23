@@ -115,3 +115,58 @@ None: no `pm grant`, `appops` or `settings put`. The light sensor needs no permi
 - Device: idle StandBy 35.1 MB PSS, 0.2% CPU, 0 frames (before: 37.3 MB, 0%). Shots: `shots/clock/astro-night-*.png`, `personal-*.png`.
 - Unverified: AQI line on device (no air data), Night + personal on faces other than Digital/Analog/Float, extras during face swipes (hidden while sliding), real-calendar events.
 - Note: demo data was toggled on the Echo for screenshots and set back to false.
+
+## Nov 22 night: Widgets page (two StandBy stacks side by side)
+
+Like iPhone StandBy's widgets view: pager screen `widgets` (order 5, right after StandBy), `WidgetsScreen.kt`.
+
+- **Layout**: two glass tiles 448×432 (24 px margins, 16 px gap, radius 34). Each is a `WidgetStack` that shows one widget. A vertical swipe or flick moves to the next widget (up) or previous (down) with a 420 ms short spring (`PathInterpolator(0.3, 1.12, 0.5, 1)`), and wraps around. Page dots for each stack sit in the outer 24 px margin. A drag is claimed only once it's clearly vertical (`StackGesture.decide`: past slop and 1.2× steeper than wide), so horizontal swipes still page. Swipes starting in the top 40 px are left to Control Center. Widget content sits 16 px lower (`StackWidget.DY`) so the island and its shadow don't cover the header rows.
+- **Widgets** (`Widgets.kt`, order in `WidgetKind`):
+  - Clock: date and 144 px time, with the next alarm.
+  - Weather: now, condition icon, H/L and 5 hours.
+  - Calendar: today's next 3 events with all-day ones first, "Now · until …", coloured by the person's profile or the calendar. With no events left, it shows tomorrow's first event.
+  - Next alarm: time, day plus "in 7 h 12 min", label and `NextAlarm.reason`, or "No alarm". A tap opens `alarms`.
+  - Timers: the first timer large with a remaining bar, others as rows. It ticks once a second, and only while a timer runs and the widget is on screen. A tap opens `timers`.
+  - Now Playing: art (center-crop `BitmapShader`; at Night a luminance→#BE180E colour filter), source, title and artist, and previous / play-pause / next through `MediaSession.controls` (skip dimmed when `!canSkip`). Otherwise "Not playing".
+  - Air & UV: AQI with an EPA colour and a 0–300 scale, UV and its category, today's high, and the top pollen.
+  - Sun & Moon: the day's arc with the sun, sunrise and sunset ("Sunset in …"), the moon glyph (`MoonPainter`, extracted from `AstroView`), and "97% lit · Full moon in 2 days".
+- **Settings** (in the Clock section, applied live from `settings.changes`): `clock.widgets.left` (default `clock`), `clock.widgets.right` (default `weather`), and `clock.widgets.wallpaper` (Blue / Dusk / Graphite from Liquid Glass, or Black; default Graphite).
+- **Per-person**: with a profile active, Calendar shows that person's events plus shared ones, and Alarm / Clock show their own plus shared alarms (`WidgetData.alarmFor` / `visible`). The person's name and dot show at the top right.
+- **Night**: the page draws on black, the tiles become red outlines (`GlassPainter.night`), everything maps through `Night.map`, and the page dims to 0.42 (a touch wakes it for 6 s). The light sensor (`NightController`) runs while the page shows.
+- **Cost**:
+  - The wallpaper plus both tiles' glass and lift shadows are painted once, off the main thread, into one immutable 960×480 bitmap. A frame is that bitmap plus the widgets' display lists.
+  - Widgets are built on idle moments (`MessageQueue.IdleHandler`, never mid-gesture). Once built they stay attached, parked 4000 px below the clip with their display list recorded, so a swipe and its commit only change `translationY`.
+  - A parked widget doesn't redraw on data or minute changes; it catches up when it slides in.
+  - Redraws happen only on a change: the minute for the clock, data flows, the 1 Hz timer tick, and the slide.
+- **Debug extras** (`--es screen widgets`): `left <id>`, `right <id>`, `wallpaper <name>`, `profile <id>`, and (debug builds) `timer <seconds>`.
+- **Tests**: `WidgetModelTest` (14): order and ids, wrap-around both ends, parse fallback, per-stack persistence and reload from the settings page, the gesture-direction decision, settle (quarter or fling, fling against the drag returns), shared vs per-person alarms (store reason kept), today's events per person, countdown rounding, relative times, UV/AQI scales, the next full/new moon.
+
+Measured on the Echo (debug build, `echo-perf.sh`; swipes are raw `sendevent` on `/dev/input/event2`, 12 swipes over both stacks and directions, ~1 s apart):
+
+| Case | Frames | Janky | p50 / p95 / p99 | Notes |
+|---|---|---|---|---|
+| Swipes, widgets built on first slide (first version) | 611 | 3.9 % | 5 / 9 / 85 ms | build 10–30 ms + first record 18 ms + attach/layout 12–14 ms at commit |
+| Swipes, same process again (all built) | 617 | 0.5 % | 5 / – / 15 ms | |
+| Swipes, built and recorded on idle, parked (now), fresh process | 454 | 0.44 % | 5 / 8 / 12 ms | |
+| Same, second pass | 455 | 0 % | 5 / 7 / 10 ms | |
+| Same, later run | 466 | 0.86 % | 5 / 7 / 13 ms | |
+
+- **Idle**: a temporary draw log on every widget (removed) counted 0 widget draws in 30 s and 0 in 20 s across a minute boundary. On launch each widget recorded once on idle, and a swipe re-recorded nothing.
+- **Frame counts**: the page as a whole showed 3–13 frames / 10 s at 2–3 % CPU, where StandBy showed 0 frames and 0.7 % in the same minute. Those frames are not widget draws; their source (the page's own `onDraw`, or an overlay) isn't found yet.
+- **Bluetooth music**: while music played over Bluetooth, the island's level bars drew ~16 fps on StandBy and here alike (155–160 frames / 10 s).
+- **PSS**: 67–80 MB during these tests.
+- **Shots** (`shots/clock/`):
+  - `widgets-default.png` (Clock + Weather)
+  - `widgets-swipe-left.png`, `widgets-swipe-right.png` (after `input swipe`)
+  - `widgets-calendar-alarm.png`
+  - `widgets-timers-nowplaying.png` (a running timer and Bluetooth Now Playing with art)
+  - `widgets-notplaying-calendar.png`
+  - `widgets-air-sunmoon.png`
+- A horizontal swipe on a tile pages (widgets → Now Playing, StandBy → widgets), checked by screenshot.
+- **Unverified on the device**:
+  - **Night**: neither `--es night on` (not one of the system overlay's launch keys) nor the `app.vesper.system.DEBUG` broadcast (received) showed Night. Most likely `NightController`, which this page starts, rewrote `nightActive` from the light sensor. It needs a check with `clock.night.mode=on`.
+  - The per-person views (only unit-tested; I didn't switch the real profile).
+  - The tap actions (alarms / timers / media controls).
+  - The 1 Hz timer tick's frame cost on its own (measured only together with other activity).
+  - The source of the 3–13 idle frames above.
+- The test timer started with `timer` was cancelled afterwards.

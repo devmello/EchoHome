@@ -52,11 +52,9 @@ object ExtrasLayout {
 class AstroView(context: Context) : View(context) {
     private val nameText = SpecText(14f, 600, 0.01f)
     private val timesText = SpecText(14f, 500, 0.01f)
-    private val litPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val rimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.5f }
+    private val moon = MoonPainter()
     private val arrow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.8f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     private val lit = Path()
-    private val oval = RectF()
 
     private var illumination = 0.0
     private var waxing = true
@@ -115,29 +113,8 @@ class AstroView(context: Context) : View(context) {
         canvas.drawPath(lit, arrow)
     }
 
-    /** The disc: a dim rim, the lit part filled (a half disc plus or minus the terminator ellipse). */
-    private fun drawMoon(canvas: Canvas, cx: Float, cy: Float, r: Float, color: Int) {
-        rimPaint.color = withAlpha(color, 0.45f)
-        canvas.drawCircle(cx, cy, r, rimPaint)
-        val k = illumination
-        if (k < 0.01) return
-        litPaint.color = color
-        if (k > 0.99) { canvas.drawCircle(cx, cy, r, litPaint); return }
-        // lit side: right when waxing in the northern hemisphere, mirrored otherwise
-        val rightLit = waxing == north
-        val tw = r * kotlin.math.abs(1f - 2f * k.toFloat()) // terminator half-width
-        lit.rewind()
-        oval.set(cx - r, cy - r, cx + r, cy + r)
-        // outer limb: top → bottom through the lit side
-        lit.arcTo(oval, -90f, if (rightLit) 180f else -180f, true)
-        // terminator back to the top: crescent bulges to the lit side, gibbous to the dark side
-        oval.set(cx - tw, cy - r, cx + tw, cy + r)
-        val crescent = k < 0.5
-        val sweepRight = (crescent && rightLit) || (!crescent && !rightLit)
-        lit.arcTo(oval, 90f, if (sweepRight) -180f else 180f, false)
-        lit.close()
-        canvas.drawPath(lit, litPaint)
-    }
+    private fun drawMoon(canvas: Canvas, cx: Float, cy: Float, r: Float, color: Int) =
+        moon.draw(canvas, cx, cy, r, illumination, rightLit = waxing == north, color)
 
     companion object {
         const val W = 330f
@@ -264,4 +241,34 @@ class PersonalView(context: Context) : View(context) {
     }
 
     override fun onMeasure(w: Int, h: Int) = setMeasuredDimension(W.toInt(), H.toInt())
+}
+
+/** The moon glyph: a dim rim, the lit part filled (a half disc plus or minus the terminator ellipse). */
+class MoonPainter(rimWidth: Float = 1.5f) {
+    private val litPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val rimPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = rimWidth }
+    private val lit = Path()
+    private val oval = RectF()
+
+    /** [illumination] 0..1; [rightLit] = waxing in the northern hemisphere (mirrored otherwise). */
+    fun draw(canvas: Canvas, cx: Float, cy: Float, r: Float, illumination: Double, rightLit: Boolean, color: Int, rimAlpha: Float = 0.45f) {
+        rimPaint.color = withAlpha(color, rimAlpha)
+        canvas.drawCircle(cx, cy, r, rimPaint)
+        val k = illumination
+        if (k < 0.01) return
+        litPaint.color = color
+        if (k > 0.99) { canvas.drawCircle(cx, cy, r, litPaint); return }
+        val tw = r * kotlin.math.abs(1f - 2f * k.toFloat()) // terminator half-width
+        lit.rewind()
+        oval.set(cx - r, cy - r, cx + r, cy + r)
+        // outer limb: top → bottom through the lit side
+        lit.arcTo(oval, -90f, if (rightLit) 180f else -180f, true)
+        // terminator back to the top: crescent bulges to the lit side, gibbous to the dark side
+        oval.set(cx - tw, cy - r, cx + tw, cy + r)
+        val crescent = k < 0.5
+        val sweepRight = (crescent && rightLit) || (!crescent && !rightLit)
+        lit.arcTo(oval, 90f, if (sweepRight) -180f else 180f, false)
+        lit.close()
+        canvas.drawPath(lit, litPaint)
+    }
 }
