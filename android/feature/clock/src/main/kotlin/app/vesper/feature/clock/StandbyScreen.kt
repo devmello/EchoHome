@@ -668,6 +668,11 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
             if (o.previewHit(x, y)) o.previewTap()
             return
         }
+        // The Weather face opens the radar (`:feature:home`); in Night a tap only wakes the face.
+        if (!nightOn && current?.spec?.id == "weather") {
+            try { services.navigator.show("radar") } catch (_: UninitializedPropertyAccessException) {}
+            return
+        }
         wake()
     }
 

@@ -18,9 +18,10 @@ Read this after `CLAUDE.md` and `NOTES.md`. The Android project is in `android/`
 | `:feature:airplay` | C | AirPlay audio receiver |
 | `:feature:spotify` | S | Spotify Connect receiver (librespot 0.8.0 over JNI) |
 | `:feature:media` | D | Now Playing, media island states, other apps' sessions |
+| `:feature:radio` | R | internet radio (Radio Browser directory, MediaPlayer, ICY titles), favourites / recent, the `radio` screen; media source "radio" on `services.media` |
 | `:feature:alarm` | E | alarms, timers |
 | `:feature:lists` | L | reminders (exact, persisted, chime + island + banner) and lists (shopping, to-do), the `lists` screen |
-| `:feature:home` | F | weather (Open-Meteo) + calendar (iCal) providers, commute, stocks (free keyless API), optional HA Home screen + doorbell |
+| `:feature:home` | F | weather (Open-Meteo) + calendar (iCal) providers, commute, stocks (free keyless API), weather radar (RainViewer, `radar` screen), optional HA Home screen + doorbell |
 | `:feature:assistant` | G | voice assistant: on-device wake word/STT/TTS + Claude API |
 | `:feature:camera` | H | presence, profiles |
 | `:feature:photos` | I | Immich photo frame |
@@ -48,9 +49,13 @@ Feature modules depend on `:core:model` and `:core:design` only (add `:core:data
 - `ReminderTime` (pure parser and formatter for "at 7pm", "in 20 minutes", "tomorrow morning") and `ListText` / `ListNames` (de-dup keys, list names) in `:core:model`, shared by the store, the assistant tools and the web sync.
 - Island: `ActivityKind.REMINDER` / `REMINDER_MISSED` with `LiveContent.Reminder` (`:feature:system` renders them).
 
+## Contracts added Nov 23 (radio branch)
+
+- `services.radio: RadioControl` (`:feature:radio` binds; `NoRadio` by default): `play(query)` (favourites first, then the directory), `stop()`, `nowPlaying`. The assistant's `play_radio` / `stop_radio` use it. The station itself reaches Now Playing, the island and Control Center as the media source `"radio"` (`MediaSourceKind.OTHER_APP`, `sourceLabel` = the station), so no `MediaSourceKind` was added.
+
 ## How a feature plugs in (no `:app` edits)
 
-Each module has `object XxxFeature : VesperFeature`. `:app` calls `install(host)` once per process, in order setup, system, phone, airplay, spotify, media, alarm, home, lists, assistant, camera, photos, clock, settings. **`SetupFeature` (the first-run gate, in `:feature:settings`) stays first:** it tells a fresh install from a set-up one by reading the settings store before any feature writes to it. In `install`:
+Each module has `object XxxFeature : VesperFeature`. `:app` calls `install(host)` once per process, in order setup, system, phone, airplay, spotify, media, radio, alarm, home, lists, assistant, camera, photos, clock, settings. **`SetupFeature` (the first-run gate, in `:feature:settings`) stays first:** it tells a fresh install from a set-up one by reading the settings store before any feature writes to it. In `install`:
 
 - `host.registerScreen(ScreenSpec(id, order, inPager) { ctx -> MyScreenView(ctx, host.services) })`. Pager order: StandBy is 0; pick 10, 20, … for yours. `inPager = false` = only opened by `services.navigator.show(id)` (e.g. alarm ringing, Control Center-style full screens).
 - `host.registerOverlay(OverlaySpec(id, z) { ... })` for layers above every screen (island 300, banners 400, HUDs 500, Control Center 600). **Overlays are full-screen views: empty areas must not consume touches** (return false), so the screens below still get them.
