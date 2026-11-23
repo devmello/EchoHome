@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- :feature:sleep. Exact alarms on API 30 need no permission. -->
+    <application>
+        <!-- The bedtime routine's wake time: hands Do Not Disturb / Night mode back. -->
+        <receiver
+            android:name="app.vesper.feature.sleep.WakeReceiver"
+            android:exported="false" />
+    </application>
+</manifest>

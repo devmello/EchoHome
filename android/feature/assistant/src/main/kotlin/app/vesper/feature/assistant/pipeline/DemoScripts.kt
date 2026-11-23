@@ -52,6 +52,14 @@ object DemoScripts {
                 ResultCard.Action("Take out the trash", "7:00 PM", Icon.REMINDER),
                 ResultCard.Action("Shopping list", "Added 2 items", Icon.LIST),
             )),
+        // The bedtime routine (tool `bedtime`). Shown only: the demo plays no sound and changes nothing.
+        Demo("e", "Good night", 0xFF5E5CE6.toInt(),
+            "Good night.",
+            listOf("Alarm", "Do Not Disturb", "Sleep sounds"),
+            "Good night. Your alarm is at 7 tomorrow, Do Not Disturb is on until then, and rain will play for 30 minutes.",
+            listOf(
+                ResultCard.Action("Good night", "Alarm 7:00 AM · Rain 30 min", Icon.ALARM),
+            )),
     )
 
     /** The design's three chips (the idle screen). */

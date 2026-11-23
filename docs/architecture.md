@@ -20,6 +20,7 @@ Read this after `CLAUDE.md` and `NOTES.md`. The Android project is in `android/`
 | `:feature:media` | D | Now Playing, media island states, other apps' sessions |
 | `:feature:alarm` | E | alarms, timers |
 | `:feature:lists` | L | reminders (exact, persisted, chime + island + banner) and lists (shopping, to-do), the `lists` screen |
+| `:feature:sleep` | Z | sleep sounds synthesised on the device (AudioTrack, no audio files) with a sleep timer, the `sleep` screen, the bedtime routine behind `services.sleep` |
 | `:feature:home` | F | weather (Open-Meteo) + calendar (iCal) providers, commute, stocks (free keyless API), optional HA Home screen + doorbell |
 | `:feature:assistant` | G | voice assistant: on-device wake word/STT/TTS + Claude API |
 | `:feature:camera` | H | presence, profiles |
@@ -48,9 +49,13 @@ Feature modules depend on `:core:model` and `:core:design` only (add `:core:data
 - `ReminderTime` (pure parser and formatter for "at 7pm", "in 20 minutes", "tomorrow morning") and `ListText` / `ListNames` (de-dup keys, list names) in `:core:model`, shared by the store, the assistant tools and the web sync.
 - Island: `ActivityKind.REMINDER` / `REMINDER_MISSED` with `LiveContent.Reminder` (`:feature:system` renders them).
 
+## Contracts added Nov 23 (sleep branch)
+
+- `services.sleep: SleepSounds` (`:feature:sleep` binds; `NoSleepSounds` by default, `available = false`): `state: StateFlow<SleepState>`, `play(sound?, timerMinutes?)`, `stop()`, `setTimer(min)`, `bedtime(BedtimeRequest): BedtimeReport`. `SleepSound` (7 sounds, `of(name)`), `SleepSounds.SOURCE_ID = "sleep"` (its `MediaHub` session id), `SCREEN_ID = "sleep"`, `FADE_OUT_MS`, `TIMER_CHOICES`. The assistant's `bedtime` / `sleep_sound` tools, Control Center's media tile and Now Playing (no lyrics for it) use these.
+
 ## How a feature plugs in (no `:app` edits)
 
-Each module has `object XxxFeature : VesperFeature`. `:app` calls `install(host)` once per process, in order setup, system, phone, airplay, spotify, media, alarm, home, lists, assistant, camera, photos, clock, settings. **`SetupFeature` (the first-run gate, in `:feature:settings`) stays first:** it tells a fresh install from a set-up one by reading the settings store before any feature writes to it. In `install`:
+Each module has `object XxxFeature : VesperFeature`. `:app` calls `install(host)` once per process, in order setup, system, phone, airplay, spotify, media, sleep, alarm, home, lists, assistant, camera, photos, clock, settings. **`SetupFeature` (the first-run gate, in `:feature:settings`) stays first:** it tells a fresh install from a set-up one by reading the settings store before any feature writes to it. In `install`:
 
 - `host.registerScreen(ScreenSpec(id, order, inPager) { ctx -> MyScreenView(ctx, host.services) })`. Pager order: StandBy is 0; pick 10, 20, … for yours. `inPager = false` = only opened by `services.navigator.show(id)` (e.g. alarm ringing, Control Center-style full screens).
 - `host.registerOverlay(OverlaySpec(id, z) { ... })` for layers above every screen (island 300, banners 400, HUDs 500, Control Center 600). **Overlays are full-screen views: empty areas must not consume touches** (return false), so the screens below still get them.
