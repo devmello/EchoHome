@@ -31,6 +31,9 @@ if [ "$1" = status ]; then show; exit 0; fi
 adb_echo shell "cmd overlay list com.android.systemui | grep -q $PKG" || { echo "$PKG isn't installed: run ./scripts/echo-overlays.sh --install"; exit 1; }
 root_echo
 if [ "$1" = on ]; then
+  # If SystemUI crash-loops anyway, RescueParty would end in a recovery prompt (no Wi-Fi, needs
+  # someone at the Echo). With it off, a crash loop leaves adb reachable to switch back.
+  adb_echo shell setprop persist.sys.disable_rescue true
   adb_echo shell "pm disable $KG && cmd overlay enable --user 0 $PKG"
   adb_echo shell cmd appops set app.vesper SYSTEM_ALERT_WINDOW allow || true
 else
