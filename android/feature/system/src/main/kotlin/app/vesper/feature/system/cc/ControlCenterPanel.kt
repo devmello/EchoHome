@@ -510,11 +510,22 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
                 paint.color = ink(Color.WHITE); c.drawCircle(cx, cy, 31f, paint)
                 paint.color = withAlpha(Color.BLACK, 0.6f); c.drawCircle(cx, cy, 29f, paint)
             }
-            val col = if (p.id == Profile.SHARED_ID || p.color == Color.WHITE) 0xFF8E8E93.toInt() else p.color
-            paint.color = ink(col or 0xFF000000.toInt())
-            c.drawCircle(cx, cy, 26f, paint)
             val initial = if (p.id == Profile.SHARED_ID) "E" else p.name.take(1).uppercase()
-            tInitial.drawCentered(c, initial, cx, tInitial.baselineCentered(cy), if (night) Color.BLACK else Color.WHITE)
+            if (night) {
+                // Night: a dim red disc with a red outline and a red letter (a black letter on the
+                // mapped colour disappeared).
+                paint.style = Paint.Style.FILL; paint.color = withAlpha(Night.COLOR, 0.22f)
+                c.drawCircle(cx, cy, 26f, paint)
+                paint.style = Paint.Style.STROKE; paint.strokeWidth = 2f; paint.color = Night.COLOR
+                c.drawCircle(cx, cy, 25f, paint)
+                paint.style = Paint.Style.FILL
+                tInitial.drawCentered(c, initial, cx, tInitial.baselineCentered(cy), Night.COLOR)
+            } else {
+                val col = if (p.id == Profile.SHARED_ID || p.color == Color.WHITE) 0xFF8E8E93.toInt() else p.color
+                paint.style = Paint.Style.FILL; paint.color = col or 0xFF000000.toInt()
+                c.drawCircle(cx, cy, 26f, paint)
+                tInitial.drawCentered(c, initial, cx, tInitial.baselineCentered(cy), Color.WHITE)
+            }
         }
     }
 
