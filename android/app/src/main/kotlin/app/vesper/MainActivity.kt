@@ -130,6 +130,11 @@ class MainActivity : Activity() {
     private fun handleIntent(intent: Intent, initial: Boolean) {
         val extras = intent.extras
         app.services.intents.tryEmit(intent)
+        // Debug builds: `--es watchdog crash|hang` tests the watchdog (crash log + restart).
+        if (BuildConfig.DEBUG) when (extras?.getString("watchdog")) {
+            "crash" -> Handler(Looper.getMainLooper()).postDelayed({ throw IllegalStateException("watchdog test crash") }, 500)
+            "hang" -> Handler(Looper.getMainLooper()).postDelayed({ Thread.sleep(50_000) }, 500)
+        }
         // Only `--ez demo true|false` toggles sample data; a String `demo` is a screen arg.
         @Suppress("DEPRECATION") val demo = extras?.get("demo")
         if (demo is Boolean) {

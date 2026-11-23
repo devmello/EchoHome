@@ -9,6 +9,7 @@ import app.vesper.core.data.PrefsSettingsStore
 import app.vesper.core.data.EncryptedSecretStore
 import app.vesper.core.data.loadSecrets
 import app.vesper.core.design.Fonts
+import app.vesper.core.model.CrashEntry
 import app.vesper.core.model.VesperConfig
 import app.vesper.core.model.VesperFeature
 import app.vesper.core.model.VesperServices
@@ -55,6 +56,9 @@ class VesperApp : Application(), FeatureHost {
 
     override fun onCreate() {
         super.onCreate()
+        // First, so a crash anywhere below is recorded and the launcher comes back.
+        val crashLog = FileCrashLog(java.io.File(filesDir, "crashes.json"))
+        Watchdog(this, crashLog).install()
         Fonts.init(this)
         val settings = PrefsSettingsStore(this)
         val builtIn = loadSecrets()
@@ -64,6 +68,7 @@ class VesperApp : Application(), FeatureHost {
         services = VesperServices(VesperConfig(BuildConfig.DEBUG, demo, secrets), settings)
         services.secrets = secretStore
         services.navigator = navigator
+        services.crashLog = crashLog
         // Secrets set from the settings page apply live (features read config.secrets at use time).
         services.scope.launch {
             secretStore.changes.collect { services.config = services.config.copy(secrets = builtIn.overriddenBy(secretStore)) }
@@ -76,6 +81,8 @@ class VesperApp : Application(), FeatureHost {
             } catch (e: Exception) {
                 // One broken feature must not take the launcher down.
                 Log.e(TAG, "Feature ${f.id} failed to install", e)
+                crashLog.add(CrashEntry(System.currentTimeMillis(), CrashEntry.Kind.CRASH, "main",
+                    "Feature ${f.id} failed to install: " + Watchdog.summary(e), Watchdog.stackOf(e)))
             }
         }
         registerDebugScreens()
