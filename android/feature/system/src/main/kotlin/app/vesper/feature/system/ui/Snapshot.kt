@@ -45,11 +45,14 @@ object Snapshot {
             c.drawColor(Color.BLACK)
             c.scale(1f / SCALE, 1f / SCALE)
             c.translate(-r.left.toFloat(), -r.top.toFloat())
+            c.clipRect(r) // pages and views outside the region are skipped
             for (i in 0 until idx) {
                 val v = parent.getChildAt(i)
                 if (v.visibility != View.VISIBLE || v.alpha <= 0f) continue
                 c.save()
-                c.translate(v.left + v.translationX, v.top + v.translationY)
+                // View.draw() doesn't apply the view's own scroll (its parent normally does): without
+                // it a scrolled view, e.g. the screen pager, always showed its first page here.
+                c.translate(v.left + v.translationX - v.scrollX, v.top + v.translationY - v.scrollY)
                 v.draw(c)
                 c.restore()
             }

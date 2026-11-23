@@ -164,7 +164,9 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
         observeWhileAttached(s.navigator.current) {
             recompute()
             // the screen underneath changed: re-take the glass snapshot once the pager settles
-            handler.removeCallbacks(retakeBackdrop); handler.postDelayed(retakeBackdrop, 450)
+            // (380 ms), and once more after screens that fill in late (artwork, a painted wallpaper)
+            handler.removeCallbacks(retakeBackdrop); handler.removeCallbacks(retakeBackdropLate)
+            handler.postDelayed(retakeBackdrop, 450); handler.postDelayed(retakeBackdropLate, 1_600)
         }
         observeWhileAttached(s.system.state) { st -> if (st.nightActive != night) { night = st.nightActive; glass.night = night; beadGlass.night = night; invalidate() } }
         observeWhileAttached(s.settings.changes) { k -> if (k == LOOK_KEY) readLook() }
@@ -358,6 +360,8 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
         backdropTakenFor = s.navigator.current.value
         invalidate()
     }
+
+    private val retakeBackdropLate = Runnable { retakeBackdrop.run() }
 
     // --- drawing ---
 
