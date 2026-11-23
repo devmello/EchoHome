@@ -19,6 +19,12 @@ object Codec {
         }
         put("handled", JSONObject().apply { d.handled.forEach { (k, v) -> put(k, v) } })
         d.brightnessBefore?.let { put("brightnessBefore", it.toDouble()) }
+        if (d.shifts.isNotEmpty()) put("shifts", JSONObject().apply {
+            d.shifts.forEach { (k, v) ->
+                put(k, JSONObject().apply { put("earlier", v.earlierMin); put("title", v.eventTitle); put("start", v.eventStart); put("travel", v.travelMin) })
+            }
+        })
+        if (d.dayOffs.isNotEmpty()) put("dayOffs", JSONObject().apply { d.dayOffs.forEach { (k, v) -> put(k, v) } })
     }.toString()
 
     fun alarmsFromJson(s: String): AlarmData {
@@ -30,7 +36,14 @@ object Codec {
         }
         val handled = o.optJSONObject("handled")?.let { h -> h.keys().asSequence().associateWith { h.getLong(it) } } ?: emptyMap()
         val bb = if (o.has("brightnessBefore")) o.getDouble("brightnessBefore").toFloat() else null
-        return AlarmData(alarms, active, handled, bb)
+        val shifts = o.optJSONObject("shifts")?.let { h ->
+            h.keys().asSequence().mapNotNull { k ->
+                val v = h.optJSONObject(k) ?: return@mapNotNull null
+                k to LeaveShift(v.optInt("earlier"), v.optString("title"), v.optLong("start"), v.optInt("travel"))
+            }.toMap()
+        } ?: emptyMap()
+        val dayOffs = o.optJSONObject("dayOffs")?.let { h -> h.keys().asSequence().associateWith { h.optString(it) } } ?: emptyMap()
+        return AlarmData(alarms, active, handled, bb, shifts, dayOffs)
     }
 
     fun alarmToJson(a: Alarm) = JSONObject().apply {
@@ -39,6 +52,7 @@ object Codec {
         put("label", a.label); put("enabled", a.enabled); put("sunrise", a.sunrise)
         put("sunriseMinutes", a.sunriseMinutes); put("snoozeMinutes", a.snoozeMinutes)
         a.profileId?.let { put("profileId", it) }
+        put("leaveBy", a.leaveBy); put("readyMinutes", a.readyMinutes); put("skipHolidays", a.skipHolidays)
     }
 
     fun alarmFromJson(o: JSONObject?): Alarm? {
@@ -51,6 +65,8 @@ object Codec {
             sunrise = o.optBoolean("sunrise", true), sunriseMinutes = o.optInt("sunriseMinutes", 30),
             snoozeMinutes = o.optInt("snoozeMinutes", 9).coerceAtLeast(1),
             profileId = if (o.has("profileId")) o.getString("profileId") else null,
+            leaveBy = o.optBoolean("leaveBy", false), readyMinutes = o.optInt("readyMinutes", 45).coerceIn(0, 240),
+            skipHolidays = o.optBoolean("skipHolidays", false),
         )
     }
 

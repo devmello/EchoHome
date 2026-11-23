@@ -22,7 +22,10 @@ import app.vesper.feature.alarm.engine.AlarmData
 import app.vesper.feature.alarm.engine.AlarmEngine
 import app.vesper.feature.alarm.engine.Codec
 import app.vesper.feature.alarm.engine.Evaluation
+import app.vesper.feature.alarm.engine.LeavePlanner
 import java.io.File
+import java.time.ZoneId
+import kotlinx.coroutines.Job
 import kotlin.math.pow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +41,11 @@ import kotlinx.coroutines.launch
  *  - Ringing: [AlarmService] rings, the alarm screen opens, an ALARM_RINGING island activity.
  *  - Snoozed: a TIMER island activity counting down to the next ring.
  *
+ * Leave-by and skip-holidays: [refreshPlan] turns the calendar and `services.travel` into the engine's
+ * plan (earlier rings, day-off dates) at a calendar change, an alarm edit, overnight and 3 h before
+ * a leave-by alarm; the engine stays pure and every change goes through [evaluate], which moves the
+ * exact system alarm.
+ *
  * Scheduling: setAlarmClock for the next ring (exact, allowed in idle, the system's "next alarm"),
  * setExactAndAllowWhileIdle for other wake-ups (sunrise start, auto-snooze, timeouts). Both fire
  * [AlarmTriggerReceiver] → [evaluate]. [AlarmSystemReceiver] re-evaluates after boot, clock and
@@ -45,7 +53,7 @@ import kotlinx.coroutines.launch
  */
 class RealAlarmStore(private val ctx: Context, private val services: VesperServices) : AlarmStore {
     private val file = AtomicFile(File(ctx.filesDir, "alarms.json"))
-    private val engine = AlarmEngine(load(), adjust = { AlarmSettings.apply(services.settings, it) })
+    private val engine = AlarmEngine(load(), adjust = { AlarmSettings.apply(services.settings, it) }, timeText = { AlarmFormat.clock(ctx, it) })
     /** What's on disk. Compared with the engine after every evaluate, so user actions (snooze, stop,
      *  done, edits), which change the engine before evaluate runs, are saved too. */
     private var saved: AlarmData = engine.data
@@ -61,7 +69,14 @@ class RealAlarmStore(private val ctx: Context, private val services: VesperServi
 
     private val tick = Runnable { evaluate("tick") }
 
+    private val startedAt = SystemClock.elapsedRealtime()
+    private var planJob: Job? = null
+    private var planAgain: Boolean? = null
+    /** location|depart-quarter → (minutes, when asked). Spares the travel service on every calendar tick. */
+    private val travelCache = HashMap<String, Pair<Int?, Long>>()
+
     init {
+        services.scope.launch { kotlinx.coroutines.yield(); services.calendar.events.collect { refreshPlan(false) } }
         // Settings apply live: a new sunrise / snooze length reschedules at once.
         services.scope.launch {
             services.settings.changes.filter { it.startsWith("alarm.") }.collect { evaluate("settings") }
@@ -78,6 +93,55 @@ class RealAlarmStore(private val ctx: Context, private val services: VesperServi
     private inline fun change(block: () -> Unit) {
         block()
         evaluate("change")
+        refreshPlan(false)
+    }
+
+    /**
+     * Recomputes the day-off dates and leave-by shifts from the calendar and travel time. [force]
+     * asks the travel service again (overnight, 3 h before) instead of using a recent answer.
+     */
+    fun refreshPlan(force: Boolean) {
+        if (planJob?.isActive == true) { planAgain = (planAgain ?: false) || force; return }
+        planJob = services.scope.launch {
+            val zone = ZoneId.systemDefault()
+            val events = services.calendar.events.value
+            val now = now()
+            val known = events.isNotEmpty() || SystemClock.elapsedRealtime() - startedAt > CALENDAR_GRACE_MS
+            val dayOffs = LeavePlanner.dayOffs(engine.data.dayOffs, events, now, zone, known)
+            val alarms = engine.data.alarms.filter { it.enabled && it.leaveBy }
+            val shifts = if (alarms.isEmpty()) engine.data.shifts.filterKeys { false } else try {
+                LeavePlanner.shifts(alarms, events, engine.data.shifts, now, zone, known) { loc, at -> travelMinutes(loc, at, force) }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e
+            } catch (e: Exception) { Log.w(AlarmRuntime.TAG, "Leave-by planning failed", e); engine.data.shifts }
+            if (shifts != engine.data.shifts || dayOffs != engine.data.dayOffs) {
+                engine.setPlan(shifts, dayOffs)
+                evaluate("plan")
+            } else scheduleRefresh()
+        }.also { job ->
+            job.invokeOnCompletion {
+                val again = planAgain
+                planAgain = null
+                if (again != null) services.scope.launch { refreshPlan(again) }
+            }
+        }
+    }
+
+    private suspend fun travelMinutes(location: String, departAt: Long, force: Boolean): Int? {
+        val key = "$location|${departAt / (15 * 60_000L)}"
+        val hit = travelCache[key]
+        if (!force && hit != null && SystemClock.elapsedRealtime() - hit.second < TRAVEL_CACHE_MS) return hit.first
+        val m = try { services.travel.minutesTo(location, departAt) } catch (e: kotlinx.coroutines.CancellationException) { throw e
+        } catch (e: Exception) { Log.w(AlarmRuntime.TAG, "Travel estimate failed", e); null }
+        travelCache[key] = m to SystemClock.elapsedRealtime()
+        if (travelCache.size > 32) travelCache.keys.firstOrNull()?.let(travelCache::remove)
+        return m
+    }
+
+    /** An inexact wake-up for the next plan refresh (overnight, 3 h before a leave-by alarm). */
+    private fun scheduleRefresh() {
+        val pi = trigger(REQ_REFRESH, AlarmTriggerReceiver.ACTION_REFRESH)
+        val at = LeavePlanner.nextRefreshAt(engine.data.alarms, now(), ZoneId.systemDefault())
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi)
     }
 
     /** Advances the state machine to now, applies the phase and reschedules. Safe to call any time. */
@@ -91,6 +155,7 @@ class RealAlarmStore(private val ctx: Context, private val services: VesperServi
         applyPhase(oldPhase, ev.phase)
         if (engine.data != saved) save()
         schedule(ev)
+        scheduleRefresh()
     }
 
     // --- phase side effects ---
@@ -183,8 +248,8 @@ class RealAlarmStore(private val ctx: Context, private val services: VesperServi
         if (w != null && w != ev.alarmClockAtMillis) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, w, wake) else am.cancel(wake)
     }
 
-    private fun trigger(req: Int): PendingIntent = PendingIntent.getBroadcast(
-        ctx, req, Intent(ctx, AlarmTriggerReceiver::class.java).setAction(AlarmTriggerReceiver.ACTION_ALARM),
+    private fun trigger(req: Int, action: String = AlarmTriggerReceiver.ACTION_ALARM): PendingIntent = PendingIntent.getBroadcast(
+        ctx, req, Intent(ctx, AlarmTriggerReceiver::class.java).setAction(action),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
@@ -220,5 +285,9 @@ class RealAlarmStore(private val ctx: Context, private val services: VesperServi
         const val SUNRISE_TICK_MS = 10_000L
         private const val REQ_CLOCK = 1
         private const val REQ_WAKE = 2
+        private const val REQ_REFRESH = 4
+        /** An empty calendar this soon after start is "not loaded yet", not "no events". */
+        private const val CALENDAR_GRACE_MS = 2 * 60_000L
+        private const val TRAVEL_CACHE_MS = 3 * 60 * 60_000L
     }
 }
