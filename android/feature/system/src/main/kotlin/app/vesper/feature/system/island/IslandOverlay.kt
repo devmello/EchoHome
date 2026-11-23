@@ -461,8 +461,8 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
             is LiveContent.Music -> {
                 art.artwork(c, ct.artwork, 9f, cy - 14f, 28f, 8f, alpha, night)
                 // The bars are a child view (IslandEqualizer) that animates itself at ~15 fps while
-                // playing; static when paused or in Night. Nothing here asks for overlay frames.
-                placeEq(boxLeft + right - IslandEqualizer.W, boxTop + cy - IslandEqualizer.H / 2f, alpha, ink(PEACH, 1f), isPlaying(ct) && !night)
+                // playing (in Night too, in the Night red); static when paused. Nothing here asks for overlay frames.
+                placeEq(boxLeft + right - IslandEqualizer.W, boxTop + cy - IslandEqualizer.H / 2f, alpha, ink(PEACH, 1f), isPlaying(ct))
                 return false to false
             }
             is LiveContent.Assistant -> {

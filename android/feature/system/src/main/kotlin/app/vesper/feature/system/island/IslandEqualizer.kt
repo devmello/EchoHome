@@ -18,7 +18,7 @@ import kotlin.math.sin
  * inside the overlay repainted the full screen and every glow layer under it ~30 times a second.
  * Animating this view damages only its own 30×24 px, which the Echo's GPU repaints alone
  * (EGL_KHR_partial_update). It ticks at [FRAME_MS] (~15 fps, plenty for 22 px bars) only while
- * [playing] and shown; paused and Night are static (the overlay sets [playing] false).
+ * [playing] and shown, Night included (drawn in the Night red); paused is static.
  */
 internal class IslandEqualizer(context: Context) : View(context) {
     var color = 0
