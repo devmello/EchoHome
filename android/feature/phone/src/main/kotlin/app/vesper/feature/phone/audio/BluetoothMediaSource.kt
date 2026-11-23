@@ -31,8 +31,9 @@ import kotlin.math.roundToInt
  * transport controls with callbacks only (no polling, no notification-listener access, no hidden
  * APIs). `:feature:media` skips sessions from com.android.bluetooth, so this is the only copy.
  *
- * Limits of this stack: cover art is off ("Cover Artwork Enabled: False" in dumpsys, a ROM
- * overlay), AVRCP 1.6 has no seek-to-position, and volume is the Echo's own music stream (the
+ * Limits of this stack: cover art is off unless the ROM enables it (the Bluetooth app's
+ * `avrcp_controller_enable_cover_art`, "Cover Artwork Enabled" in dumpsys); when it's on, the art
+ * arrives as a content URI ([coverArt]). AVRCP 1.6 has no seek-to-position, and volume is the Echo's own music stream (the
  * iPhone mirrors it with AVRCP absolute volume).
  *
  * While the assistant listens or speaks, [onAssistant] pauses the phone and resumes it after
@@ -115,7 +116,8 @@ class BluetoothMediaSource(
             state = ps.state,
             positionMs = ps.position,
             updatedAtElapsed = ps.lastPositionUpdateTime,
-            artwork = md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) ?: md.getBitmap(MediaMetadata.METADATA_KEY_ART),
+            artwork = md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) ?: md.getBitmap(MediaMetadata.METADATA_KEY_ART)
+                ?: coverArt(md),
         )
         val phone = label()
         val state = AvrcpMapping.toState(snap, phone, volume(), SystemClock.elapsedRealtime())?.let { st ->
@@ -133,6 +135,43 @@ class BluetoothMediaSource(
         published = state
         hub().publish(AvrcpMapping.SOURCE_ID, state, controls)
         if (wasPlaying != state.playing) { assistantPause.onPlayingChanged(state.playing); onPlayingChanged(state.playing) }
+    }
+
+    // --- AVRCP 1.6 cover art (BIP): a content URI from the Bluetooth app's AvrcpCoverArtProvider ---
+    private var artUri: String? = null
+    private var artBitmap: android.graphics.Bitmap? = null
+    private var artLoading: String? = null
+
+    /** The decoded cover art for [md]'s art URI, or null while it loads (then [refresh] runs again). */
+    private fun coverArt(md: MediaMetadata): android.graphics.Bitmap? {
+        val uri = md.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
+            ?: md.getString(MediaMetadata.METADATA_KEY_ART_URI)
+            ?: md.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI)
+            ?: return null
+        if (uri == artUri) return artBitmap
+        if (uri == artLoading) return null
+        artLoading = uri
+        Thread({
+            val bmp = try {
+                context.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use { decodeArt(it.readBytes()) }
+            } catch (e: Exception) { Log.w(TAG, "cover art: ${e.javaClass.simpleName}"); null }
+            handler.post {
+                if (artLoading != uri) return@post
+                artLoading = null; artUri = uri; artBitmap = bmp
+                if (bmp != null) refresh()
+            }
+        }, "vesper-bt-art").start()
+        return null
+    }
+
+    /** Decoded at most ~360 px (Now Playing's art is 300 px): a phone may send 500+ px images. */
+    private fun decodeArt(bytes: ByteArray): android.graphics.Bitmap? {
+        val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, o)
+        var sample = 1
+        while (maxOf(o.outWidth, o.outHeight) / (sample * 2) >= 360) sample *= 2
+        return android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
+            android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
     }
 
     private fun volume(): Float? {
