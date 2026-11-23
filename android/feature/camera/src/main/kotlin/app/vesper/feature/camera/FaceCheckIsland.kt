@@ -5,6 +5,7 @@ import app.vesper.core.model.IslandManager
 import app.vesper.core.model.LiveActivity
 import app.vesper.core.model.LiveContent
 import app.vesper.core.model.Profile
+import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -31,14 +32,18 @@ sealed interface FaceIsland {
 
 /**
  * "Checking face" + spinner in the island while the camera's face burst runs (2 s bursts, up to
- * three, 8 s apart), then "Hi <name>" with the person's avatar when it matches. The island keeps
- * "Checking face" [holdMs] after a burst ends, so bursts don't make it flicker; the hello ends
- * with the greeting. The overlay's greeting card (chips, "Not me") stays at the bottom.
+ * three, 8 s apart), then "Hi <name>" with the person's avatar when it matches, which turns into
+ * "Loaded preferences". The island keeps "Checking face" [holdMs] after a burst ends, so bursts
+ * don't make it flicker. The hello lasts [helloMs] (or less, if the greeting ends first, e.g.
+ * "Not me"); then the island goes back to whatever it showed before. The overlay's greeting card
+ * (chips, "Not me") stays at the bottom.
  */
 class FaceCheckIsland(
     private val island: IslandManager,
     private val scope: CoroutineScope,
     private val holdMs: Long = HOLD_MS,
+    private val helloMs: Long = HELLO_MS,
+    private val now: () -> Long = { SystemClock.elapsedRealtime() },
 ) {
     private var ending: Job? = null
 
@@ -46,7 +51,7 @@ class FaceCheckIsland(
         states.distinctUntilChanged().collect { s ->
             when (s) {
                 FaceIsland.Checking -> show(LiveContent.FaceCheck)
-                is FaceIsland.Hello -> show(LiveContent.FaceHello(s.profile.name, s.profile.color))
+                is FaceIsland.Hello -> hello(s.profile)
                 FaceIsland.Idle -> hide()
             }
         }
@@ -59,6 +64,14 @@ class FaceCheckIsland(
         if (current()?.content != content) island.publish(LiveActivity(ID, ActivityKind.FACE_CHECK, content))
     }
 
+    private fun hello(p: Profile) {
+        val shown = current()?.content
+        if (shown is LiveContent.FaceHello && shown.name == p.name) return
+        ending?.cancel()
+        island.publish(LiveActivity(ID, ActivityKind.FACE_CHECK, LiveContent.FaceHello(p.name, p.color, now())))
+        ending = scope.launch { delay(helloMs); island.end(ID) }
+    }
+
     private fun hide() {
         val shown = current() ?: return
         if (shown.content !is LiveContent.FaceCheck) { ending?.cancel(); island.end(ID); return }
@@ -69,5 +82,6 @@ class FaceCheckIsland(
     companion object {
         const val ID = "camera:facecheck"
         const val HOLD_MS = 600L
+        const val HELLO_MS = 3_000L
     }
 }

@@ -27,7 +27,13 @@ import kotlin.math.floor
 internal class LyricsView(context: Context) : View(context) {
     companion object {
         const val W = NP.COL_W
-        const val H = 156f
+        /** Top of the column on the screen: just under the source row. */
+        const val TOP = 54f
+        /**
+         * Down to just above the scrubber: the lyrics take the title/artist place and the controls
+         * stay where they are (they used to drop 36 px, which read as a jump).
+         */
+        val H: Float by lazy { NP.seekT - 10f - TOP }
         const val LINE_H = 36f
         const val GAP = 14f
         const val BLANK_H = 22f

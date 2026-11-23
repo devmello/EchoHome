@@ -15,6 +15,7 @@ import app.vesper.core.design.SpecText
 import app.vesper.core.model.VesperScreen
 import app.vesper.core.model.VesperServices
 import app.vesper.feature.camera.CameraFeature
+import app.vesper.feature.camera.profiles.FaceProfileManager
 import app.vesper.feature.camera.CameraPhase
 import app.vesper.feature.camera.CameraPipeline
 import app.vesper.feature.camera.capture.Camera1Source
@@ -128,8 +129,10 @@ class ProfilesDemoView(context: Context, private val services: VesperServices) :
     private fun apply(step: String) {
         if (step == applied) return
         applied = step
-        val maya = services.profiles.profiles.value.firstOrNull { it.id == "maya" }
-            ?: services.profiles.profiles.value.firstOrNull { it.id != "shared" }
+        // Maya (FaceProfileManager.DEMO_MAYA: orange, the Solar face) is added if she isn't there,
+        // so "recognized" switches the clock to her face. She stays in the people list afterwards.
+        val maya = services.profiles.profiles.value.firstOrNull { it.id == FaceProfileManager.DEMO_MAYA.id }
+            ?: FaceProfileManager.DEMO_MAYA.also { services.profiles.upsert(it) }
         val s = when (step) {
             "empty" -> DemoStep.EMPTY
             "detecting" -> DemoStep.DETECTING
@@ -137,15 +140,18 @@ class ProfilesDemoView(context: Context, private val services: VesperServices) :
             else -> DemoStep.PERSONALIZED
         }
         CameraFeature.showDemo(s, maya)
+        // The camera's own greeting, as after a real match: the island says hello through FaceCheckIsland.
+        CameraFeature.pipeline.demoGreeting(if (s == DemoStep.RECOGNIZED) maya else null)
         // "then her own face and colour": the clock follows profiles.active (feature:clock).
         val mine = s == DemoStep.RECOGNIZED || s == DemoStep.PERSONALIZED
-        if (maya != null) services.profiles.switchTo(if (mine) maya.id else "shared", app.vesper.core.model.SwitchReason.MANUAL)
+        services.profiles.switchTo(if (mine) maya.id else "shared", app.vesper.core.model.SwitchReason.MANUAL)
     }
 
     override fun onScreenHidden() {
         main.removeCallbacks(cycle)
         if (applied != null) services.profiles.switchTo("shared", app.vesper.core.model.SwitchReason.MANUAL)
         applied = null
+        CameraFeature.pipeline.demoGreeting(null)
         CameraFeature.showDemo(null, null)
     }
 

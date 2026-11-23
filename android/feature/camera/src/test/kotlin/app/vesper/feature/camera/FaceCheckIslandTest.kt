@@ -52,19 +52,32 @@ class FaceCheckIslandTest {
         job.cancel()
     }
 
-    @Test fun aMatchSaysHelloThenEndsWithTheGreeting() = runTest {
+    @Test fun aMatchSaysHelloForThreeSecondsThenGoesBack() = runTest {
         val island = DefaultIslandManager()
         val state = MutableStateFlow<FaceIsland>(FaceIsland.Checking)
-        val job = FaceCheckIsland(island, backgroundScope, holdMs = 600).bind(state)
+        val job = FaceCheckIsland(island, backgroundScope, holdMs = 600, helloMs = 3_000, now = { 42L }).bind(state)
         runCurrent()
         state.value = FaceIsland.Hello(maya); runCurrent()
-        assertEquals(LiveContent.FaceHello("Maya", 0xFFFF9F0A.toInt()), content(island))
-        // a hold left over from an earlier burst must not end the hello
-        advanceTimeBy(2_000); runCurrent()
-        assertEquals(LiveContent.FaceHello("Maya", 0xFFFF9F0A.toInt()), content(island))
-
+        assertEquals(LiveContent.FaceHello("Maya", 0xFFFF9F0A.toInt(), 42L), content(island))
+        // the hold from the burst before must not end the hello early
+        advanceTimeBy(2_900); runCurrent()
+        assertEquals(LiveContent.FaceHello("Maya", 0xFFFF9F0A.toInt(), 42L), content(island))
+        // 3 s: the hello ends although the greeting (4 s) is still up
+        advanceTimeBy(200); runCurrent()
+        assertTrue(island.activities.value.isEmpty())
         state.value = FaceIsland.Idle; runCurrent()
-        assertTrue("the hello ends with the greeting, no hold", island.activities.value.isEmpty())
+        assertTrue(island.activities.value.isEmpty())
+        job.cancel()
+    }
+
+    @Test fun notMeEndsTheHelloAtOnce() = runTest {
+        val island = DefaultIslandManager()
+        val state = MutableStateFlow<FaceIsland>(FaceIsland.Hello(maya))
+        val job = FaceCheckIsland(island, backgroundScope, helloMs = 3_000).bind(state)
+        runCurrent()
+        advanceTimeBy(1_000); runCurrent()
+        state.value = FaceIsland.Idle; runCurrent()
+        assertTrue(island.activities.value.isEmpty())
         job.cancel()
     }
 

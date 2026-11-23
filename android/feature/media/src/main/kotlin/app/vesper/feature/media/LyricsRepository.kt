@@ -37,6 +37,9 @@ internal class LyricsRepository(private val dir: File, private val http: OkHttpC
     var base = BASE
     private val memory = LruCache<String, Lyrics>(24)
 
+    /** The in-memory value only (no disk read): safe on the main thread. */
+    fun peek(key: String): Lyrics? = memory.get(key)
+
     /** The cached value for the track (memory, then disk), or null when it has to be fetched. */
     fun cached(key: String): Lyrics? {
         memory.get(key)?.let { return it }

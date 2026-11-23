@@ -531,7 +531,17 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
             }
             is LiveContent.FaceHello -> {
                 avatar(c, 23f, cy, 28f, ct, alpha)
-                tLabel.drawRight(c, tLabel.ellipsize("Hi ${ct.name}", bw - 60f), right, tLabel.baselineCentered(cy), ink(Color.WHITE, alpha))
+                // "Hi Maya" slides up and out as "Loaded preferences" slides up into place.
+                val el = SystemClock.elapsedRealtime() - ct.startedAtElapsed
+                val k = ((el - HELLO_SWAP_AT_MS).toFloat() / HELLO_SWAP_MS).coerceIn(0f, 1f)
+                val e = k * k * (3f - 2f * k)
+                val base = tLabel.baselineCentered(cy)
+                if (e < 1f) tLabel.drawRight(c, tLabel.ellipsize("Hi ${ct.name}", bw - 60f), right, base - 10f * e, ink(Color.WHITE, alpha * (1f - e)))
+                if (e > 0f) tLabel.drawRight(c, "Loaded preferences", right, base + 10f * (1f - e), ink(withAlpha(Color.WHITE, 0.9f), alpha * e))
+                when {
+                    el < HELLO_SWAP_AT_MS -> { tickIn = minOf(tickIn, HELLO_SWAP_AT_MS - el + 1); return false to true }
+                    k < 1f -> return true to false
+                }
             }
         }
         return false to false
@@ -900,6 +910,9 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
         const val AMBIENT_FRAME_MS = 33L
         /** The face-check spinner steps at 20 fps, like the camera overlay's did (cheaper than vsync). */
         const val SPINNER_FRAME_MS = 50L
+        /** The face hello: "Hi <name>" for 1.1 s, then 350 ms into "Loaded preferences". */
+        const val HELLO_SWAP_AT_MS = 1_100L
+        const val HELLO_SWAP_MS = 350L
         val ORANGE = 0xFFFF9F0A.toInt()
         val GREEN = 0xFF30D158.toInt()
         val BLUE = 0xFF0A84FF.toInt()

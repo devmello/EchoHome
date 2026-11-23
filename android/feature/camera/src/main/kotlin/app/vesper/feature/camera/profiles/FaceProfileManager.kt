@@ -154,9 +154,13 @@ class FaceProfileManager(
         const val KEY_TIMEOUT_MIN = "camera.profiles.timeoutMin"
         const val TIMEOUT_DEFAULT_MIN = 10
 
-        /** The designs' sample people (Profiles.dc.html: Maya, pink, the Float face). */
+        /**
+         * Sample people. Maya (orange, the Solar face) differs from the shared StandBy (the Liquid
+         * Glass face), so switching to her visibly changes the clock; the Profiles demo adds her.
+         */
+        val DEMO_MAYA = Profile("maya", "Maya", 0xFFFF9F0A.toInt(), faceId = "solar", calendarEntity = "calendar.maya")
         val DEMO = listOf(
-            Profile("maya", "Maya", 0xFFFF375F.toInt(), faceId = "float", calendarEntity = "calendar.maya"),
+            DEMO_MAYA,
             Profile("sam", "Sam", 0xFF30D158.toInt(), faceId = "digital", calendarEntity = "calendar.sam"),
         )
 

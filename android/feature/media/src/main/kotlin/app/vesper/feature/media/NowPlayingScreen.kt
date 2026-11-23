@@ -53,10 +53,10 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
         private const val PAUSED_DRIFT_MS = 30_000L
         private val palettes = WeakHashMap<Bitmap, AmbientPalette>()
         private const val DEBUG_SRC = "debug-preview"
-        private const val LY_T = 58f
-        /** The scrubber and transport drop this far in lyrics mode. */
-        private const val LY_SHIFT = 36f
         private const val LYRICS_DEBOUNCE_MS = 700L
+        /** "Loading lyrics…" only if the load takes longer than this (a cache hit shows the lyrics straight away). */
+        private const val LYRICS_MESSAGE_DELAY_MS = 400L
+        private const val LYRICS_FADE_MS = 260L
         /** The eased scroll takes ~360 ms, so the line change starts a little early. */
         private const val LYRICS_LEAD_MS = 120L
     }
@@ -120,6 +120,13 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
     private var lyricsPlacedAt = -2
     private val lyricsSync = Runnable { syncLyrics() }
     private val lyricsLoad = Runnable { startLyricsLoad() }
+    private val lyricsLoadingMessage = Runnable { if (lyricsMode && lyricsState == LyricsState.LOADING) lyricsView.showMessage("Loading lyrics…") }
+    private var titlesAnim: ValueAnimator? = null
+    // Prefetch: when a track starts playing (lyrics on), its lyrics are fetched into the cache in
+    // the background, so opening lyrics shows them at once.
+    private var prefetchKey: String? = null
+    private var prefetchJob: Job? = null
+    private val prefetch = Runnable { prefetchLyrics() }
 
     private val ticker = ValueAnimator.ofFloat(0f, 1f).apply {
         duration = 1000
@@ -158,7 +165,7 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
             add(b.lift, x, cy - s / 2f, s, s)
             add(b, x, cy - s / 2f, s, s)
         }
-        add(lyricsView, NP.COL_L, LY_T, LyricsView.W, LyricsView.H)
+        add(lyricsView, NP.COL_L, LyricsView.TOP, LyricsView.W, LyricsView.H)
         add(volume, NP.COL_L, NP.BAR_T, volumeWidth(), NP.BAR_H)
         add(lyricsBtn, NP.ROUTE_L - 12f - NP.BAR_H, NP.BAR_T, NP.BAR_H, NP.BAR_H)
         add(route, NP.ROUTE_L, NP.BAR_T, NP.BAR_H, NP.BAR_H)
@@ -277,6 +284,7 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
         runPending()
         if (wantLyrics) { wantLyrics = false; setLyricsMode(true) }
         else if (lyricsMode) { ensureLyrics(); syncLyrics() }
+        schedulePrefetch(st)
         updateMotion()
     }
 
@@ -289,25 +297,59 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
         if (on && (!lyricsEnabled || session == null)) return
         lyricsMode = on
         lyricsBtn.open = on
-        info.hideTitles = on
-        // Controls drop a little to make room; the lyrics sit where title and artist were.
-        val dy = if (on) LY_SHIFT else 0f
-        for (v in listOf(progress, prev, prev.lift, play, play.lift, next, next.lift)) {
-            if (shown) v.animate().translationY(dy).setDuration(300).setInterpolator(Motion.EASE).start() else v.translationY = dy
-        }
+        // The title and artist crossfade into the lyrics (which sit in their place); the scrubber
+        // and controls don't move.
+        fadeTitles(if (on) 0f else 1f)
+        lyricsView.animate().cancel()
         if (on) {
             lyricsView.night = night
             lyricsView.visibility = VISIBLE
-            if (shown) { lyricsView.alpha = 0f; lyricsView.animate().alpha(1f).setDuration(250).start() } else lyricsView.alpha = 1f
+            if (shown) {
+                lyricsView.alpha = 0f; lyricsView.translationY = 10f
+                lyricsView.animate().alpha(1f).translationY(0f).setStartDelay(60).setDuration(LYRICS_FADE_MS).setInterpolator(Motion.EASE).start()
+            } else { lyricsView.alpha = 1f; lyricsView.translationY = 0f }
             lyricsKey = null
             ensureLyrics()
         } else {
-            main.removeCallbacks(lyricsSync); main.removeCallbacks(lyricsLoad)
+            main.removeCallbacks(lyricsSync); main.removeCallbacks(lyricsLoad); main.removeCallbacks(lyricsLoadingMessage)
             lyricsJob?.cancel(); lyricsJob = null
             lyricsState = LyricsState.IDLE; lyricsKey = null; lyricsData = null
-            lyricsView.animate().cancel()
             lyricsView.stop()
-            lyricsView.visibility = GONE
+            if (shown) lyricsView.animate().alpha(0f).translationY(10f).setStartDelay(0).setDuration(200).setInterpolator(Motion.EASE)
+                .withEndAction { if (!lyricsMode) lyricsView.visibility = GONE }.start()
+            else lyricsView.visibility = GONE
+        }
+    }
+
+    private fun fadeTitles(to: Float) {
+        titlesAnim?.cancel()
+        if (!shown) { info.titlesAlpha = to; return }
+        titlesAnim = ValueAnimator.ofFloat(info.titlesAlpha, to).apply {
+            duration = if (to < 0.5f) 200L else LYRICS_FADE_MS
+            if (to > 0.5f) startDelay = 80
+            interpolator = Motion.EASE
+            addUpdateListener { info.titlesAlpha = it.animatedValue as Float }
+            start()
+        }
+    }
+
+    /** Debounced like the lyrics load (titles and artists often arrive in parts). */
+    private fun schedulePrefetch(st: MediaState) {
+        if (!lyricsEnabled || !st.playing || st.title.isBlank()) return
+        if (lyricsKeyOf(st) == prefetchKey) return
+        main.removeCallbacks(prefetch)
+        main.postDelayed(prefetch, LYRICS_DEBOUNCE_MS)
+    }
+
+    private fun prefetchLyrics() {
+        val st = session?.state ?: return
+        if (!lyricsEnabled || !st.playing || st.title.isBlank()) return
+        val key = lyricsKeyOf(st)
+        if (key == prefetchKey) return
+        prefetchKey = key // once per track, also when it fails (opening lyrics retries)
+        val repo = LyricsRepository.get(context)
+        prefetchJob = services.scope.launch(Dispatchers.IO) {
+            if (repo.cached(key) == null) repo.fetch(key, st.title, st.artist, st.album, st.durationMs)
         }
     }
 
@@ -319,12 +361,16 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
         if (!lyricsMode || !shown) return
         val key = lyricsKeyOf(s.state)
         if (key != lyricsKey) {
+            // Debounced on a track change while open; straight away when the mode opens.
+            val opening = lyricsKey == null
             lyricsKey = key; lyricsData = null; lyricsPlacedAt = -2
             lyricsJob?.cancel(); lyricsJob = null
-            main.removeCallbacks(lyricsSync); main.removeCallbacks(lyricsLoad)
-            lyricsView.showMessage(null)
+            main.removeCallbacks(lyricsSync); main.removeCallbacks(lyricsLoad); main.removeCallbacks(lyricsLoadingMessage)
             lyricsState = LyricsState.PENDING
-            main.postDelayed(lyricsLoad, LYRICS_DEBOUNCE_MS)
+            val ready = LyricsRepository.get(context).peek(key)
+            if (ready != null) { lyricsKey = key; showLyrics(ready); return }
+            lyricsView.showMessage(null)
+            if (opening) main.post(lyricsLoad) else main.postDelayed(lyricsLoad, LYRICS_DEBOUNCE_MS)
         } else if ((lyricsState == LyricsState.WAIT_PLAY && s.state.playing) || lyricsState == LyricsState.IDLE) {
             lyricsState = LyricsState.PENDING
             main.post(lyricsLoad)
@@ -336,9 +382,11 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
         val key = lyricsKey ?: return
         if (!lyricsMode || lyricsState != LyricsState.PENDING) return
         lyricsState = LyricsState.LOADING
-        lyricsView.showMessage("Loading lyrics…")
+        main.postDelayed(lyricsLoadingMessage, LYRICS_MESSAGE_DELAY_MS)
         val repo = LyricsRepository.get(context)
         lyricsJob = services.scope.launch {
+            // the prefetch for this track may still be running: wait for it instead of asking twice
+            if (prefetchKey == key) prefetchJob?.join()
             var r = withContext(Dispatchers.IO) { repo.cached(key) }
             if (r == null) {
                 if (session?.state?.playing != true) {
@@ -348,13 +396,18 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
                 r = withContext(Dispatchers.IO) { repo.fetch(key, st.title, st.artist, st.album, st.durationMs) }
             }
             if (lyricsKey != key || !lyricsMode) return@launch
+            main.removeCallbacks(lyricsLoadingMessage)
             if (r == null) { lyricsState = LyricsState.FAILED; lyricsView.showMessage("Lyrics unavailable"); return@launch }
-            lyricsState = LyricsState.DONE
-            lyricsData = r
-            lyricsView.setLyrics(r)
-            lyricsPlacedAt = -2
-            syncLyrics()
+            showLyrics(r)
         }
+    }
+
+    private fun showLyrics(r: Lyrics) {
+        lyricsState = LyricsState.DONE
+        lyricsData = r
+        lyricsView.setLyrics(r)
+        lyricsPlacedAt = -2
+        syncLyrics()
     }
 
     /** Places the highlight at the playback position and schedules the next line change (only while playing). */
@@ -599,12 +652,14 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
             // Debug only: hide view groups to profile GPU cost, e.g. "perf:ar" (a ambient, r art, g glass, t text).
             // Debug only: a real song LRCLIB has, position advancing (np=lyrics or np=lyrics:<start seconds>).
             else -> if (cmd.startsWith("lyrics")) {
-                // Flags after the start second: ":lines" = no word sweep, ":noamb" = hide the ambient (isolates the lyrics cost).
+                // Flags after the start second: ":lines" = no word sweep, ":noamb" = hide the ambient (isolates the lyrics cost),
+                // ":closed" = don't open lyrics.
                 val parts = cmd.split(':')
                 if ("lines" in parts) lyricsView.wordMode = false
                 if ("noamb" in parts) ambient.visibility = INVISIBLE
                 publishLyricsDemo((parts.getOrNull(1)?.toLongOrNull() ?: 0L) * 1000, true)
-                wantLyrics = true
+                // ":closed" plays the track without opening lyrics (to try the prefetch, then tap)
+                wantLyrics = "closed" !in parts
             } else if (cmd.startsWith("perf:")) {
                 val f = cmd.removePrefix("perf:")
                 fun vis(on: Boolean) = if (on) VISIBLE else INVISIBLE

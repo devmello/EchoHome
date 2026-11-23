@@ -603,10 +603,14 @@ class CameraPipeline(
 
     private val endGreeting = Runnable { _ui.value = _ui.value.copy(greeting = null); reconfigure() }
 
-    /** Debug / demo: show the greeting for [p] without a camera (Profiles states screenshots). */
+    /**
+     * Debug / demo: the greeting for [p] as if the camera had matched them (the island's hello and
+     * the greeting card follow it like a real match); null ends it.
+     */
     fun demoGreeting(p: Profile?) {
         main.removeCallbacks(endGreeting)
-        _ui.value = _ui.value.copy(greeting = p, phase = if (p != null) CameraPhase.RECOGNIZED else _ui.value.phase)
+        if (p != null) _ui.value = _ui.value.copy(greeting = p, phase = CameraPhase.RECOGNIZED)
+        else if (_ui.value.greeting != null) { _ui.value = _ui.value.copy(greeting = null); evaluate() }
     }
 
     /** Rolling per-stage timings (ns), logged and shown on the bench screen. */

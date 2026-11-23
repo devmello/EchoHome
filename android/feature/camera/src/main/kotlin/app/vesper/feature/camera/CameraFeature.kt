@@ -91,12 +91,9 @@ object CameraFeature : VesperFeature {
         // The face check and the "Hi <name>" after a match show in the island (the demo screen's steps too).
         FaceCheckIsland(services.island, services.scope).bind(
             combine(pipeline.ui, demo) { ui, d ->
-                when {
-                    d == null -> FaceIsland.of(ui)
-                    d.first == DemoStep.DETECTING -> FaceIsland.Checking
-                    d.first == DemoStep.RECOGNIZED && d.second != null -> FaceIsland.Hello(d.second!!)
-                    else -> FaceIsland.Idle
-                }
+                // The demo screen's "detecting" step forces the check; its "recognized" step sets the
+                // pipeline's greeting (CameraPipeline.demoGreeting), so the hello is the real path.
+                if (d?.first == DemoStep.DETECTING) FaceIsland.Checking else FaceIsland.of(ui)
             })
 
         host.registerSettings(settingsSection { host.services.navigator.show("profiles") })

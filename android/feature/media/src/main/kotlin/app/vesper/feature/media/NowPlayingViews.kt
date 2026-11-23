@@ -295,8 +295,8 @@ internal class InfoView(context: Context) : View(context) {
         set(v) { if (v != field) { field = v; subFit = null; invalidate() } }
     var showTrack = true
         set(v) { if (v != field) { field = v; invalidate() } }
-    /** Lyrics mode: the lyrics take the title/artist place. */
-    var hideTitles = false
+    /** 1 = title and artist shown; lyrics mode crossfades them to 0 as the lyrics take their place. */
+    var titlesAlpha = 1f
         set(v) { if (v != field) { field = v; invalidate() } }
     var night = false
         set(v) { field = v; invalidate() }
@@ -316,11 +316,13 @@ internal class InfoView(context: Context) : View(context) {
             Text.source.draw(canvas, sourceText, 56f + 17f + 8f, Text.source.baselineIn(top, rowH), c)
         }
         Text.clock.draw(canvas, clock, NP.COL_R - Text.clock.width(clock), Text.clock.baselineIn(top, rowH), col(withAlpha(Color.WHITE, 0.9f)))
-        if (!showTrack || hideTitles) return
+        val ta = titlesAlpha
+        if (!showTrack || ta <= 0.01f) return
+        val dy = -8f * (1f - ta) // drift up a little as they fade into the lyrics
         val t = titleFit ?: Text.ellipsize(Text.title, title, NP.COL_W).also { titleFit = it }
-        Text.title.draw(canvas, t, NP.COL_L, Text.title.baselineIn(NP.TITLE_T, NP.TITLE_LH), col(Color.WHITE))
+        Text.title.draw(canvas, t, NP.COL_L, Text.title.baselineIn(NP.TITLE_T, NP.TITLE_LH) + dy, col(withAlpha(Color.WHITE, ta)))
         val s = subFit ?: Text.ellipsize(Text.artist, subtitle, NP.COL_W).also { subFit = it }
-        Text.artist.draw(canvas, s, NP.COL_L, Text.artist.baselineIn(NP.ARTIST_T), col(withAlpha(Color.WHITE, 0.72f)))
+        Text.artist.draw(canvas, s, NP.COL_L, Text.artist.baselineIn(NP.ARTIST_T) + dy, col(withAlpha(Color.WHITE, 0.72f * ta)))
     }
 
     override fun onTouchEvent(event: MotionEvent?) = false

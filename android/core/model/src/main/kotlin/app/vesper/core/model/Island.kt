@@ -44,7 +44,7 @@ enum class ActivityKind(val priority: Int, val alertByDefault: Boolean) {
     BLUETOOTH_CONNECTED(29, false),
     /** iPhone battery (on connect for a few seconds, and when low). */
     PHONE_BATTERY(28, false),
-    /** The camera is checking who's there (a short burst), then "Hi <name>" for 4 s; above music so it's seen. */
+    /** The camera is checking who's there (a short burst), then "Hi <name>" for 3 s; above music so it's seen. */
     FACE_CHECK(55, false),
 }
 
@@ -100,8 +100,11 @@ sealed interface LiveContent {
     /** The camera is matching a face ("Checking face" + spinner). Ends when the burst ends. */
     data object FaceCheck : LiveContent
 
-    /** The face check matched [name]: their avatar ([color], first letter) and "Hi <name>", while the greeting is up. */
-    data class FaceHello(val name: String, val color: Int) : LiveContent
+    /**
+     * The face check matched [name]: their avatar ([color], first letter) and "Hi <name>", which
+     * turns into "Loaded preferences". [startedAtElapsed] (SystemClock.elapsedRealtime()) times that.
+     */
+    data class FaceHello(val name: String, val color: Int, val startedAtElapsed: Long = 0L) : LiveContent
 }
 
 enum class AssistantPhase { LISTENING, WORKING, SPEAKING }
