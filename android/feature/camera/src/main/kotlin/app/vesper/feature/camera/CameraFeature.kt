@@ -23,6 +23,7 @@ import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 
 /**
@@ -87,6 +88,9 @@ object CameraFeature : VesperFeature {
         services.profiles = manager
         pipeline = CameraPipeline(ctx, services, manager)
         pipeline.start()
+        // The face check shows in the island (the demo screen's DETECTING step too).
+        FaceCheckIsland(services.island, services.scope).bind(
+            combine(pipeline.ui, demo) { ui, d -> if (d != null) d.first == DemoStep.DETECTING else ui.phase == CameraPhase.DETECTING })
 
         host.registerSettings(settingsSection { host.services.navigator.show("profiles") })
         host.registerOverlay(OverlaySpec("camera", z = 250) { c -> CameraOverlayView(c, services, pipeline) })

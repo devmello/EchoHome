@@ -44,6 +44,8 @@ enum class ActivityKind(val priority: Int, val alertByDefault: Boolean) {
     BLUETOOTH_CONNECTED(29, false),
     /** iPhone battery (on connect for a few seconds, and when low). */
     PHONE_BATTERY(28, false),
+    /** The camera is checking who's there (a short burst, a few seconds); above music so it's seen. */
+    FACE_CHECK(55, false),
 }
 
 /** What the island shows. The renderer lays out compact (44 px) and expanded forms per type. */
@@ -94,6 +96,9 @@ sealed interface LiveContent {
     data class PhoneBattery(val deviceName: String, val percent: Int, val charging: Boolean?) : LiveContent
 
     data class BluetoothConnected(val deviceName: String, val audio: Boolean, val notifications: Boolean) : LiveContent
+
+    /** The camera is matching a face ("Checking face" + spinner). Ends when the burst ends. */
+    data object FaceCheck : LiveContent
 }
 
 enum class AssistantPhase { LISTENING, WORKING, SPEAKING }

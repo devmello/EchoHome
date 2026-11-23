@@ -78,7 +78,7 @@ All artboards are **960×480**, the Echo's native resolution, so the px values m
 | Control Center | `ControlCenter.dc.html` | Designed | Pull-down from the top edge over a blurred face. Wi-Fi / Bluetooth / AirPlay / Spotify toggles, media tile, tall brightness and volume sliders, Do Not Disturb, Night mode, mic and camera (turn red when off), timer, and a "who's using it" row (manual switch + "Auto by face"). |
 | System indicators | `HUDs.dc.html` | Designed | Glass capsule that drops from the top edge (under the physical buttons): volume, brightness, "Microphone off" (red), "Camera off · Shutter closed", "Microphone on" (green). Red privacy badges stay top-right while mic/camera are off. Tweak `show` to freeze one. |
 | Notification banners | `Banners.dc.html` | Designed | Glass banner from the top with app tile, title, body. Tap to expand to a StandBy-size view readable across the room, with a tinted primary action (Reply by voice / Show camera / Join call) and Dismiss. |
-| Profile switching | `Profiles.dc.html` | Designed | Empty room (dimmed, "Presence · 2 fps" indicator), then "Who's there?", then "Hi Maya" glass greeting with her alarm/events and a "Not me" button, then her own face and colour. See §6.6 for the low-power pipeline. |
+| Profile switching | `Profiles.dc.html` | Designed | Empty room (dimmed, "Presence · 2 fps" indicator), then "Checking face" with a spinner in the island (it was a "Who's there?" pill), then "Hi Maya" glass greeting with her alarm/events and a "Not me" button, then her own face and colour. See §6.6 for the low-power pipeline. |
 | Calendar face | `Calendar.dc.html` | Designed | Big day/date + mini month on the left. Agenda for today and tomorrow with a live "now" line, past events dimmed, "in N min" badge. |
 | Photo frame | `Photos.dc.html` | Designed | Full-bleed photos (CSS stand-in illustrations) from an Immich album with slow zoom and crossfade, time over the photo, memory caption. Tap shows glass controls (album, pause, next) that hide after 4 s. |
 | Commute | `Commute.dc.html` | Designed | "Leave in N min", drive time and arrival, traffic and rain chips, stylised route map, alternatives (another road, bus). |
@@ -207,7 +207,7 @@ There's no camera cutout in the screen, so the island is pure software: one live
   - Tap compact to expand. Tap outside to collapse.
   - Alerts (doorbell, incoming call, alarm, timer done) expand on their own.
   - Hide an activity's island while its full screen is open (no music island on Now Playing).
-- **Priority** (highest first): call, doorbell, alarm ringing, timer done, assistant, music, running timer, AirPlay connected. At most two visible (main + bead).
+- **Priority** (highest first): call, doorbell, alarm ringing, timer done, leave now, assistant, face check, music, running timer, rain, AirPlay connected. Face check ("Checking face" + spinner) shows while the camera's face burst runs and stays 0.6 s after it. At most two visible (main + bead).
 - **Motion:** animate bounds and corner radius with one spring, `cubic-bezier(0.3, 1.32, 0.5, 1)` over 0.6 s. Crossfade the contents, with the expanded content fading in 0.15 s late.
 - **Looks:** "Liquid Glass" (default over wallpapers and photos) or "Black" (blends on black StandBy faces, like Apple's hardware-hiding island). Make it a setting. Night mode makes it red and monochrome with no glass.
 - **Implementation:**

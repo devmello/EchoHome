@@ -521,9 +521,28 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
                 batteryGlyph(c, 48f, cy, pct, ct.charging == true, col, alpha)
                 tLabel.drawRight(c, "$pct%", right, tLabel.baselineCentered(cy), ink(if (pct <= LOW_BATTERY && ct.charging != true) col else Color.WHITE, alpha))
             }
+            is LiveContent.FaceCheck -> {
+                Icons.autoFace.drawCentered(c, 23f, cy, 24f, ink(Color.WHITE, alpha), paint)
+                spinner(c, right - 9f, cy, 18f, alpha)
+                tLabel.drawRight(c, "Checking face", right - 18f - 10f, tLabel.baselineCentered(cy), ink(Color.WHITE, alpha))
+                tickIn = minOf(tickIn, SPINNER_FRAME_MS)
+                return false to true
+            }
         }
         return false to false
     }
+
+    /** A 2.5 px ring at .3 with a 90° white arc, one turn per 792 ms (the design's CSS spinner). */
+    private fun spinner(c: Canvas, cx: Float, cy: Float, size: Float, alpha: Float) {
+        val r = size / 2f - 1.25f
+        rect.set(cx - r, cy - r, cx + r, cy + r)
+        spinPaint.color = ink(withAlpha(Color.WHITE, 0.3f), alpha)
+        c.drawOval(rect, spinPaint)
+        spinPaint.color = ink(Color.WHITE, alpha)
+        val turn = ((SystemClock.uptimeMillis() % 792L) / 792f) * 360f
+        c.drawArc(rect, -135f + turn, 90f, false, spinPaint)
+    }
+    private val spinPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2.5f; strokeCap = Paint.Cap.ROUND }
 
     private fun leadingCircle(c: Canvas, cx: Float, cy: Float, size: Float, bg: Int, icon: Icon, alpha: Float, iconInk: Int) {
         paint.shader = null; paint.style = Paint.Style.FILL
@@ -546,6 +565,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
             is LiveContent.LeaveNow -> Icons.car.drawCentered(c, cx, cy, 22f, ink(ORANGE, alpha), paint)
             is LiveContent.RainSoon -> Icons.rain.drawCentered(c, cx, cy, 22f, ink(RAIN, alpha), paint)
             is LiveContent.PhoneBattery -> Icons.handset.drawCentered(c, cx, cy, 22f, ink(batteryColor(ct.percent, ct.charging == true), alpha), paint)
+            is LiveContent.FaceCheck -> { spinner(c, cx, cy, 20f, alpha); tickIn = minOf(tickIn, SPINNER_FRAME_MS); return true }
         }
         return false
     }
@@ -739,7 +759,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
                 tTimerLabel.draw(c, tTimerLabel.ellipsize(sub, textW), textL, tTimerLabel.baselineIn(top + lh1 + 2f, lh2), ink(0xFFFFB340.toInt(), alpha))
             }
             is LiveContent.Assistant, is LiveContent.AirPlayConnected, is LiveContent.BluetoothConnected,
-            is LiveContent.RainSoon, is LiveContent.PhoneBattery -> {}
+            is LiveContent.RainSoon, is LiveContent.PhoneBattery, is LiveContent.FaceCheck -> {}
         }
         return false
     }
@@ -862,6 +882,8 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
         const val LOOK_KEY = "system.island.look"
         /** Equaliser / orb animation rate: 30 fps is smooth for 22 px bars and halves the cost. */
         const val AMBIENT_FRAME_MS = 33L
+        /** The face-check spinner steps at 20 fps, like the camera overlay's did (cheaper than vsync). */
+        const val SPINNER_FRAME_MS = 50L
         val ORANGE = 0xFFFF9F0A.toInt()
         val GREEN = 0xFF30D158.toInt()
         val BLUE = 0xFF0A84FF.toInt()

@@ -57,6 +57,7 @@ internal class IslandDemo(private val island: IslandManager) {
             "rain" -> listOf(rain())
             "battery" -> listOf(battery(82, true))
             "battery-low" -> listOf(battery(14, false))
+            "facecheck", "face" -> listOf(music(), faceCheck())
             "nowplaying", "music" -> listOf(music(), timer())
             else -> emptyList()
         }
@@ -107,6 +108,8 @@ internal class IslandDemo(private val island: IslandManager) {
 
     private fun battery(pct: Int, charging: Boolean) = LiveActivity("${PREFIX}battery", ActivityKind.PHONE_BATTERY,
         LiveContent.PhoneBattery("Maya’s iPhone", pct, charging))
+
+    private fun faceCheck() = LiveActivity("${PREFIX}facecheck", ActivityKind.FACE_CHECK, LiveContent.FaceCheck)
 
     companion object { const val PREFIX = "demo:" }
 }

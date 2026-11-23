@@ -30,12 +30,6 @@ import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.sin
 
-/**
- * The "Who's there?" spinner redraws at 20 fps, not every vsync: the full-screen overlay at 59 fps
- * cost ~65 % of a core on the Echo (measured), and the design itself steps it every 100 ms.
- */
-private const val SPINNER_FRAME_MS = 50L
-
 /** What the overlay shows; [CameraUi] normally, or a forced step from the "profiles-demo" screen. */
 enum class DemoStep { EMPTY, DETECTING, RECOGNIZED, PERSONALIZED }
 
@@ -44,7 +38,7 @@ enum class DemoStep { EMPTY, DETECTING, RECOGNIZED, PERSONALIZED }
  *  - camera-in-use label + green dot, top-right, whenever the camera samples
  *    ("Presence · 2 fps", "Face check", "Recognized")
  *  - the dimmed shared face when the room is empty (StandBy only; 0.35 opacity over black)
- *  - "Who's there?" glass pill while the detection burst runs
+ *  - (the face check itself shows in the island: [app.vesper.feature.camera.FaceCheckIsland])
  *  - the "Hi <name>" glass greeting with alarm / event chips and "Not me"
  *  - "On-device recognition · no images saved" while faces are checked
  *
@@ -63,7 +57,6 @@ class CameraOverlayView(context: Context, private val services: VesperServices, 
 
     // text styles (Profiles.dc.html)
     private val label = SpecText(12f, 700)
-    private val pillText = SpecText(15f, 700)
     private val hiText = SpecText(30f, 800, -0.025f)
     private val subText = SpecText(15f, 600)
     private val chipText = SpecText(13f, 700)
@@ -73,10 +66,8 @@ class CameraOverlayView(context: Context, private val services: VesperServices, 
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val arcPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 2.5f }
     private val avatarPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
-    private val pillGlass = GlassPainter().apply { tint = withAlpha(Color.WHITE, 0.10f) }
     private val cardGlass = GlassPainter().apply { tint = withAlpha(Color.WHITE, 0.10f) }
     private val cardSpec = Paint(Paint.ANTI_ALIAS_FLAG)
     private var avatarFor = 0
@@ -206,7 +197,6 @@ class CameraOverlayView(context: Context, private val services: VesperServices, 
     override fun onDraw(canvas: Canvas) {
         if (dim > 0f) canvas.drawColor(withAlpha(Color.BLACK, 0.65f * dim))
         drawIndicator(canvas)
-        if (phase == CameraPhase.DETECTING) { drawPill(canvas); postInvalidateDelayed(SPINNER_FRAME_MS) }
         if (cardIn > 0.001f) greeting?.let { drawCard(canvas, it) }
         if (phase == CameraPhase.DETECTING || phase == CameraPhase.RECOGNIZED) {
             val top = height - 14f - footText.normalLineHeight
@@ -233,27 +223,6 @@ class CameraOverlayView(context: Context, private val services: VesperServices, 
         if (phase == CameraPhase.PRESENCE && screen != "standby") return
         val tw = label.width(text)
         label.draw(canvas, text, right - 9f - 6f - tw, label.baselineIn(top, rowH), c(withAlpha(Color.WHITE, 0.7f)))
-    }
-
-    /** "Who's there?": 220×48 capsule at top 18, centred; 16 px spinner, gap 10, 15/700 text. */
-    private fun drawPill(canvas: Canvas) {
-        val l = (width - 220f) / 2f
-        val t = 18f
-        pillGlass.night = night
-        pillGlass.draw(canvas, l, t, l + 220f, t + 48f)
-        val text = "Who’s there?"
-        val tw = pillText.width(text)
-        val group = 16f + 10f + tw
-        val x0 = l + (220f - group) / 2f
-        val cy = t + 24f
-        rect.set(x0 + 1.25f, cy - 8f + 1.25f, x0 + 16f - 1.25f, cy + 8f - 1.25f)
-        arcPaint.color = c(withAlpha(Color.WHITE, 0.3f))
-        canvas.drawOval(rect, arcPaint)
-        arcPaint.color = c(Color.WHITE)
-        // border-top-color on a circle = a 90° arc centred on the top; spins at 360° per 792 ms.
-        val spin = ((System.currentTimeMillis() / 2.2) % 360).toFloat()
-        canvas.drawArc(rect, -135f + spin, 90f, false, arcPaint)
-        pillText.draw(canvas, text, x0 + 26f, pillText.baselineIn(t, 48f), c(Color.WHITE))
     }
 
     /** The greeting sheet: 560×132 at bottom 30, radius 34, padding 18/22, gap 18. */

@@ -88,7 +88,7 @@ class IslandModel {
         /** Assistant and "AirPlay / Bluetooth connected" have no expanded form in the design. */
         fun canExpand(a: LiveActivity) = a.kind != ActivityKind.ASSISTANT && a.kind != ActivityKind.AIRPLAY_CONNECTED &&
             a.kind != ActivityKind.BLUETOOTH_CONNECTED &&
-            a.kind != ActivityKind.WEATHER_ALERT && a.kind != ActivityKind.PHONE_BATTERY
+            a.kind != ActivityKind.WEATHER_ALERT && a.kind != ActivityKind.PHONE_BATTERY && a.kind != ActivityKind.FACE_CHECK
 
         /** Compact, 44 tall: timer 230, music 250, assistant 220 (design); the rest sized like them. */
         fun compactBox(kind: ActivityKind) = when (kind) {
@@ -100,6 +100,7 @@ class IslandModel {
             ActivityKind.DOORBELL, ActivityKind.CALL -> IslandBox(250f, 44f, 22f)
             ActivityKind.LEAVE_NOW, ActivityKind.WEATHER_ALERT -> IslandBox(250f, 44f, 22f)
             ActivityKind.PHONE_BATTERY -> IslandBox(190f, 44f, 22f)
+            ActivityKind.FACE_CHECK -> IslandBox(230f, 44f, 22f)
         }
 
         /** Expanded: Now Playing 660×160 r48, timer 460×120 r44, doorbell 640×196 r50, call 580×116 r58. */
@@ -110,7 +111,7 @@ class IslandModel {
             ActivityKind.CALL -> IslandBox(580f, 116f, 58f)
             ActivityKind.LEAVE_NOW -> IslandBox(580f, 112f, 50f)
             ActivityKind.ASSISTANT, ActivityKind.AIRPLAY_CONNECTED, ActivityKind.BLUETOOTH_CONNECTED,
-            ActivityKind.WEATHER_ALERT, ActivityKind.PHONE_BATTERY -> compactBox(kind)
+            ActivityKind.WEATHER_ALERT, ActivityKind.PHONE_BATTERY, ActivityKind.FACE_CHECK -> compactBox(kind)
         }
     }
 }
