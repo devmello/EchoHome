@@ -89,6 +89,21 @@ Setup, models, settings and privacy: [docs/assistant-setup.md](../assistant-setu
     key, night quiet, speak off, follow-up, model change
   - audio gate (incl. steady room noise), keywords threshold rewrite, settings section, speech text (times, numbers, units), sentence chunking, streamed speech, system voice
 
+## More tools (Nov 22 evening, `EchoTools.kt` + `VesperTools.kt`)
+
+All results are compact JSON; each tool also puts an action / weather card on the screen. Covered by `EchoToolsTest` (fake services) and `ToolSpecTest` (every schema is well-formed, unique names, validation).
+
+- **Alarms:** `set_alarm` (+ `leave_by`, `ready_minutes`, `skip_holidays`, `mine` = the active person's alarm), `update_alarm` (+ label and the same fields), `set_alarm_enabled`, `next_alarm` (with `NextAlarm.reason`; `list_alarms` also carries it), `delete_alarm` now requires `confirmed`: with `false` nothing is deleted and Claude gets NEEDS_CONFIRMATION (asks in the answer, follow-up listening picks up the yes).
+- **Timers:** `pause_timer`, `resume_timer` (plus existing set / list / cancel).
+- **Echo controls:** `set_do_not_disturb`, `set_night_mode` (auto/on/off), `set_camera`; `get_display` now also reports DND, night mode, camera and mic state.
+- **Screens / people:** `open_screen` (clock, weather, calendar = StandBy faces via `face` arg; now_playing, timers, commute, stocks, home, photos, profiles, phone, settings), `switch_profile` (by name; "everyone" = shared).
+- **Info:** `get_air_quality` (AQI, UV, pollen), `get_rain_nowcast` (`Nowcast.minutesUntilRain`, STALE if the data is old), `get_calendar` + `person` (default: active person plus shared; "everyone"; events carry `calendar` owner), `get_travel_time` (10 s timeout), `get_phone_battery`.
+- **Note:** `show_note` posts a non-critical `Banner` (warns Claude when DND is on).
+- Media tools unchanged (`now_playing`, `media_control`). System prompt lists the abilities and the delete-confirmation rule. New step-chip labels in `ToolLabels`. `ToolSpec.validate` now enforces `maxLength`.
+- Not offered on purpose: the `alarm` ringing screen and debug screens in `open_screen`.
+- Note: `open_screen` navigates away from the assistant screen at once, so the text answer is not seen unless speaking is on (keep it to a few words).
+- Not verified: against real Claude (no key), on the Echo (no device run; JVM only).
+
 ## Left
 
 - **Not tried against the real API on the Echo:** no Anthropic key is set on the device or in

@@ -83,6 +83,18 @@ class AssistReducerTest {
         assertEquals("Display", ToolLabels.label("get_display"))
         assertEquals("Home", ToolLabels.label("home_control"))
         assertEquals("AirPlay", ToolLabels.label("AirPlay"))
+        assertEquals("Alarm", ToolLabels.label("next_alarm"))
+        assertEquals("Timer", ToolLabels.label("pause_timer"))
+        assertEquals("Do Not Disturb", ToolLabels.label("set_do_not_disturb"))
+        assertEquals("Night mode", ToolLabels.label("set_night_mode"))
+        assertEquals("Camera", ToolLabels.label("set_camera"))
+        assertEquals("Screen", ToolLabels.label("open_screen"))
+        assertEquals("Profile", ToolLabels.label("switch_profile"))
+        assertEquals("Air quality", ToolLabels.label("get_air_quality"))
+        assertEquals("Weather", ToolLabels.label("get_rain_nowcast"))
+        assertEquals("Travel", ToolLabels.label("get_travel_time"))
+        assertEquals("iPhone", ToolLabels.label("get_phone_battery"))
+        assertEquals("Note", ToolLabels.label("show_note"))
         assertEquals("Do thing", ToolLabels.label("do_thing"))
     }
 }
