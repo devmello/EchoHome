@@ -329,6 +329,12 @@ Run these the next time the user is next to the Echo. Each needs a physical acti
 - [ ] **AirPlay from the iPhone:** "Echo Show" in the AirPlay list, audio plays, the assistant ducks it.
 - [ ] **Face enrolment** in daylight from the settings page, then recognition from across the room.
 - [ ] **Listen:** alarm sunrise ramp and timer chime at a normal volume.
+- [ ] **iPhone extras (Nov 22 evening):** battery level on the island (does iOS expose Battery Service 0x180F to the Echo?), the extra buttons on a notification banner (e.g. Mark done / Clear), and Answer if `phone.answerCalls` is turned on.
+- [ ] **Screen off when the room is empty:** leave for 15 min (Display settings), come back: does it wake as you walk in? Also check it doesn't blank during an alarm or timer.
+- [ ] **Morning brief:** the first time someone's seen after 5:00 following ≥3 h away, or when the alarm's Good morning ends.
+- [ ] **Phone remote:** open the settings page on the iPhone (Safari), Remote tab: play/pause, volume, a timer, send a note.
+- [ ] **Live lyrics** with real AirPlay or Spotify playback: are lines and the word sweep in time? (Only a simulated position was tested.)
+- [ ] **Leave-by alarm** with a real calendar event that has a place: does the alarm move earlier and ring then?
 
 ---
 
@@ -363,3 +369,16 @@ Profile and measure on the device after every milestone. Keep RAM under ~200 MB 
   - Launcher3 keeps running in the background (~140 MB RSS) because it's the system recents provider. Look at this when RAM gets tight.
 - **Rename done (Nov 22, 2026, 15:40–15:50):** `com.echobedside` → `app.vesper` (1299279). On the Echo: the old update was removed (`pm uninstall com.echobedside`), `scripts/echo-system-install.sh` put the new APK in `/system/priv-app/Vesper` with `privapp-permissions-app.vesper.xml` (the old allow-list deleted), reboot. Settings, the AirPlay identity (same `76A341AF9034@Echo Show`), alarms/timers and the 106 MB of voice models were carried over; CAMERA and RECORD_AUDIO re-granted. Not carried over (none were set): secrets and face templates, which are keystore-bound to the old package. Verified: PRIVILEGED system app, HOME, AirPlay on :7000, settings page on :8080, voice models found, gating.kl loaded, no crash, 40 MB PSS / 3 % CPU on StandBy.
 - **Tuning pass (Nov 22, 2026, 18:30–19:05):** camera presence ~19 % → ~6 % of a core (Camera2 single captures at 1 fps) and 0 while someone's in the room (the camera rests 60 s after motion); dark-room back-off bug fixed (it reopened every 33 s all night). Assistant idle droplet stops after 30 s. Control Center: closing smooth, nothing drawn while open; opening by swipe still ~10 slow frames. New: an "Android" button in Control Center (opens Launcher3) and `SystemBars` (hides the status bar contents and Back/Home/Recents while Vesper is in front; needs STATUS_BAR requested by the /system copy, i.e. a re-run of `scripts/echo-system-install.sh`). Details: `docs/status/camera.md`, `docs/status/design-review.md`.
+- **Feature batch (Nov 22, 2026, 19:00–19:45)**, eight agents in parallel, merged into main, 695 unit tests pass:
+  - Leave-by alarms (earlier when the first event with a place needs it; reason shown) and Skip holidays (US federal + vacation/PTO all-day events), with a new alarm list and editor screen.
+  - Morning brief screen; rain-in-N-min, leave-now and iPhone battery on the island; AQI, UV and pollen (Open-Meteo air quality); travel times (OpenStreetMap Nominatim + OSRM, keyless).
+  - Night face sun/moon; per-person line (avatar, their alarm and event) and per-person calendars.
+  - iPhone notification actions as banner buttons; iPhone battery; optional Answer.
+  - Assistant tools for alarms, timers, DND, Night mode, camera, screens, profiles, air, rain, travel, battery, notes.
+  - Screen off when the room is empty (15 min, wakes on presence/touch/keys/alerts).
+  - Phone remote (Remote tab on the settings page), per-person calendar links, Diagnostics card.
+  - Watchdog: crash/hang log and automatic restart.
+  - Live lyrics (LRCLIB) with a word-by-word sweep (estimated timing; LRCLIB has no word stamps), +5.7 % CPU over line-only at 15 fps.
+  - /system copy reinstalled (19:38): STATUS_BAR granted, so the Android status bar contents and Back/Home/Recents stay hidden while Vesper is in front (also in Control Center); the Control Center "Android" button opens Launcher3 with the bars back.
+  - Release idle on StandBy: 43.7 MB PSS, 1.0 % CPU, no frames.
+  - Hands-on tests added to §7.1. Per-feature details in `docs/status/{alarm,home,clock,system,phone,assistant,settings,media}.md`.
