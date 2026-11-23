@@ -21,7 +21,7 @@ use jni::{JNIEnv, JavaVM};
 use std::net::{IpAddr, Ipv6Addr};
 
 use shairplay::{
-    AirPlayMode, AudioFormat, BindConfig, AudioHandler, AudioSession, RaopServer, RemoteCommand,
+    Ap1Encryption, AirPlayMode, AudioFormat, BindConfig, AudioHandler, AudioSession, RaopServer, RemoteCommand,
     RemoteControl, ShairplayError, TrackMetadata,
 };
 
@@ -356,7 +356,11 @@ fn start(
         .bind(BindConfig::new().addrs([IpAddr::V6(Ipv6Addr::UNSPECIFIED)]).port(port))
         .max_clients(4)
         .output_max_channels(2)
-        .mode(if ap2 { AirPlayMode::AirPlay2 } else { AirPlayMode::AirPlay1 });
+        .mode(if ap2 { AirPlayMode::AirPlay2 } else { AirPlayMode::AirPlay1 })
+        // AirPlay 1: offer RSA as well as plain (`et=0,1`, like an AirPort Express or
+        // shairport-sync). With the library's default `et=0` an iPhone (AirPlay/980) only sent
+        // OPTIONS and gave up.
+        .advertise_encryption(vec![Ap1Encryption::None, Ap1Encryption::Rsa]);
     if ap2 {
         builder = builder.pairing_store(Arc::new(pairing::FilePairingStore::open(&state_dir)));
     }

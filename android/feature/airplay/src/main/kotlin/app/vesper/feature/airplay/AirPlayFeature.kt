@@ -68,11 +68,11 @@ object AirPlayFeature : VesperFeature {
                 help = "The name iPhones and Macs show. Leave blank to use the device name.",
             ),
             SettingSpec(
-                KEY_MODE, "Mode", SettingType.CHOICE, default = MODE_AP2,
-                help = "AirPlay 2 works with current iPhones, but the Echo can't control playback " +
-                    "(pause only mutes the Echo). AirPlay 1 lets the Echo pause and skip on the sender, " +
-                    "but recent iOS versions connect and then play nothing. Neither keeps several speakers in sync.",
-                options = listOf(MODE_AP2 to "AirPlay 2 (iPhone)", MODE_AP1 to "AirPlay 1 (older senders, remote control)"),
+                KEY_MODE, "Mode", SettingType.CHOICE, default = MODE_AP1,
+                help = "AirPlay lets the Echo pause, skip and change the volume on the phone. " +
+                    "AirPlay 2 lists the Echo as an AirPlay 2 speaker, but the Echo can't control playback " +
+                    "(pause only mutes the Echo). Neither keeps several speakers in sync.",
+                options = listOf(MODE_AP1 to "AirPlay (remote control)", MODE_AP2 to "AirPlay 2 (no remote control)"),
             ),
             SettingSpec(
                 KEY_MDNS, "Discovery (mDNS)", SettingType.CHOICE, default = MDNS_NSD, advanced = true,
