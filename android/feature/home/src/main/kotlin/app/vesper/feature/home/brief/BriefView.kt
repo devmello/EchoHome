@@ -56,6 +56,8 @@ class BriefView(
     private var night = false
     /** Debug (`--es brief demo-day`): draw the day palette even when the room is dark. */
     private var forceDay = false
+    /** The person the brief is for (`brief.profile`, after their alarm); null = the active profile. */
+    private var forProfile: String? = null
     /** Travel to the first event, looked up once per event (null = unknown / none yet). */
     private var travel: Triple<String, Long, Int?>? = null
     private var travelJob: Job? = null
@@ -89,6 +91,8 @@ class BriefView(
         args?.getString("home.set")?.let { HomeSettings.applyAssignments(services.settings, it) }
         // The pager may call this again without args once it settles: keep the demo until hidden.
         when (args?.getString("brief")) { "demo" -> demo = true; "demo-day" -> { demo = true; forceDay = true } }
+        // After a person's alarm: their greeting and calendar, whoever the camera sees (kept until hidden).
+        args?.getString(BriefWatcher.ARG_PROFILE)?.let { forProfile = it }
         night = services.system.state.value.nightActive && !forceDay
         travel = null
         scope?.cancel()
@@ -106,7 +110,7 @@ class BriefView(
 
     override fun onScreenHidden() {
         shown = false
-        demo = false; forceDay = false
+        demo = false; forceDay = false; forProfile = null
         removeCallbacks(dismiss); removeCallbacks(tick)
         scope?.cancel(); scope = null; travelJob = null
     }
@@ -126,7 +130,7 @@ class BriefView(
     private fun rebuild() {
         val z = zone(); val now = System.currentTimeMillis()
         if (demo) { data = BriefBuilder.demo(now, z); invalidate(); return }
-        val profile = services.profiles.active.value
+        val profile = forProfile?.let { id -> services.profiles.profiles.value.firstOrNull { it.id == id } } ?: services.profiles.active.value
         val events = services.calendar.events.value
         val first = BriefBuilder.firstEvent(events, now, profile)
         val buffer = AlertSettings.int(services.settings, CommuteSettings.BUFFER_MIN, LeaveRule.DEFAULT_BUFFER_MIN)

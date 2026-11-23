@@ -38,7 +38,7 @@ object ClockSettings {
         settings = buildList {
             add(SettingSpec(KEY_FACE, "Clock face", SettingType.CHOICE, default = "digital",
                 options = faces.map { it.id to it.name },
-                help = "When someone is recognised, their own face and colour show instead."))
+                help = "When someone is recognised, their own face, colour and wallpaper show instead (People, below)."))
             for (f in faces) {
                 if (f.colorOptions.isNotEmpty()) add(SettingSpec(colorKey(f.id), "${f.name} colour", SettingType.COLOR,
                     default = hexColor(f.colorOptions.first())))
@@ -48,7 +48,8 @@ object ClockSettings {
             add(SettingSpec(GlassFace.KEY_GLASS, "Liquid Glass: frost", SettingType.FLOAT, default = "0.45",
                 min = 0f, max = 1f, step = 0.05f, help = "0 = clear glass, 1 = frosted."))
             add(SettingSpec(GlassFace.KEY_WALLPAPER, "Liquid Glass: wallpaper", SettingType.CHOICE, default = "Blue",
-                options = GlassFace.PALETTES.keys.map { it to it }))
+                options = GlassFace.PALETTES.keys.map { it to it },
+                help = "Everyone's. A person can pick their own (People, or the wallpaper button in edit mode while they're recognised); it shows on the Widgets page too."))
             add(SettingSpec(WorldFace.KEY_CITIES, "World: cities", SettingType.TEXT_LIST,
                 default = WorldFace.DEFAULT_CITIES.joinToString(",") { WorldFace.encodeCity(it) },
                 help = "Up to three, each \"City|Time zone|latitude|longitude\", e.g. London|Europe/London|51.5|-0.13."))
@@ -61,7 +62,7 @@ object ClockSettings {
                 options = (GlassFace.PALETTES.keys + WidgetStacks.WALLPAPER_BLACK).map { it to it }))
             add(SettingSpec(KEY_NIGHT_MODE, "Night mode", SettingType.CHOICE, default = "auto",
                 options = listOf("auto" to "Automatic (dark room)", "schedule" to "On a schedule", "on" to "Always on", "off" to "Off"),
-                help = "Night shows every face in dim red. Automatic turns it on when the room stays dark; a schedule uses the times below."))
+                help = "Night shows every face in dim red. Automatic turns it on when the room stays dark; a schedule uses the times below. A person can have their own (People)."))
             add(SettingSpec(KEY_NIGHT_START, "Night: from", SettingType.TIME, default = DEFAULT_NIGHT_START,
                 help = "Used when Night mode is On a schedule."))
             add(SettingSpec(KEY_NIGHT_END, "Night: until", SettingType.TIME, default = DEFAULT_NIGHT_END))

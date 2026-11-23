@@ -108,7 +108,7 @@ class AlarmService : Service() {
         if (settings != null && AlarmSettings.volumeFloor(settings)) raiseAlarmVolumeFloor()
         rampMs = settings?.let { AlarmSettings.rampMs(it) } ?: DEFAULT_RAMP_MS
         ringStart = SystemClock.elapsedRealtime()
-        val sound = settings?.let { AlarmSettings.sound(it) } ?: AlarmSettings.SOUND_SYSTEM
+        val sound = current.alarmSound ?: settings?.let { AlarmSettings.sound(it) } ?: AlarmSettings.SOUND_SYSTEM
         val uri = RingtoneManager.getActualDefaultRingtoneUri(this, RingtoneManager.TYPE_ALARM)
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
         player = if (sound != AlarmSettings.SOUND_SYSTEM) null else try {

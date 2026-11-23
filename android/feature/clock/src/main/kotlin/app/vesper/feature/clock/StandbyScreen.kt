@@ -46,11 +46,13 @@ import kotlin.math.abs
  *    neighbour slides in, release past a quarter screen (or flick) to switch. Swipes starting in
  *    the top 40 px are left alone (Control Center's pull-down).
  *  - **Edit mode** (long-press, Customize.dc.html): the face zooms to 0.8 into a 34 px rounded
- *    card, with glass controls ([EditOverlay]): Night toggle, Done, page dots, colour capsule.
+ *    card, with glass controls ([EditOverlay]): Night toggle, Done, page dots, colour capsule, and
+ *    on Liquid Glass a wallpaper pill (tap for the next wallpaper).
  *    Tapping the face toggles its complications (faces that have them).
  *    Choices persist in settings: `clock.face`, `clock.color.<id>`, `clock.complications.<id>`.
  *  - **Profiles**: while the camera has recognised someone (`services.profiles.active` is not
- *    shared), StandBy shows that person's `faceId` + `color`, and edits go into their profile.
+ *    shared), StandBy shows that person's `faceId` + `color` + `wallpaper` (Liquid Glass), and
+ *    edits (face, colour, the wallpaper pill) go into their profile.
  *  - **Night** (Night.dc.html): faces draw in #BE180E and the stage dims to 0.42 (1.6 s ease);
  *    a tap (or presence from the camera) wakes it to full for 6 s. The light sensor runs only
  *    while this screen is shown ([NightController]).
@@ -134,7 +136,10 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         observeWhileAttached(services.weather.weather) { refreshExtras() }
         observeWhileAttached(services.location) { refreshExtras() }
         // the web settings page (or this screen) changed a choice: apply it live
-        observeWhileAttached(services.settings.changes) { k -> if (ClockSettings.affectsStandby(k)) { followProfile(); refreshExtras() } }
+        observeWhileAttached(services.settings.changes) { k ->
+            if (ClockSettings.affectsStandby(k)) { followProfile(); refreshExtras() }
+            else if (k == GlassFace.KEY_WALLPAPER) syncOverlay()
+        }
         observeWhileAttached(services.profiles.profiles) { followProfile(); refreshExtras() }
         observeWhileAttached(services.system.state) { st ->
             val n = st.nightActive
@@ -161,10 +166,17 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
      * The recognised person's profile (camera, `services.profiles.active`), latest copy; null for
      * [Profile.SHARED], which means the user's own choice in settings.
      */
-    private fun profile(): Profile? {
-        val a = services.profiles.active.value
-        if (a.id == Profile.SHARED_ID) return null
-        return services.profiles.profiles.value.firstOrNull { it.id == a.id } ?: a
+    private fun profile(): Profile? = PersonPrefs.person(services.profiles.active.value, services.profiles.profiles.value)
+
+    /** The Liquid Glass wallpaper on screen: the person's own, else `clock.glass.wallpaper`. */
+    private fun wallpaperNow(): String =
+        PersonPrefs.glassWallpaper(profile(), services.settings.getString(GlassFace.KEY_WALLPAPER, "Blue"))
+
+    /** Edit mode's wallpaper pill: the next wallpaper, into the active profile, or settings when shared. */
+    private fun rememberWallpaper(name: String) {
+        val p = profile()
+        if (p != null) { if (p.wallpaper != name) services.profiles.upsert(p.copy(wallpaper = name)) }
+        else services.settings.putString(GlassFace.KEY_WALLPAPER, name)
     }
 
     private fun selectedFaceId(): String = profile()?.faceId ?: services.settings.getString(ClockFeature.KEY_FACE, "digital")
@@ -205,7 +217,9 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
     private fun configFor(spec: FaceSpec): FaceConfig {
         val color = colorFor(spec)
         val complications = services.settings.getBoolean(ClockSettings.complicationsKey(spec.id), true)
-        return FaceConfig(color, complications, nightOn)
+        // Only the faces with a background get the person's wallpaper (others would rebuild for nothing).
+        val wallpaper = if (spec.id in WALLPAPER_FACES) profile()?.wallpaper else null
+        return FaceConfig(color, complications, nightOn, wallpaper)
     }
 
     private fun reconfigure() {
@@ -554,7 +568,14 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         val cur = current ?: return
         val list = faces()
         o.bind(cur.spec.name, list.size, indexOf(cur.spec.id), cur.spec.colorOptions, configFor(cur.spec).color,
-            services.system.state.value.nightMode == NightMode.ON)
+            services.system.state.value.nightMode == NightMode.ON,
+            wallpaper = if (cur.spec.id in WALLPAPER_FACES) wallpaperNow() else null)
+    }
+
+    override fun onNextWallpaper() {
+        rememberWallpaper(PersonPrefs.nextWallpaper(wallpaperNow()))
+        reconfigure()
+        syncOverlay()
     }
 
     override fun onDone() = setEditing(false)
@@ -692,7 +713,7 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
             str("color")?.let { c -> parseHexColor(c)?.let { rememberColor(cur.spec, it) } }
             str("complications")?.let { services.settings.putBoolean(ClockSettings.complicationsKey(cur.spec.id), it.toBoolean()) }
             str("glass")?.toFloatOrNull()?.let { services.settings.putFloat(GlassFace.KEY_GLASS, it) }
-            str("wallpaper")?.let { services.settings.putString(GlassFace.KEY_WALLPAPER, it) }
+            str("wallpaper")?.let { w -> PersonPrefs.WALLPAPERS.firstOrNull { it.equals(w, true) }?.let { rememberWallpaper(it) } }
             reconfigure()
         }
         // debug: a 6:15 alarm owned by Maya (to see the personal line), `off` removes it again
@@ -737,6 +758,8 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         private const val EDIT_PIVOT_X = 96f / (1f - EDIT_SCALE)
         private const val EDIT_PIVOT_Y = 40f / (1f - EDIT_SCALE)
         private const val TOP_EDGE = 40f
+        /** Faces with a wallpaper setting (the person's [Profile.wallpaper] applies to them). */
+        private val WALLPAPER_FACES = setOf("glass")
         // debug launch extra `editexp` (bits) to measure the edit-mode drawing choices on the Echo
         private const val EXP_NO_OVERLAY_LAYER = 2
         private const val EXP_NO_FACE_LAYERS = 4

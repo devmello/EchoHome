@@ -191,10 +191,15 @@ class RealAlarmStore(private val ctx: Context, private val services: VesperServi
             }
             else -> {}
         }
+        // A person's alarm rings with their own sound and says whose it is (it rings whoever is in the room).
+        val people = services.profiles.profiles.value
         AlarmRuntime.request(ctx) {
             it.copy(
                 alarm = new is AlarmPhase.Ringing,
-                alarmTitle = (new as? AlarmPhase.Ringing)?.let { r -> "${AlarmFormat.alarmTime(ctx, r.alarm)} · ${r.alarm.label}" } ?: "",
+                alarmTitle = (new as? AlarmPhase.Ringing)?.let { r ->
+                    listOfNotNull(AlarmPeople.title(r.alarm, people), AlarmFormat.alarmTime(ctx, r.alarm), r.alarm.label).joinToString(" · ")
+                } ?: "",
+                alarmSound = (new as? AlarmPhase.Ringing)?.let { r -> AlarmPeople.sound(r.alarm, people) },
                 keepAlive = new is AlarmPhase.Sunrise,
                 keepAliveTitle = (new as? AlarmPhase.Sunrise)?.let { s -> "Sunrise · alarm at ${AlarmFormat.alarmTime(ctx, s.alarm)}" } ?: "",
             )
@@ -207,7 +212,9 @@ class RealAlarmStore(private val ctx: Context, private val services: VesperServi
         when (p) {
             is AlarmPhase.Ringing -> island.publish(LiveActivity(
                 ISLAND_ID, ActivityKind.ALARM_RINGING,
-                LiveContent.AlarmRinging(p.alarm.label, AlarmFormat.alarmTime(ctx, p.alarm)),
+                LiveContent.AlarmRinging(
+                    AlarmPeople.owner(p.alarm, services.profiles.profiles.value)?.let { o -> "${o.name} · ${p.alarm.label}" } ?: p.alarm.label,
+                    AlarmFormat.alarmTime(ctx, p.alarm)),
                 actions = listOf(
                     IslandAction("snooze", "Snooze", IslandAction.Style.PRIMARY) { snooze() },
                     IslandAction("stop", "Stop") { stop() },

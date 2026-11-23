@@ -74,6 +74,8 @@ class AlarmsApi(
 
     companion object {
         private val TIME = Regex("^([01]?\\d|2[0-3]):([0-5]\\d)$")
+        /** Profile ids as `:feature:camera` makes them ("maya", "lee-12345"). */
+        private val PROFILE_ID = Regex("^[a-z0-9-]{1,40}$")
         const val MAX_LABEL = 40
 
         /** [AlarmJson] (days are ISO numbers, Monday = 1) plus "time" ("HH:mm") for the page. */
@@ -112,6 +114,11 @@ class AlarmsApi(
                     "skipHolidays" -> a.copy(skipHolidays = v as? Boolean ?: throw ValidationException("Skip holidays: expected true or false"))
                     "enabled" -> a.copy(enabled = v as? Boolean ?: throw ValidationException("On/off: expected true or false"))
                     "sunrise" -> a.copy(sunrise = v as? Boolean ?: throw ValidationException("Sunrise: expected true or false"))
+                    "profileId" -> a.copy(profileId = when {
+                        v == null || v == JSONObject.NULL || v == "" -> null
+                        v is String && PROFILE_ID.matches(v) -> v
+                        else -> throw ValidationException("Whose alarm: expected a person's id or null")
+                    })
                     "id" -> a // ignored: the path / a new UUID decides
                     else -> throw ValidationException("Unknown alarm field: ${k.take(40)}")
                 }

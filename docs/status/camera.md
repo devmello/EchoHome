@@ -287,3 +287,11 @@ Sources, versions, checksums, licences and conversion are in `android/feature/ca
   - People beyond 4 aren't shown (no scrolling).
   - Quiet hours (§6.6 gate) aren't implemented: there's no setting for them yet.
 - The camera patch (NOTES §6.5) was **not** applied and isn't needed for capture.
+
+## Nov 23: per-person preferences ("Your stuff")
+
+- **`Profile`** has three optional preferences, null = follow Shared (the settings everyone uses): `wallpaper` (Liquid Glass / Widgets: Blue, Dusk, Graphite), `nightMode` (auto, schedule, on, off), `alarmSound` (system, chime, beeps; their own alarms only). `FaceProfileManager.encode` writes them only when set (`wallpaper`, `night`, `alarmSound`); `parse` reads profiles saved before they existed as null (`oldSavedProfilesMigrate`).
+- **Profiles screen**: under the people, "Maya’s stuff": plain-fill chips for Clock · <face>, Wallpaper, Night, Alarm sound, the number of her alarms and whether her calendar is set. Wallpaper / Night / Alarm sound cycle on tap (… → Everyone’s); the alarm count opens the Alarms screen. With Shared active it shows a one-line hint instead. Tiles moved up 12 px (top 160) to make room. Built as `PersonalStuff` (pure, tested).
+- **Demo Maya** (`DEMO_MAYA`): Liquid Glass on Dusk, orange, soft chime alarms. `profiles-demo` gives a Maya saved by an older build (no wallpaper) the demo's face, colour and wallpaper.
+- Web settings: People shows each person's clock face, wallpaper, Night mode and alarm sound (`PUT /api/people/<id>/prefs`, options from the settings they override; see `:feature:settings`).
+- **Unverified on the Echo**: the "Your stuff" row's layout and taps (built and unit-tested only). `--es screen profiles` after `profiles-demo` (Maya present), tap Maya.

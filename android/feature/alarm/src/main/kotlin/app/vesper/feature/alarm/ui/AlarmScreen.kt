@@ -28,6 +28,8 @@ import app.vesper.core.model.CalendarEvent
 import app.vesper.core.model.VesperScreen
 import app.vesper.core.model.VesperServices
 import app.vesper.core.model.HaEntity
+import app.vesper.core.model.Profile
+import app.vesper.feature.alarm.AlarmPeople
 import app.vesper.core.model.Weather
 import app.vesper.core.model.WeatherCondition
 import app.vesper.core.model.observeWhileAttached
@@ -45,6 +47,11 @@ import org.json.JSONObject
  * Follows services.alarms.phase. Debug: `--es screen alarm --es alarm_demo ringing|snoozed|morning`
  * (also `--es demo …` once :app stops treating a string `demo` as the sample-data toggle) shows a
  * state without an alarm; its buttons then just move between the demo states like the design.
+ * Add `--es alarm_owner <profile id>` (e.g. `maya`) to show it as that person's alarm.
+ *
+ * A person's alarm ([app.vesper.core.model.Alarm.profileId]) says whose it is: "Maya’s alarm ·
+ * Wake Up" in her colour while ringing, "Maya’s alarm · Snoozed …", and "Good morning, Maya" with
+ * her events (plus shared ones) under Up next.
  *
  * Night mode: Ringing and Good morning are full colour (it's time to wake up); Snoozed follows
  * Night (red, no glow) because you're back in bed.
@@ -57,6 +64,9 @@ class AlarmScreen(context: Context, private val services: VesperServices) : AbsL
     private var demo: Mode? = null
     private var demoSnoozedAt = 0L
     private var label = "Alarm"
+    /** Whose alarm it is ([Alarm.profileId]); null = shared. Debug: `--es alarm_owner <id>` with a demo. */
+    private var owner: Profile? = null
+    private var demoOwner: String? = null
     private var snoozeUntil = 0L
     private var snoozeLenMs = 9 * 60_000L
     private var shown = false
@@ -149,6 +159,7 @@ class AlarmScreen(context: Context, private val services: VesperServices) : AbsL
             val d = args.getString("alarm_demo") ?: runCatching { args.getString("demo") }.getOrNull()
             demo = when (d) { "ringing", "ring" -> Mode.RING; "snoozed", "snooze" -> Mode.SNOOZE; "morning" -> Mode.MORNING; else -> null }
             if (demo == Mode.SNOOZE) demoSnoozedAt = System.currentTimeMillis() - 12_000 // like the board, a few seconds in
+            demoOwner = args.getString("alarm_owner")
         }
         refresh()
     }
@@ -178,14 +189,23 @@ class AlarmScreen(context: Context, private val services: VesperServices) : AbsL
     private fun refresh() {
         val now = System.currentTimeMillis()
         val d = demo
+        val people = services.profiles.profiles.value
         if (d != null) {
             mode = d
             label = "Wake Up"
+            owner = demoOwner?.let { id -> people.firstOrNull { it.id == id && id != Profile.SHARED_ID } }
             snoozeLenMs = 9 * 60_000L
             snoozeUntil = demoSnoozedAt + snoozeLenMs
             if (d == Mode.SNOOZE && now >= snoozeUntil) { demo = Mode.RING; mode = Mode.RING }
         } else {
-            when (val p = services.alarms.phase.value) {
+            val p = services.alarms.phase.value
+            owner = when (p) {
+                is AlarmPhase.Ringing -> AlarmPeople.owner(p.alarm, people)
+                is AlarmPhase.Snoozed -> AlarmPeople.owner(p.alarm, people)
+                is AlarmPhase.GoodMorning -> AlarmPeople.owner(p.alarm, people)
+                else -> null
+            }
+            when (p) {
                 is AlarmPhase.Ringing -> { mode = Mode.RING; label = p.alarm.label }
                 is AlarmPhase.Snoozed -> { mode = Mode.SNOOZE; label = p.alarm.label; snoozeUntil = p.untilMillis; snoozeLenMs = p.alarm.snoozeMinutes * 60_000L }
                 is AlarmPhase.GoodMorning -> mode = Mode.MORNING
@@ -280,6 +300,12 @@ class AlarmScreen(context: Context, private val services: VesperServices) : AbsL
 
     private fun clockText(): String = if (demo == Mode.RING) "7:00" else AlarmFormat.clock(context, System.currentTimeMillis())
 
+    /** A person's colour, a quarter of the way to white, so it reads over the dark sky and the glow. */
+    private fun lift(c: Int): Int {
+        fun ch(v: Int) = (v + (255 - v) * 0.25f).toInt()
+        return Color.rgb(ch(Color.red(c)), ch(Color.green(c)), ch(Color.blue(c)))
+    }
+
     // --- Ringing text: label row, 200 px time, date ---
 
     private inner class RingText : View(context) {
@@ -293,11 +319,18 @@ class AlarmScreen(context: Context, private val services: VesperServices) : AbsL
         override fun onDraw(c: Canvas) {
             val rowTop = 34f
             val rowH = maxOf(20f, lab.normalLineHeight)
-            val labW = lab.width(label)
-            val x0 = 480f - (20f + 8f + labW) / 2
             val ink = withAlpha(Color.WHITE, 0.86f)
-            Icons.draw(c, Icon.ALARM, x0 + 10f, rowTop + rowH / 2, 20f, ink, 2.2f)
-            lab.draw(c, label, x0 + 28f, lab.baselineIn(rowTop, rowH), ink)
+            // A person's alarm: "Maya’s alarm · Wake Up", the name part (and the bell) in their colour.
+            val o = owner
+            val whose = o?.let { AlarmPeople.possessive(it.name) + " alarm" }
+            val rest = if (whose == null) label else if (label.isBlank() || label.equals("Alarm", true)) "" else " · $label"
+            val whoseW = whose?.let { lab.width(it) } ?: 0f
+            val labW = whoseW + lab.width(rest)
+            val x0 = 480f - (20f + 8f + labW) / 2
+            val accent = o?.color?.let { lift(it) } ?: ink
+            Icons.draw(c, Icon.ALARM, x0 + 10f, rowTop + rowH / 2, 20f, accent, 2.2f)
+            if (whose != null) lab.draw(c, whose, x0 + 28f, lab.baselineIn(rowTop, rowH), accent)
+            lab.draw(c, rest, x0 + 28f + whoseW, lab.baselineIn(rowTop, rowH), ink)
             val clockTop = rowTop + rowH + 4 + 6
             val t = clockText()
             clock.draw(c, t, 480f - clock.width(t) / 2, clock.baselineIn(clockTop, 200f * 0.86f), Color.WHITE)
@@ -319,7 +352,8 @@ class AlarmScreen(context: Context, private val services: VesperServices) : AbsL
             val now = System.currentTimeMillis()
             val remaining = (snoozeUntil - now).coerceAtLeast(0)
             val n = night
-            val s = "Snoozed · rings again at ${AlarmFormat.clock(context, snoozeUntil)}"
+            val whose = owner?.let { AlarmPeople.possessive(it.name) + " alarm · " } ?: ""
+            val s = "${whose}Snoozed · rings again at ${AlarmFormat.clock(context, snoozeUntil)}"
             lab.draw(c, s, 480f - lab.width(s) / 2, lab.baselineIn(48f), Night.map(withAlpha(Color.WHITE, 0.72f), n))
             val top = 48f + lab.normalLineHeight + 18f
             val cd = AlarmFormat.countdown(remaining)
@@ -393,8 +427,10 @@ class AlarmScreen(context: Context, private val services: VesperServices) : AbsL
         override fun onDraw(c: Canvas) {
             val now = System.currentTimeMillis()
             date.draw(c, AlarmFormat.dateLine(now), 48f, date.baselineIn(44f), withAlpha(Color.WHITE, 0.7f))
-            title.draw(c, "Good morning", 48f, title.baselineIn(44f + date.normalLineHeight + 4f, 76f), Color.WHITE)
             val t = clockText().let { if (demo != null) "7:12" else it }
+            // After a person's alarm: "Good morning, Maya" when the name fits beside the clock.
+            val greet = owner?.let { "Good morning, ${it.name.trim()}" }?.takeIf { title.width(it) <= 912f - clock.width(t) - 32f - 48f } ?: "Good morning"
+            title.draw(c, greet, 48f, title.baselineIn(44f + date.normalLineHeight + 4f, 76f), Color.WHITE)
             clock.draw(c, t, 912f - clock.width(t), clock.baselineIn(50f, 64f), withAlpha(Color.WHITE, 0.92f))
 
             val cw = cardW()
@@ -452,9 +488,12 @@ class AlarmScreen(context: Context, private val services: VesperServices) : AbsL
             }
         }
 
-        private fun nextEvent(now: Long): CalendarEvent? =
-            services.calendar.events.value.filter { !it.allDay && it.startMillis >= now }.minByOrNull { it.startMillis }
-                ?: services.calendar.events.value.firstOrNull { it.endMillis > now }
+        /** The alarm owner's next event (theirs plus shared ones; everything after a shared alarm). */
+        private fun nextEvent(now: Long): CalendarEvent? {
+            val events = AlarmPeople.eventsFor(services.calendar.events.value, owner?.id)
+            return events.filter { !it.allDay && it.startMillis >= now }.minByOrNull { it.startMillis }
+                ?: events.firstOrNull { it.endMillis > now }
+        }
 
         private fun weatherIcon(w: Weather?): Pair<Icon, Int> = when (w?.condition) {
             null, WeatherCondition.CLEAR -> if (w?.isNight == true) Icon.MOON to withAlpha(Color.WHITE, 0.85f) else Icon.SUN to VesperColors.YELLOW

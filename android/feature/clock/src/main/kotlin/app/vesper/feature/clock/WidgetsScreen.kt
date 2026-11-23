@@ -325,7 +325,8 @@ class WidgetStack(context: Context, private val services: VesperServices, val st
  *  - Stacks persist as `clock.widgets.left` / `.right` and follow the settings page live.
  *  - Night: black, the tiles become dim red outlines, every widget draws in #BE180E and the page
  *    dims to 0.42 like StandBy; a touch wakes it for 6 s. The light sensor runs while shown.
- *  - A recognised person: the calendar and alarm widgets show their items plus shared ones.
+ *  - A recognised person: the calendar and alarm widgets show their items plus shared ones, on
+ *    their own wallpaper ([Profile.wallpaper]) when they picked one.
  *
  * Debug launch extras (`--es screen widgets …`): `left <id>`, `right <id>`, `wallpaper <name>`,
  * `profile <id>`, and in debug builds `timer <seconds>` (starts a timer).
@@ -381,18 +382,19 @@ class WidgetsScreen(context: Context, private val services: VesperServices, priv
 
     override fun hasOverlappingRendering() = false
 
+    private fun person(): Profile? = PersonPrefs.person(services.profiles.active.value, services.profiles.profiles.value)
+
     private fun followPerson() {
-        val a = services.profiles.active.value
-        val p = if (a.id == Profile.SHARED_ID) null else services.profiles.profiles.value.firstOrNull { it.id == a.id } ?: a
+        val p = person()
         stacks.forEach { it.setPerson(p) }
+        bake() // their own wallpaper (a no-op when it's the same)
     }
 
     // ------------------------------------------------------------------ wallpaper + glass, baked
 
-    private fun wallpaperName(): String {
-        val n = services.settings.getString(WidgetStacks.KEY_WALLPAPER, WidgetStacks.DEFAULT_WALLPAPER)
-        return if (n in GlassFace.PALETTES || n == WidgetStacks.WALLPAPER_BLACK) n else WidgetStacks.DEFAULT_WALLPAPER
-    }
+    /** The recognised person's wallpaper, else `clock.widgets.wallpaper`. */
+    private fun wallpaperName(): String =
+        PersonPrefs.widgetsWallpaper(person(), services.settings.getString(WidgetStacks.KEY_WALLPAPER, WidgetStacks.DEFAULT_WALLPAPER))
 
     private fun bake() {
         if (!isAttachedToWindow) return

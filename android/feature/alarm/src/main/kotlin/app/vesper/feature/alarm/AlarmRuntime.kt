@@ -13,6 +13,8 @@ internal data class SoundRequest(
     /** An alarm is ringing: the default alarm sound, ramping up. */
     val alarm: Boolean = false,
     val alarmTitle: String = "",
+    /** The ringing alarm's owner's own sound (Profile.alarmSound); null = the `alarm.sound` setting. */
+    val alarmSound: String? = null,
     /** A timer finished: the synthesized chime (only when no alarm is ringing). */
     val timer: Boolean = false,
     val timerTitle: String = "",

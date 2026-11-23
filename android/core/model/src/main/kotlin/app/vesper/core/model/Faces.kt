@@ -24,6 +24,8 @@ data class FaceConfig(
     val complications: Boolean = true,
     /** Night: every colour maps to #BE180E, dimmed (NOTES §5.7). */
     val night: Boolean = false,
+    /** Background for faces that have one (Liquid Glass): the recognised person's; null = the face's own setting. */
+    val wallpaper: String? = null,
 )
 
 /** A face is a View that takes a config. It must cost no frames when nothing changes. */

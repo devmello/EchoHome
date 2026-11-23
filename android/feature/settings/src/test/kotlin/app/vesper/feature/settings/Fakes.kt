@@ -192,9 +192,19 @@ class TestWorld(val secrets: SecretStore, val alarms: AlarmStore) {
         MediaState("Song", "Artist", durationMs = 200_000, positionMs = 50_000, positionSampledAt = elapsed[0], playing = playing,
             source = MediaSourceKind.AIRPLAY, sourceLabel = "Maya's iPhone"), mediaControls)
 
+    /** The settings a person's preferences override (their options are what /prefs accepts). */
+    val prefSchema = DefaultSettingsSchema().apply {
+        register(SettingsSection("prefs", "Prefs", 0, listOf(
+            SettingSpec("clock.face", "Face", SettingType.CHOICE, "digital", options = listOf("digital" to "Digital", "glass" to "Liquid Glass", "solar" to "Solar")),
+            SettingSpec("clock.glass.wallpaper", "Wallpaper", SettingType.CHOICE, "Blue", options = listOf("Blue" to "Blue", "Dusk" to "Dusk", "Graphite" to "Graphite")),
+            SettingSpec("clock.night.mode", "Night mode", SettingType.CHOICE, "auto", options = listOf("auto" to "Auto", "schedule" to "Schedule", "on" to "On", "off" to "Off")),
+            SettingSpec("alarm.sound", "Alarm sound", SettingType.CHOICE, "system", options = listOf("system" to "Default", "chime" to "Soft chime", "beeps" to "Beeps")),
+        )))
+    }
+
     fun remote() = RemoteApi(RemoteDeps(
         media = { media }, system = { system }, controls = { controls }, timers = { timers }, alarms = { alarms },
         notifications = { notifications }, profiles = { profiles }, secrets = { secrets }, crashLog = { crashLog },
-        elapsed = { elapsed[0] }, wall = { wall[0] },
+        elapsed = { elapsed[0] }, wall = { wall[0] }, schema = { prefSchema },
     ), { it() })
 }

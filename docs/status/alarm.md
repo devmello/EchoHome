@@ -117,3 +117,16 @@ Each was compared with a static headless-Chrome render of the board at 960×480:
 - Alarm list editing from the phone settings page: an `AlarmJson` codec in `:core:model`, plus endpoints for K (open).
 - Let full-screen screens hide the island (`ScreenSpec(hidesIsland = true)`), for the alarm screen (open).
 - For agent D: the music island animates its bars at 60 fps with nothing playing, so the whole app redraws at 60 fps on every screen.
+
+## Nov 23: per-person alarms
+
+`Alarm.profileId` (null = shared) is now used everywhere. **Every alarm still rings whoever is in the room**; the owner only changes what the screens show and say. Rules in `AlarmPeople` (pure, `AlarmPeopleTest`).
+- **Alarms screen**: with someone recognised, their alarms plus the shared ones, and a "Maya · and shared" chip by the title; with nobody recognised, every alarm (so nobody's alarm is out of reach). Personal rows carry a small name chip in the owner's colour after the label. The header's "Next" is the next one in the list (the store's next when it's listed, with its reason).
+- **Editor**: a "Whose alarm" row (right column, under Skip holidays) with a chip per person (their colour) and "Everyone". A new alarm made while someone is recognised starts as theirs. Hidden when nobody has a profile.
+- **Ringing**: "Maya’s alarm · Wake Up" with the bell and her name in her colour (lightened a quarter for contrast); Snoozed says "Maya’s alarm · Snoozed · rings again at …"; Good morning says "Good morning, Maya" (when it fits beside the clock) and Up next uses her events plus shared ones. The island's ringing label is "Maya · Wake Up"; the notification title starts with "Maya’s alarm".
+- **Sound**: a person's own `Profile.alarmSound` (chime / beeps / default) plays for their alarms (`SoundRequest.alarmSound`), else the `alarm.sound` setting.
+- **Morning brief** (`:feature:home`): the brief after a person's Good morning is theirs (`brief.profile` screen arg: their greeting and calendar), whoever the camera sees.
+- **Voice** (`VesperTools`, set_alarm / list_alarms only): `set_alarm` belongs to the recognised person by default, `shared: true` makes it shared (the old opt-in `mine` is gone). `list_alarms` gives each alarm's `owner` (name or "shared") and `recognized`.
+- **Web settings**: alarm rows end with the owner ("Run, Weekdays, Maya’s"); the editor has a "Whose alarm" select; `AlarmsApi` accepts `profileId` (an id or null).
+- Debug: `--es screen alarm --es alarm_demo ringing --es alarm_owner maya` (also `snoozed`, `morning`); `--es screen alarms --es alarms_demo maya --es profile maya` adds Maya's 6:15 weekday "Run" alarm (id `debug-maya`, really rings) and shows her view; `alarms_demo clear` deletes it.
+- **Unverified on the Echo**: everything above (built and unit-tested only), including the chip sizes, the "Whose alarm" row's fit in the sheet and a real ring of a person's alarm with their sound.

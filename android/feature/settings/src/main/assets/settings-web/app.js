@@ -528,7 +528,8 @@ function renderAlarms() {
   if (!alarmsData.alarms.length && openAlarm !== 'new') box.append(h('div', { class: 'row empty', text: 'No alarms yet. Tap + to add one.' }));
   for (const a of alarmsData.alarms) {
     const [time, ampm] = timeParts(a.time);
-    const sub = [a.label, repeatText(a.days)].filter(Boolean).join(', ');
+    const who = a.profileId && peopleData && peopleData.people.find((x) => x.id === a.profileId);
+    const sub = [a.label, repeatText(a.days), who && `${who.name}’s`].filter(Boolean).join(', ');
     const sw = h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': `${a.label} ${a.time}`,
       onchange: async () => {
         const r = await alarmCall('PUT', `/api/alarms/${encodeURIComponent(a.id)}`, { enabled: sw.checked });
@@ -594,6 +595,22 @@ function alarmEditor(a) {
   const holidays = h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': 'Skip holidays', onchange: () => patch({ skipHolidays: holidays.checked }) });
   holidays.checked = !!draft.skipHolidays;
 
+  // Whose alarm: a person's own (their sound, "Maya’s alarm" when it rings) or shared. It rings for anyone either way.
+  let owner = null;
+  const people = (peopleData && peopleData.people) || [];
+  if (people.length) {
+    const opts = [['', 'Everyone']].concat(people.map((x) => [x.id, x.name]));
+    const lab = h('span');
+    const sel = h('select', { 'aria-label': 'Whose alarm' }, opts.map(([v, l]) => h('option', { value: v, text: l })));
+    const setLab = () => { const o = opts.find(([v]) => v === sel.value); lab.textContent = o ? o[1] : 'Everyone'; };
+    sel.value = draft.profileId || '';
+    if (sel.value !== (draft.profileId || '')) sel.value = '';
+    setLab();
+    sel.addEventListener('change', () => { setLab(); patch({ profileId: sel.value || null }); });
+    owner = h('div', { class: 'ed-row' }, h('span', { class: 'ed-label' }, 'Whose alarm', h('small', { text: 'It rings for anyone in the room either way' })),
+      h('span', { class: 'select' }, lab, svg(CHEV), sel));
+  }
+
   // The sound is one setting for every alarm (alarm.sound on the schema), so it's edited here too.
   const soundSpec = currentSpec('alarm.sound');
   let sound = null;
@@ -610,7 +627,7 @@ function alarmEditor(a) {
     });
     sel.value = soundSpec.value;
     setLab();
-    sound = h('div', { class: 'ed-row' }, h('span', { class: 'ed-label' }, 'Sound', h('small', { text: 'Same for every alarm' })),
+    sound = h('div', { class: 'ed-row' }, h('span', { class: 'ed-label' }, 'Sound', h('small', { text: 'For every alarm (a person can pick their own under People)' })),
       h('span', { class: 'select' }, lab, svg(CHEV), sel));
   }
 
@@ -618,7 +635,7 @@ function alarmEditor(a) {
     ? h('div', { class: 'ed-actions' },
         h('button', { type: 'button', class: 'text-btn', onclick: () => { openAlarm = null; renderAlarms(); } }, 'Cancel'),
         h('button', { type: 'button', class: 'btn-primary small', onclick: async () => {
-          const r = await alarmCall('POST', '/api/alarms', { time: time.value || draft.time, days: draft.days, label: label.value, sunrise: sunrise.checked, leaveBy: leave.checked, readyMinutes: Number(readyMin.value) || 45, skipHolidays: holidays.checked, enabled: true });
+          const r = await alarmCall('POST', '/api/alarms', { time: time.value || draft.time, days: draft.days, label: label.value, sunrise: sunrise.checked, leaveBy: leave.checked, readyMinutes: Number(readyMin.value) || 45, skipHolidays: holidays.checked, enabled: true, profileId: draft.profileId || null });
           if (!r) return;
           openAlarm = null;
           alarmsData = (await alarmCall('GET', '/api/alarms')) || alarmsData;
@@ -644,6 +661,7 @@ function alarmEditor(a) {
     h('div', { class: 'ed-row' }, h('span', { class: 'ed-label' }, 'Leave on time', h('small', { text: 'Rings earlier when your first event needs it (travel time included). Never later than set.' })), leave),
     ready,
     h('div', { class: 'ed-row' }, h('span', { class: 'ed-label' }, 'Skip holidays', h('small', { text: 'Stays quiet on public holidays and day-off events' })), holidays),
+    owner,
     sound,
     actions);
 }
@@ -888,8 +906,44 @@ function renderPeople() {
     f.placeholder = isSet ? 'Paste new links to replace them' : 'One iCal link per line (https:// or webcal://)';
     box.append(h('div', { class: 'row person' },
       h('div', { class: 'row-main' }, h('span', { class: 'dot-c', style: `background:${p.color}` }), h('span', { class: 'row-title' }, h('span', { class: 't', text: p.name })), pill),
-      h('div', { class: 'stack' }, f, h('div', { class: 'secret-actions' }, save, show, clear))));
+      personPrefs(p),
+      h('div', { class: 'stack' }, h('div', { class: 'ed-label', text: 'Calendar links' }), f, h('div', { class: 'secret-actions' }, save, show, clear))));
   }
+}
+
+/**
+ * A person's own choices, shown when they're recognised: clock face, Liquid Glass wallpaper, Night
+ * mode, alarm sound. The options are the shared settings' own; "Same as everyone" ("") follows them.
+ */
+const PERSON_PREFS = [
+  { field: 'face', key: 'clock.face', label: 'Clock face', everyone: false },
+  { field: 'wallpaper', key: 'clock.glass.wallpaper', label: 'Wallpaper', help: 'Liquid Glass and the Widgets page', everyone: true },
+  { field: 'nightMode', key: 'clock.night.mode', label: 'Night mode', everyone: true },
+  { field: 'alarmSound', key: 'alarm.sound', label: 'Alarm sound', help: 'For their own alarms', everyone: true },
+];
+
+function personPrefs(p) {
+  const wrap = h('div', { class: 'stack person-prefs' });
+  for (const pref of PERSON_PREFS) {
+    const spec = currentSpec(pref.key);
+    if (!spec || spec.type !== 'CHOICE' || p[pref.field] === undefined) continue;
+    const opts = (pref.everyone ? [['', 'Same as everyone']] : []).concat(spec.options);
+    const lab = h('span');
+    const sel = h('select', { 'aria-label': `${p.name}’s ${pref.label.toLowerCase()}` }, opts.map(([v, l]) => h('option', { value: v, text: l })));
+    const setLab = () => { const o = opts.find(([v]) => v === sel.value); lab.textContent = o ? o[1] : sel.value; };
+    sel.value = p[pref.field] || '';
+    if (sel.value !== (p[pref.field] || '')) sel.value = opts[0][0];
+    setLab();
+    sel.addEventListener('change', async () => {
+      setLab();
+      const r = await remoteCall('PUT', `/api/people/${encodeURIComponent(p.id)}/prefs`, { [pref.field]: sel.value });
+      if (r) { for (const x of PERSON_PREFS) if (r[x.field] !== undefined) p[x.field] = r[x.field]; }
+      else { sel.value = p[pref.field] || ''; setLab(); }
+    });
+    wrap.append(h('div', { class: 'ed-row' }, h('span', { class: 'ed-label' }, pref.label, pref.help && h('small', { text: pref.help })),
+      h('span', { class: 'select' }, lab, svg(CHEV), sel)));
+  }
+  return wrap;
 }
 
 // ---------- diagnostics ----------

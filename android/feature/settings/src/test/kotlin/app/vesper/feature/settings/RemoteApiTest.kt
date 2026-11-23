@@ -132,6 +132,37 @@ class RemoteApiTest {
         assertFalse(s.getJSONObject("nextAlarm").has("reason"))
     }
 
+    // ---- people's own preferences ----
+
+    @Test fun personPrefsListAndSet() {
+        fun maya() = json("GET", "/api/people").getJSONArray("people").let { a -> (0 until a.length()).map { a.getJSONObject(it) }.first { it.getString("id") == "maya" } }
+        assertEquals("", maya().getString("wallpaper"))
+        assertEquals("", maya().getString("nightMode"))
+        assertEquals("analog", maya().getString("face"))
+        val r = call("PUT", "/api/people/maya/prefs", JSONObject().put("wallpaper", "Dusk").put("face", "glass").put("alarmSound", "chime").toString())
+        assertEquals(200, r.status)
+        val p = world.profiles.profiles.value.first { it.id == "maya" }
+        assertEquals("Dusk", p.wallpaper); assertEquals("glass", p.faceId); assertEquals("chime", p.alarmSound); assertNull(p.nightMode)
+        assertEquals("Dusk", maya().getString("wallpaper"))
+        // "" (or null) = back to Everyone's.
+        assertEquals(200, call("PUT", "/api/people/maya/prefs", "{\"wallpaper\":\"\",\"alarmSound\":null}").status)
+        assertNull(world.profiles.profiles.value.first { it.id == "maya" }.wallpaper)
+        assertNull(world.profiles.profiles.value.first { it.id == "maya" }.alarmSound)
+        assertEquals("glass", world.profiles.profiles.value.first { it.id == "maya" }.faceId)
+    }
+
+    @Test fun personPrefsValidation() {
+        assertEquals(422, call("PUT", "/api/people/maya/prefs", "{\"wallpaper\":\"Neon\"}").status)
+        assertEquals(422, call("PUT", "/api/people/maya/prefs", "{\"nightMode\":\"sometimes\"}").status)
+        assertEquals(422, call("PUT", "/api/people/maya/prefs", "{\"face\":\"\"}").status)
+        assertEquals(422, call("PUT", "/api/people/maya/prefs", "{\"wallpaper\":5}").status)
+        assertEquals(422, call("PUT", "/api/people/maya/prefs", "{\"color\":\"#FFFFFF\"}").status)
+        assertEquals(404, call("PUT", "/api/people/shared/prefs", "{\"wallpaper\":\"Dusk\"}").status)
+        assertEquals(401, api.handle(req("PUT", "/api/people/maya/prefs", "{\"wallpaper\":\"Dusk\"}")).status)
+        val p = world.profiles.profiles.value.first { it.id == "maya" }
+        assertNull(p.wallpaper); assertEquals("analog", p.faceId)
+    }
+
     // ---- people's calendars ----
 
     @Test fun peopleListOmitsSharedAndNeverShowsUrls() {

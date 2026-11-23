@@ -17,6 +17,13 @@ data class Profile(
     val calendarEntity: String? = null,
     /** Face-recognition templates are stored by `:feature:camera`, never here. */
     val enrolled: Boolean = false,
+    // --- personal preferences: null = follow Shared (the settings everyone uses) ---
+    /** StandBy wallpaper (the Liquid Glass face and the Widgets page): "Blue" | "Dusk" | "Graphite". */
+    val wallpaper: String? = null,
+    /** Night mode, same values as the `clock.night.mode` setting: "auto" | "schedule" | "on" | "off". */
+    val nightMode: String? = null,
+    /** Sound of this person's own alarms, same values as the `alarm.sound` setting: "system" | "chime" | "beeps". */
+    val alarmSound: String? = null,
 ) {
     companion object {
         const val SHARED_ID = "shared"

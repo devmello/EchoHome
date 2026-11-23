@@ -85,12 +85,16 @@ class BriefWatcher(
         scope.launch {
             yield()
             var wasMorning = alarms().phase.value is AlarmPhase.GoodMorning
+            // Whose alarm the Good morning was for: the brief after it is that person's (their calendar).
+            var owner = (alarms().phase.value as? AlarmPhase.GoodMorning)?.alarm?.profileId
             alarms().phase.collect { p ->
                 val morning = p is AlarmPhase.GoodMorning
+                if (p is AlarmPhase.GoodMorning) owner = p.alarm.profileId
                 if (wasMorning && !morning && p is AlarmPhase.Idle) {
                     // The alarm screen takes itself back to StandBy when Good morning ends: let it, then open the brief.
+                    val forWhom = owner
                     delay(handoverDelayMs)
-                    if (BriefRules.fromAlarm(clock(), zone(), lastShown(), enabled()) && alarms().phase.value is AlarmPhase.Idle) show("alarm")
+                    if (BriefRules.fromAlarm(clock(), zone(), lastShown(), enabled()) && alarms().phase.value is AlarmPhase.Idle) show("alarm", forWhom)
                 }
                 wasMorning = morning
             }
@@ -100,14 +104,17 @@ class BriefWatcher(
     private fun enabled() = AlertSettings.bool(settings, AlertSettings.BRIEF, true)
     private fun lastShown() = settings.getString(AlertSettings.BRIEF_LAST_DAY, "").ifEmpty { null }
 
-    private fun show(why: String) {
+    /** [profileId]: the brief is for that person (after their alarm), else for whoever is recognised. */
+    private fun show(why: String, profileId: String? = null) {
         settings.putString(AlertSettings.BRIEF_LAST_DAY, BriefRules.day(clock(), zone()))
-        Log.i(TAG, "morning brief: shown ($why)")
-        navigator().show(SCREEN_ID)
+        Log.i(TAG, "morning brief: shown ($why${if (profileId != null) ", for a person" else ""})")
+        navigator().show(SCREEN_ID, profileId?.let { android.os.Bundle().apply { putString(ARG_PROFILE, it) } })
     }
 
     companion object {
         const val SCREEN_ID = "brief"
         const val TAG = "VesperBrief"
+        /** Screen arg: the profile id the brief is for (an alarm owner). */
+        const val ARG_PROFILE = "brief.profile"
     }
 }

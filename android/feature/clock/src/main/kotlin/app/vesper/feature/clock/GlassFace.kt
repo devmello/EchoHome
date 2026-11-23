@@ -42,7 +42,8 @@ import kotlin.math.sin
  * rebuilt once a minute.
  *
  * Settings: `clock.glass.amount` 0–1 (clear → frosted, default 0.45), `clock.glass.wallpaper`
- * Blue | Dusk | Graphite. Tint = the face colour.
+ * Blue | Dusk | Graphite; a recognised person's own wallpaper ([FaceConfig.wallpaper]) wins.
+ * Tint = the face colour.
  */
 class GlassFace(context: Context, services: VesperServices) : SpecFace(context, services) {
 
@@ -66,7 +67,9 @@ class GlassFace(context: Context, services: VesperServices) : SpecFace(context, 
     private var dateLine = ""
     private var alarmLabel: String? = null
     private var glass = 0.45f
-    private var wallpaperName = "Blue"
+    /** `clock.glass.wallpaper`; a recognised person's own wallpaper ([FaceConfig.wallpaper]) wins. */
+    private var settingWallpaper = "Blue"
+    private val wallpaperName: String get() = PersonPrefs.wallpaper(config.wallpaper, settingWallpaper, PALETTES.keys, "Blue")
 
     private var wallpaper: Bitmap? = null
     private var lens: Bitmap? = null
@@ -84,7 +87,7 @@ class GlassFace(context: Context, services: VesperServices) : SpecFace(context, 
 
     private fun readSettings() {
         glass = services.settings.getFloat(KEY_GLASS, 0.45f).coerceIn(0f, 1f)
-        wallpaperName = services.settings.getString(KEY_WALLPAPER, "Blue").let { if (it in PALETTES) it else "Blue" }
+        settingWallpaper = services.settings.getString(KEY_WALLPAPER, "Blue").let { if (it in PALETTES) it else "Blue" }
     }
 
     override fun onConfigChanged(old: FaceConfig) { time = ""; rebuild() }

@@ -65,7 +65,7 @@ internal class WebSettings(private val app: Context, private val services: Vespe
         media = { services.media }, system = { services.system }, controls = { services.systemControls },
         timers = { services.timers }, alarms = { services.alarms }, notifications = { services.notifications },
         profiles = { services.profiles }, secrets = { services.secrets }, crashLog = { services.crashLog },
-        elapsed = SystemClock::elapsedRealtime,
+        elapsed = SystemClock::elapsedRealtime, schema = { services.settingsSchema },
     ), ::onMain)
 
     val api = SettingsApi(
@@ -176,6 +176,10 @@ internal class WebSettings(private val app: Context, private val services: Vespe
             combine(store.alarms, store.next) { a, n -> a to n }.drop(1).collect { (a, n) ->
                 if (events.hasClients()) events.publish("alarms", AlarmsApi.listJson(a, n).toString())
             }
+        }
+        // People's own preferences changed on the Echo (edit mode, the Profiles screen): live on open pages.
+        scope.launch {
+            services.profiles.profiles.drop(1).collect { if (events.hasClients()) events.publish("people", remoteApi.peopleJson().toString()) }
         }
     }
 

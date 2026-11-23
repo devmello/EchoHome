@@ -32,6 +32,19 @@ class AlarmsApiTest {
         assertFalse(list.getJSONObject(0).getBoolean("enabled"))
     }
 
+    @Test fun whoseAlarm() {
+        val id = json("POST", "/api/alarms", "{\"time\":\"06:15\",\"profileId\":\"maya\"}").getJSONObject("alarm").getString("id")
+        assertEquals("maya", store.alarms.value.first { it.id == id }.profileId)
+        assertEquals("maya", json("GET", "/api/alarms").getJSONArray("alarms").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
+            .first { it.getString("id") == id }.getString("profileId"))
+        assertEquals(200, call("PUT", "/api/alarms/$id", "{\"label\":\"Run\"}").status)
+        assertEquals("maya", store.alarms.value.first { it.id == id }.profileId) // other edits keep the owner
+        assertEquals(200, call("PUT", "/api/alarms/$id", "{\"profileId\":null}").status)
+        assertNull(store.alarms.value.first { it.id == id }.profileId)
+        assertEquals(422, call("PUT", "/api/alarms/$id", "{\"profileId\":\"../etc\"}").status)
+        assertEquals(422, call("PUT", "/api/alarms/$id", "{\"profileId\":7}").status)
+    }
+
     @Test fun createEditToggleDelete() {
         val created = json("POST", "/api/alarms", "{\"time\":\"10:45\",\"days\":[6,7],\"label\":\"Weekend\",\"enabled\":false,\"sunrise\":false}").getJSONObject("alarm")
         val id = created.getString("id")
