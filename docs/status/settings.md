@@ -11,6 +11,35 @@ The Echo serves a settings page on the home Wi-Fi. Open it in Safari on an iPhon
 
 Keys (Anthropic, calendar links, Immich, Home Assistant) go in **Accounts & keys**. You can set or clear them, but they are never shown again.
 
+## Nov 22 evening: phone remote, people's calendars, alarm fields, diagnostics
+
+The page now has two tabs under the title: **Remote** (default, remembered) and **Settings**.
+
+- **Remote tab** (`api/RemoteApi.kt`, `GET /api/remote` polled every 2 s only while the page is visible and on this tab; timers and the progress bar count down locally each second between polls):
+  - Now playing: title, artist, source, progress, previous / play-pause / next over `services.media.current.controls` (buttons dim when `canSkip` / `canPause` say so; 409 when nothing plays).
+  - Volume and brightness sliders (throttled to one request per 140 ms while dragging; a poll never fights a finger), Do Not Disturb switch, Night mode Auto / On / Off, via `services.systemControls` (`POST /api/remote/system`, all or nothing).
+  - Timers: list with live remaining, Pause / Resume / +1 min / Cancel / Dismiss, presets 1, 5, 10, 15 min, custom minutes (1 to 1440) with a label (`POST /api/remote/timers[/<id>]`, 409 when 3 are running).
+  - Next alarm with `NextAlarm.reason`.
+  - **Send a note to the Echo:** `POST /api/remote/note` posts a `Banner` (appName "Note", glyph "message", title "Note", green tile, not critical so DND holds it). 1 to 280 characters, at most 20 per minute (429).
+  - Every store call runs on the main thread (`onMain`, same marshalling as alarms); state reads don't hop.
+- **People** section (Settings tab, before Accounts & keys): a write-only multiline field per profile (the shared profile is left out, its links are the Accounts card's "Calendar links"). `PUT /api/people/<id>/calendar {urls: "…" | null}` stores the links in `services.secrets` under `Secrets.calendarKeyFor(id)`, one per line. Validation: https, http, webcal(s) only, at most 10 links, 2048 characters each, no control characters; error messages never echo the value. The page and `GET /api/people` only say Set / Not set; a Clear button removes it. A new `people` SSE event keeps other open pages in step.
+- **Alarms card:** "Leave on time" switch with a "Getting ready" minutes field (0 to 180) and "Skip holidays" switch, in the editor and when adding. Header shows `NextAlarm.reason` under "Next alarm in …". `AlarmsApi` serialises and parses `leaveBy`, `readyMinutes`, `skipHolidays` itself (`AlarmJson` in `:core` doesn't carry them).
+- **Diagnostics** section (last): `services.crashLog.entries` newest first (time, thread, Crash / Hang, summary, expandable stack, stack capped at 8000 characters) and a Clear button (`POST /api/diagnostics/clear`, with a confirm). On this branch the log is the empty one.
+- **Security:** all new routes are dispatched after the existing pairing check (401 unpaired), and behind the same Host, Origin and JSON-only checks as every write. Secrets stay write-only. Nothing logs values.
+- **Tests:** 20 new JVM tests (`RemoteApiTest`, plus two in `AlarmsApiTest`): every new endpoint 401 unpaired, foreign Origin 403, media transport, system validation all or nothing, timer lifecycle and limits, note banner fields and rate limit, calendar write-only (value never in any reply or the schema), calendar validation, diagnostics list and clear, leave-by fields. 80 tests pass (plus the opt-in DevServer); `:app:assembleDebug` passes.
+
+### Checked
+- Phone-width (390 px) browser against the dev server with sample data: Remote tab (now playing, sliders, timers, alarm, note), People, Diagnostics, alarm editor with the new switches; sent a note, moved the volume slider, saved and re-read a calendar link (no leak), no console errors.
+- Echo: built and installed; unpaired requests to the new routes give 401 and a foreign Origin gives 403. Another agent installed a build right after mine, so the paired flows were not exercised on the device.
+
+### Not verified
+- Paired Remote tab against the real services on the Echo (media controls, timers, banner on screen, crash log). The user wasn't at the Echo to read the pairing code.
+- The crash log is the empty one until the lead binds the real one in `:app`.
+
+### Contract requests / for the lead
+- `:feature:alarm` must persist `leaveBy`, `readyMinutes`, `skipHolidays`. `AlarmJson` (`:core`) does not write them, so if the alarm store serialises through it they are lost on restart. Suggest adding the three fields to `AlarmJson.toJson` / `fromJson` (the page already sends and reads them).
+- Optional: `SettingSpec.placeholder` / `multiline` already exist; no new request for them.
+
 ## Done
 - **Server:** a hand-written HTTP/1.1 server (`http/`, no Ktor or Netty) with one accept thread and a pool that grows to 12 threads and drops idle ones after 30 s. It uses keep-alive and server-sent events (SSE). **Port 8080:** port 80 isn't possible. Kernel 4.9 has no `ip_unprivileged_port_start`, and the app has no root, so binding below 1024 fails (tried in order 80, 8080, 8081, 8088).
 - **LAN only:** requests must come from a private, link-local, loopback or ULA source address. The Host header must be an IP or a local name (blocks DNS rebinding). Writes need a same-origin `Origin` header and a JSON body. Responses carry a CSP, X-Frame-Options DENY and nosniff.

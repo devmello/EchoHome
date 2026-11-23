@@ -28,8 +28,14 @@ class DevServer {
         }
         val secrets = InMemorySecretStore().apply { set(Secrets.ANTHROPIC_API_KEY, "sk-ant-sample") }
         val clock = longArrayOf(1_000_000L)
+        val alarms = FakeAlarmStore(demo = true)
+        val world = TestWorld(secrets, alarms).also { w ->
+            w.playSomething()
+            w.timers.start(8 * 60_000L, "Pasta")
+            w.timers.start(25 * 60_000L)
+        }
         val api = newApi(settings, secrets, clock, builtIn = Secrets(immichUrl = "http://immich.local:2283"),
-            alarms = FakeAlarmStore(demo = true))
+            alarms = alarms, world = world)
         val server = HttpServer({ r ->
             if (r.path == "/dev-login") {
                 clock[0] += 10_000

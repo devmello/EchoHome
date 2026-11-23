@@ -53,8 +53,13 @@
         <input id="advanced" type="checkbox" class="switch" role="switch">
       </label>
     </div>
+    <div id="tabs" class="seg wide tabs" role="tablist" aria-label="View">
+      <button type="button" role="tab" data-tab="remote">Remote</button>
+      <button type="button" role="tab" data-tab="settings">Settings</button>
+    </div>
     <nav id="chips" class="chips" aria-label="Sections"></nav>
   </header>
+  <main id="remote" class="sections remote" hidden aria-label="Remote"></main>
   <main id="sections" class="sections"></main>
   <footer class="foot">
     <div class="theme" role="radiogroup" aria-label="Page appearance">

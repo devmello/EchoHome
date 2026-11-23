@@ -12,11 +12,14 @@ import android.os.SystemClock
 import android.util.Log
 import app.vesper.core.data.loadSecrets
 import app.vesper.core.model.DeviceName
+import app.vesper.core.model.Secrets
 import app.vesper.core.model.VesperServices
 import app.vesper.core.model.SettingSpec
 import app.vesper.feature.settings.api.AlarmsApi
 import app.vesper.feature.settings.api.Assets
 import app.vesper.feature.settings.api.EventHub
+import app.vesper.feature.settings.api.RemoteApi
+import app.vesper.feature.settings.api.RemoteDeps
 import app.vesper.feature.settings.api.SettingsApi
 import app.vesper.feature.settings.http.HttpServer
 import app.vesper.feature.settings.pair.PairStore
@@ -58,6 +61,13 @@ internal class WebSettings(private val app: Context, private val services: Vespe
     private val main = Handler(Looper.getMainLooper())
     private val builtIn by lazy { loadSecrets() }
 
+    private val remoteApi = RemoteApi(RemoteDeps(
+        media = { services.media }, system = { services.system }, controls = { services.systemControls },
+        timers = { services.timers }, alarms = { services.alarms }, notifications = { services.notifications },
+        profiles = { services.profiles }, secrets = { services.secrets }, crashLog = { services.crashLog },
+        elapsed = SystemClock::elapsedRealtime,
+    ), ::onMain)
+
     val api = SettingsApi(
         schema = services.settingsSchema,
         settings = { services.settings },
@@ -69,6 +79,7 @@ internal class WebSettings(private val app: Context, private val services: Vespe
         assets = Assets { name -> try { app.assets.open("settings-web/$name").use { it.readBytes() } } catch (e: java.io.IOException) { null } },
         runAction = ::runOnMain,
         alarms = AlarmsApi({ services.alarms }, ::onMain),
+        remote = remoteApi,
     )
     private val server = HttpServer(api::handle, log = { Log.i(TAG, it) })
 
@@ -153,6 +164,7 @@ internal class WebSettings(private val app: Context, private val services: Vespe
         }
         scope.launch {
             services.secrets.changes.collect { key ->
+                if (key.startsWith(Secrets.CALENDAR_ICS_URLS + ".") && events.hasClients()) events.publish("people", remoteApi.peopleJson().toString())
                 if (events.hasClients()) api.changeJson(key)?.let { events.publish("change", it.toString()) }
             }
         }
