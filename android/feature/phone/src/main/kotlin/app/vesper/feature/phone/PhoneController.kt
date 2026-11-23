@@ -19,6 +19,8 @@ import app.vesper.core.model.DeviceName
 import app.vesper.core.model.VesperServices
 import app.vesper.core.model.LiveActivity
 import app.vesper.core.model.LiveContent
+import app.vesper.core.model.PhoneStatus
+import app.vesper.feature.phone.battery.BatteryPolicy
 import app.vesper.feature.phone.ams.AmsMediaSource
 import app.vesper.feature.phone.ams.ArtworkLookup
 import app.vesper.feature.phone.ancs.AncsPresenter
@@ -67,6 +69,12 @@ class PhoneController(private val context: Context, private val services: Vesper
     })
 
     private var client: AppleGattClient? = null
+
+    // --- iPhone battery (Battery Service over the ANCS/AMS GATT link) and services.phone ---
+    private val batteryPolicy = BatteryPolicy()
+    private var batteryPercent: Int? = null
+    private var batteryShownUntil = 0L
+    private val _phoneStatus = MutableStateFlow<PhoneStatus?>(null)
     private var session: AncsSession? = null
     private var presenter: AncsPresenter? = null
     /** Centrals that turned out not to have ANCS this session (don't probe them again). */
@@ -119,6 +127,7 @@ class PhoneController(private val context: Context, private val services: Vesper
             KEY_SHOW_SILENT -> presenter?.showSilent = settings.getBoolean(KEY_SHOW_SILENT, false)
             KEY_CLEAR_ON_DISMISS -> presenter?.clearOnDismiss = settings.getBoolean(KEY_CLEAR_ON_DISMISS, true)
             KEY_HIDDEN_APPS -> presenter?.hiddenApps = hiddenApps()
+            KEY_ANSWER_CALLS -> presenter?.offerAnswer = settings.getBoolean(KEY_ANSWER_CALLS, false)
             DeviceName.KEY -> applyName()
             else -> return
         }
@@ -170,6 +179,7 @@ class PhoneController(private val context: Context, private val services: Vesper
         context.registerReceiver(receiver, f, null, handler)
         media.enabled = audioEnabled
         ams.enabled = nowPlayingEnabled
+        services.phone = _phoneStatus.asStateFlow()
         services.scope.launch { settings.changes.collect { applySetting(it) } }
         // Precedence between the iPhone's remote Now Playing and audio playing on the Echo.
         services.scope.launch { services.media.sessions.collect { ams.onSessions(it) } }
@@ -285,6 +295,7 @@ class PhoneController(private val context: Context, private val services: Vesper
             val p = AncsPresenter(services.notifications, services.island, d.address, { nameOf(d) }, ::performAction,
                 showSilent = settings.getBoolean(KEY_SHOW_SILENT, false), clearOnDismiss = settings.getBoolean(KEY_CLEAR_ON_DISMISS, true))
             p.hiddenApps = hiddenApps()
+            p.offerAnswer = settings.getBoolean(KEY_ANSWER_CALLS, false)
             presenter = p
             session = AncsSession(client, p::onNotification)
             updateMode()
@@ -316,6 +327,10 @@ class PhoneController(private val context: Context, private val services: Vesper
         override fun onAmsCommands(client: AppleGattClient, bytes: ByteArray) { if (client === this@PhoneController.client) ams.session?.onCommands(bytes) }
         override fun onAmsAttribute(client: AppleGattClient, value: ByteArray?) { if (client === this@PhoneController.client) ams.session?.onAttributeRead(value) }
 
+        override fun onBatteryLevel(client: AppleGattClient, percent: Int) {
+            if (client === this@PhoneController.client) onBattery(percent)
+        }
+
         override fun onNeedsBond(client: AppleGattClient) {
             val d = client.device
             Log.i(TAG, "bonding with ${d.address}")
@@ -335,7 +350,61 @@ class PhoneController(private val context: Context, private val services: Vesper
         session = null
         presenter?.clearAll()
         presenter = null
+        batteryPercent = null
+        batteryPolicy.onConnectionChanged()
+        endBatteryActivity()
         updateBluetoothActivity()
+    }
+
+    private var debugName: String? = null
+
+    /** Debug demo: feeds fake battery levels through the real policy and island path (no phone needed). */
+    fun debugBattery(name: String, levels: List<Int>, stepMs: Long = 4_000L) {
+        debugName = name
+        batteryPercent = null
+        batteryPolicy.onConnectionChanged()
+        levels.forEachIndexed { i, l -> handler.postDelayed({ onBattery(l) }, stepMs * i) }
+        handler.postDelayed({ debugName = null }, stepMs * levels.size + 1000)
+    }
+
+    private fun onBattery(percent: Int) {
+        if (percent == batteryPercent) return
+        batteryPercent = percent
+        // The Battery Service has no charging flag: null (unknown).
+        val charging: Boolean? = null
+        val d = batteryPolicy.onLevel(percent, charging)
+        val name = debugName ?: client?.device?.let(::nameOf) ?: savedName()
+        val now = SystemClock.elapsedRealtime()
+        when {
+            d.end -> endBatteryActivity()
+            d.show != null -> {
+                batteryShownUntil = if (d.durationMs != null) now + d.durationMs else Long.MAX_VALUE
+                services.island.publish(LiveActivity(BATTERY_ACTIVITY_ID, ActivityKind.PHONE_BATTERY,
+                    LiveContent.PhoneBattery(name, percent, charging), staleAfterElapsed = d.durationMs?.let { now + it }))
+            }
+            // Already on the island: keep its end time, update the number.
+            now < batteryShownUntil -> services.island.publish(LiveActivity(BATTERY_ACTIVITY_ID, ActivityKind.PHONE_BATTERY,
+                LiveContent.PhoneBattery(name, percent, charging), staleAfterElapsed = batteryShownUntil.takeIf { it != Long.MAX_VALUE }))
+        }
+        publishPhoneStatus()
+    }
+
+    private fun endBatteryActivity() {
+        if (batteryShownUntil != 0L) services.island.end(BATTERY_ACTIVITY_ID)
+        batteryShownUntil = 0L
+    }
+
+    /** services.phone: the paired / connected iPhone, null before any phone was ever paired. */
+    private fun publishPhoneStatus() {
+        val c = client
+        val connected = (c?.state == AppleGattClient.State.READY) || audioDevice != null
+        val hasPhone = savedAddress().isNotEmpty() || c != null || audioDevice != null
+        _phoneStatus.value = if (!hasPhone) null else PhoneStatus(
+            deviceName = (audioDevice ?: c?.device)?.let(::nameOf) ?: savedName(),
+            connected = connected,
+            batteryPercent = if (connected) batteryPercent else null,
+            charging = null,
+        )
     }
 
     // --- audio ---
@@ -512,6 +581,7 @@ class PhoneController(private val context: Context, private val services: Vesper
             )
         }
         refreshStatus()
+        publishPhoneStatus()
     }
 
     private fun refreshStatus() {
@@ -573,6 +643,7 @@ class PhoneController(private val context: Context, private val services: Vesper
     companion object {
         const val TAG = "VesperPhone"
         const val ACTIVITY_ID = "phone:bluetooth"
+        const val BATTERY_ACTIVITY_ID = "phone:battery"
         const val ANNOUNCE_MS = 6_000L
         const val DISCOVERABLE_S = 300
         const val KEY_NOTIFICATIONS = "phone.notifications"
@@ -582,6 +653,7 @@ class PhoneController(private val context: Context, private val services: Vesper
         const val KEY_SHOW_SILENT = "phone.showSilent"
         const val KEY_CLEAR_ON_DISMISS = "phone.clearOnDismiss"
         const val KEY_HIDDEN_APPS = "phone.hiddenApps"
+        const val KEY_ANSWER_CALLS = "phone.answerCalls"
         const val KEY_NOW_PLAYING = "phone.nowPlaying"
         const val KEY_ART_LOOKUP = "phone.artLookup"
         const val PERMISSION_BLUETOOTH_PRIVILEGED = "android.permission.BLUETOOTH_PRIVILEGED"

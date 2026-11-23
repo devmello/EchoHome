@@ -87,6 +87,8 @@ object PhoneFeature : VesperFeature {
                 help = "App names or bundle ids, e.g. Mail, com.burbn.instagram. Calls always show."),
             SettingSpec(PhoneController.KEY_CLEAR_ON_DISMISS, "Dismiss on the Echo clears the iPhone", SettingType.BOOLEAN, "true",
                 help = "Uses the notification's Clear action. Never declines calls or deletes messages."),
+            SettingSpec(PhoneController.KEY_ANSWER_CALLS, "Offer Answer for incoming calls", SettingType.BOOLEAN, "false", advanced = true,
+                help = "Adds Answer next to Decline. The call is answered on the iPhone (the Echo has no call audio), so only use it when the phone is within reach."),
             SettingSpec(PhoneController.KEY_SHOW_SILENT, "Show notifications delivered quietly", SettingType.BOOLEAN, "false", advanced = true),
             SettingSpec("phone.forget", "Forget iPhone", SettingType.ACTION,
                 help = "Unpairs the iPhone from the Echo. Also remove “Echo Show” in the iPhone's Settings › Bluetooth.",

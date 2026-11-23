@@ -27,7 +27,7 @@ import kotlinx.coroutines.launch
  *
  *   adb shell am start -n app.vesper/.MainActivity --es screen phone-pairing --es phone_demo <kind>
  *
- * kind: banner | mail | missed | call | media | ams | ams-podcast | connected | pairing | paired
+ * kind: banner | mail | mail-actions | battery | battery-low | missed | call | media | ams | ams-podcast | connected | pairing | paired
  *
  * `ams`: the real [AmsSession] + [AmsMediaSource] fed by a [FakeAmsPhone] at MTU 23 (truncated
  * values fetched back through fake Entity Attribute reads), then Now Playing opens. The album art
@@ -77,6 +77,11 @@ class PhoneDemo(private val services: VesperServices, private val handler: Handl
                 connected(audio = true)
             }
             "connected" -> connected(audio = false)
+            // Fake battery levels through the real BatteryPolicy + island path.
+            "battery" -> PhoneFeature.controller?.debugBattery(device, listOf(72))
+            "battery-low" -> PhoneFeature.controller?.debugBattery(device, listOf(40, 20, 19, 10, 9), stepMs = 7_000L)
+            "mail-actions" -> add(FakeIPhone.Note(nextUid++, AncsCategory.EMAIL, "com.apple.mobilemail", "Sam Rivera", subtitle = "Saturday hike",
+                message = "Trailhead at 8.", positive = "Open", negative = "Delete"))
             "ams" -> ams(podcast = false)
             "ams-podcast" -> ams(podcast = true)
         }
