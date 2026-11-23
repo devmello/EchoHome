@@ -98,6 +98,7 @@ object AlarmJson {
         put("label", a.label); put("enabled", a.enabled); put("sunrise", a.sunrise)
         put("sunriseMinutes", a.sunriseMinutes); put("snoozeMinutes", a.snoozeMinutes)
         a.profileId?.let { put("profileId", it) }
+        put("leaveBy", a.leaveBy); put("readyMinutes", a.readyMinutes); put("skipHolidays", a.skipHolidays)
     }
 
     /** null when [o] has no id or an out-of-range time. */
@@ -115,6 +116,8 @@ object AlarmJson {
             sunrise = o.optBoolean("sunrise", true), sunriseMinutes = o.optInt("sunriseMinutes", 30).coerceIn(0, 120),
             snoozeMinutes = o.optInt("snoozeMinutes", 9).coerceIn(1, 60),
             profileId = if (o.has("profileId") && !o.isNull("profileId")) o.getString("profileId") else null,
+            leaveBy = o.optBoolean("leaveBy", false), readyMinutes = o.optInt("readyMinutes", 45).coerceIn(0, 180),
+            skipHolidays = o.optBoolean("skipHolidays", false),
         )
     }
 }

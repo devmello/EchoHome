@@ -38,6 +38,8 @@ class Round2ContractTest {
     @Test fun alarmJsonRoundTripsAndRejectsBadTimes() {
         val a = Alarm("x", 6, 45, setOf(java.time.DayOfWeek.MONDAY, java.time.DayOfWeek.FRIDAY), "Work", true, false, 20, 5, "maya")
         assertEquals(a, AlarmJson.fromJson(AlarmJson.toJson(a)))
+        val lb = a.copy(leaveBy = true, readyMinutes = 60, skipHolidays = true)
+        assertEquals(lb, AlarmJson.fromJson(AlarmJson.toJson(lb)))
         assertEquals(null, AlarmJson.fromJson(org.json.JSONObject().put("id", "y").put("hour", 25)))
         assertEquals(null, AlarmJson.fromJson(org.json.JSONObject().put("hour", 7)))
     }
