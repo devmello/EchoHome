@@ -33,6 +33,9 @@ import app.vesper.feature.system.ui.GlassSpec
 import app.vesper.feature.system.ui.Icon
 import app.vesper.feature.system.ui.Icons
 import app.vesper.feature.system.hud.Hud
+import app.vesper.feature.system.hud.HudQueue
+import app.vesper.feature.system.hud.LevelKind
+import app.vesper.feature.system.hud.MessageKind
 import kotlin.math.roundToInt
 import app.vesper.feature.system.ui.Snapshot
 import app.vesper.feature.system.ui.SysGlassPainter
@@ -77,11 +80,16 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
     private val beadA = Tween(0f)
     private val beadScale = Tween(0.4f)
     private val bannerFade = Tween(1f)
-    /** Volume inside the island: 1 while it shows the level bar instead of its content. */
+    /** A HUD inside the island: 1 while it shows a level bar or a message instead of its content. */
     private val volA = Tween(0f)
     private val volLevel = Tween(0f)
     private var volMuted = false
     private var volActive = false
+    /** What the takeover shows: a level (volume / brightness) or a message (mic, camera). */
+    private var takeKind: LevelKind = LevelKind.VOLUME
+    private var takeMsg: MessageKind? = null
+    private var takeW = VOL_W
+    private var takeH = 44f
     private val endVolume = Runnable {
         volActive = false
         volA.to(0f, 220, EASE)
@@ -89,7 +97,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
         w.to(b.width, Motion.ISLAND_MS, Motion.ISLAND); h.to(b.height, Motion.ISLAND_MS, Motion.ISLAND); r.to(b.radius, Motion.ISLAND_MS, Motion.ISLAND)
         invalidate()
     }
-    private val takeVolume: (Hud.Level) -> Boolean = { lv -> showVolume(lv) }
+    private val takeHud: (Hud) -> Boolean = { h -> showHud(h) }
 
     private var compactAct: LiveActivity? = null
     private var expandedAct: LiveActivity? = null
@@ -124,6 +132,8 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
     private val tCallName = SpecText(30f, 800, -0.02f)
     private val tInitial = SpecText(32f, 800)
     private val tLeaveTitle = SpecText(26f, 800, -0.02f)
+    private val tMsgTitle = SpecText(16f, 700)
+    private val tMsgSub = SpecText(13f, 600)
 
     private class Btn(val rect: RectF, val run: () -> Unit)
     private val buttons = ArrayList<Btn>()
@@ -174,11 +184,12 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         ui.backHandlers += back
-        ui.islandVolume = takeVolume
+        ui.islandHud = takeHud
     }
 
     override fun onDetachedFromWindow() {
-        if (ui.islandVolume === takeVolume) ui.islandVolume = null
+        if (ui.islandHud === takeHud) ui.islandHud = null
+        ui.islandBox = null
         ui.backHandlers -= back
         handler.removeCallbacksAndMessages(null)
         super.onDetachedFromWindow()
@@ -243,33 +254,75 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
             if (l.bead != null) { beadAct = l.bead; beadA.to(1f, 300, EASE); beadScale.to(1f, 500, Motion.SPRING_BOUNCY) }
             else { beadA.to(0f, 300, EASE); beadScale.to(0.4f, 500, Motion.SPRING_BOUNCY) }
         }
-        if (volActive) { w.to(VOL_W, dur, spring); h.to(44f, dur, spring); r.to(22f, dur, spring) }
+        if (volActive) { w.to(takeW, dur, spring); h.to(takeH, dur, spring); r.to(takeH / 2f, dur, spring) }
         updateHitAreas()
         invalidate()
     }
 
     /**
-     * A volume change while the island is on screen: the island morphs into a 280×44 pill with the
-     * speaker and a level bar that slides to the new value, then morphs back after [VOL_HOLD_MS].
+     * A HUD while the island is on screen: the island morphs into the indicator and back.
+     *  - Level (volume, brightness): a 280×44 pill, icon + a bar that slides to the new value.
+     *  - Message (mic / camera on or off): a 64 tall pill, tinted icon disc + title and subtitle.
+     * It holds [LEVEL_HOLD_MS] after the last level change, [HudQueue.MESSAGE_MS] for a message.
      * False when the island isn't showing (the HUD capsule shows it instead).
      */
-    private fun showVolume(lv: Hud.Level): Boolean {
+    private fun showHud(hud: Hud): Boolean {
         if (layout.mode == IslandMode.HIDDEN || appear.target < 1f || bannerFade.target < 1f || !isAttachedToWindow) return false
-        if (!volActive && volA.value < 0.05f) volLevel.snap(s.system.state.value.volume.coerceIn(0f, 1f))
+        val hold: Long
+        when (hud) {
+            is Hud.Level -> {
+                // a message in progress isn't cut short by a level (like the capsule's queue)
+                if (volActive && takeMsg != null) return true
+                val fresh = !volActive || takeKind != hud.kind
+                if (fresh && volA.value < 0.05f) volLevel.snap(currentLevel(hud.kind))
+                takeKind = hud.kind; takeMsg = null
+                takeW = VOL_W; takeH = 44f
+                volMuted = hud.kind == LevelKind.VOLUME && (hud.muted || hud.value <= 0f)
+                volLevel.to(hud.value.coerceIn(0f, 1f), 260, EASE)
+                hold = LEVEL_HOLD_MS
+                announceForAccessibility("${if (hud.kind == LevelKind.VOLUME) "Volume" else "Brightness"} ${(hud.value * 100).roundToInt()} percent")
+            }
+            is Hud.Message -> {
+                takeMsg = hud.kind
+                takeW = maxOf(hud.kind.widthPx.toFloat(), 64f + 14f + maxOf(tMsgTitle.width(hud.kind.title), tMsgSub.width(hud.kind.sub)) + 24f)
+                takeH = 64f
+                hold = HudQueue.MESSAGE_MS
+                announceForAccessibility("${hud.kind.title}. ${hud.kind.sub}")
+            }
+        }
         volActive = true
-        volMuted = lv.muted || lv.value <= 0f
         volA.to(1f, 200, EASE)
-        volLevel.to(lv.value.coerceIn(0f, 1f), 260, EASE)
-        w.to(VOL_W, Motion.ISLAND_MS, Motion.ISLAND); h.to(44f, Motion.ISLAND_MS, Motion.ISLAND); r.to(22f, Motion.ISLAND_MS, Motion.ISLAND)
-        handler.removeCallbacks(endVolume); handler.postDelayed(endVolume, VOL_HOLD_MS)
-        announceForAccessibility("Volume ${(lv.value * 100).roundToInt()} percent")
+        w.to(takeW, Motion.ISLAND_MS, Motion.ISLAND); h.to(takeH, Motion.ISLAND_MS, Motion.ISLAND); r.to(takeH / 2f, Motion.ISLAND_MS, Motion.ISLAND)
+        handler.removeCallbacks(endVolume); handler.postDelayed(endVolume, hold)
         invalidate()
         return true
     }
 
-    private fun drawVolume(c: Canvas, bw: Float, bh: Float, a: Float) {
+    private fun currentLevel(k: LevelKind): Float = (if (k == LevelKind.VOLUME) s.system.state.value.volume else s.system.state.value.brightness).coerceIn(0f, 1f)
+
+    private fun drawTakeover(c: Canvas, bw: Float, bh: Float, a: Float) {
         val cy = bh / 2f
-        (if (volMuted) Icons.volumeMuted else Icons.volume).drawCentered(c, 26f, cy, 20f, ink(Color.WHITE, a), paint)
+        val msg = takeMsg
+        if (msg != null) {
+            // tinted disc + icon, then title over subtitle
+            paint.style = Paint.Style.FILL
+            paint.color = ink(msg.tint or 0xFF000000.toInt(), a)
+            c.drawCircle(12f + 20f, cy, 20f, paint)
+            val icon = when (msg) {
+                MessageKind.MIC_OFF, MessageKind.MIC_CAMERA_OFF -> Icons.micOff
+                MessageKind.MIC_ON -> Icons.mic
+                MessageKind.CAMERA_OFF, MessageKind.CAMERA_OFF_SHUTTER -> Icons.camOff
+            }
+            icon.drawCentered(c, 32f, cy, 20f, if (night) withAlpha(Color.BLACK, a) else withAlpha(Color.WHITE, a), paint)
+            val tx = 12f + 40f + 14f
+            val lh1 = tMsgTitle.normalLineHeight; val lh2 = tMsgSub.normalLineHeight
+            val top = cy - (lh1 + lh2) / 2f
+            tMsgTitle.draw(c, msg.title, tx, tMsgTitle.baselineIn(top, lh1), ink(Color.WHITE, a))
+            tMsgSub.draw(c, msg.sub, tx, tMsgSub.baselineIn(top + lh1, lh2), ink(withAlpha(Color.WHITE, 0.7f), a))
+            return
+        }
+        val icon = if (takeKind == LevelKind.BRIGHTNESS) Icons.sun else if (volMuted) Icons.volumeMuted else Icons.volume
+        icon.drawCentered(c, 26f, cy, 20f, ink(Color.WHITE, a), paint)
         val l = 48f; val rt = bw - 22f
         if (rt - l < 20f) return
         paint.style = Paint.Style.FILL
@@ -281,6 +334,9 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
 
     private fun updateHitAreas() {
         ui.islandHitAreas.clear()
+        ui.islandBox = if (layout.mode == IslandMode.HIDDEN) null
+            else RectF(480f - layout.box.width / 2f, 12f, 480f + layout.box.width / 2f, 12f + layout.box.height)
+        ui.islandRadius = layout.box.radius
         if (layout.mode == IslandMode.HIDDEN) return
         val bw = layout.box.width; val bh = layout.box.height
         ui.islandHitAreas += RectF(480f - bw / 2f - 6f, 0f, 480f + bw / 2f + 6f, 12f + bh + 6f)
@@ -341,7 +397,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
             compactAct?.let { if (ca > 0.004f) { val (amb, tick) = drawCompact(canvas, it, bw, ca); ambient = ambient or amb; ticking = ticking or tick } }
             val ea = expandedA.value * vis * notVol
             expandedAct?.let { if (ea > 0.004f || (layout.mode == IslandMode.EXPANDED && notVol > 0.996f)) { ticking = drawExpanded(canvas, it, bw, bh, ea, bx, by) or ticking } }
-            if (volA.value > 0.004f) drawVolume(canvas, bw, bh, volA.value * vis)
+            if (volA.value > 0.004f) drawTakeover(canvas, bw, bh, volA.value * vis)
             canvas.restore()
         }
 
@@ -798,7 +854,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
     companion object {
         const val REMINDER_OPEN_MS = 10_000L
         const val VOL_W = 280f
-        const val VOL_HOLD_MS = 1_600L
+        const val LEVEL_HOLD_MS = 1_600L
         const val LOOK_KEY = "system.island.look"
         /** Equaliser / orb animation rate: 30 fps is smooth for 22 px bars and halves the cost. */
         const val AMBIENT_FRAME_MS = 33L

@@ -169,21 +169,23 @@ object ItunesArt {
     fun artworkUrl(json: String, artist: String, title: String = ""): String? {
         if (artist.isBlank()) return null
         // One chunk per result object (they're flat), split on the key every result starts with.
-        // Among results by the same artist, one whose title matches ("Lemonade (Remix)" for
-        // "Lemonade - Remix") wins; else the first.
-        var first: String? = null
-        val wantTitle = norm(title)
+        // A result counts only if it's by the same artist AND it's the same song: the exact title
+        // ("Lemonade (Remix)" for "Lemonade - Remix") wins, else the same bare title ("Lemonade").
+        // A different song by the same artist is never used: its cover would be wrong.
+        var sameSong: String? = null
+        val want = norm(title); val wantBare = norm(bareTitle(title))
         for (chunk in json.split("\"wrapperType\"").drop(1)) {
             val name = ARTIST.find(chunk)?.groupValues?.get(1)?.let(::unescape) ?: continue
             if (!sameArtist(artist, name)) continue
             val raw = ARTWORK.find(chunk)?.groupValues?.get(1)?.replace("\\/", "/") ?: continue
-            if (!raw.startsWith("https://")) return null
+            if (!raw.startsWith("https://")) continue
             val url = if (SIZE.containsMatchIn(raw)) raw.replace(SIZE, "/600x600bb.") else raw
-            val track = TRACK.find(chunk)?.groupValues?.get(1)?.let(::unescape)?.let(::norm)
-            if (wantTitle.isNotEmpty() && track == wantTitle) return url
-            if (first == null) first = url
+            if (want.isEmpty()) return url // no title to check (tests, odd sources): the artist's first
+            val track = TRACK.find(chunk)?.groupValues?.get(1)?.let(::unescape) ?: continue
+            if (norm(track) == want) return url
+            if (sameSong == null && wantBare.isNotEmpty() && norm(bareTitle(track)) == wantBare) sameSong = url
         }
-        return first
+        return sameSong
     }
 
     private fun unescape(s: String) =

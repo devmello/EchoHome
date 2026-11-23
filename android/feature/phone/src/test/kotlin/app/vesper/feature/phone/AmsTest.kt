@@ -222,8 +222,11 @@ class AmsTest {
             """{"wrapperType":"track","artistName":"Internet Money, Don Toliver & Roddy Ricch","trackName":"Lemonade (Remix)","artworkUrl100":"https:\/\/is1-ssl.mzstatic.com\/image\/thumb\/Music\/remix\/100x100bb.jpg"}]}"""
         assertEquals("https://is1-ssl.mzstatic.com/image/thumb/Music/remix/600x600bb.jpg",
             ItunesArt.artworkUrl(json, "Internet Money, Don Toliver, Roddy Ricch", "Lemonade - Remix"))
-        // No title match: the first by a shared artist.
+        // Same bare title: the original's cover.
         assertEquals("https://is1-ssl.mzstatic.com/image/thumb/Music/orig/600x600bb.jpg", ItunesArt.artworkUrl(json, "Internet Money", "Lemonade"))
+        // As seen on the Echo: a different song by a shared artist must not lend its cover.
+        val eclipse = """{"results":[{"wrapperType":"track","artistName":"Drake & Don Toliver","trackName":"Solar Eclipse","artworkUrl100":"https:\/\/is1-ssl.mzstatic.com\/image\/thumb\/Music\/eclipse\/100x100bb.jpg"}]}"""
+        assertNull(ItunesArt.artworkUrl(eclipse, "Don Toliver", "After Party"))
         assertNull(ItunesArt.artworkUrl(json, "Roddy Wimbley", "Lemonade"))
         assertEquals(listOf("internet money", "don toliver", "roddy ricch"), ItunesArt.artists("Internet Money, Don Toliver & Roddy Ricch"))
         assertEquals(listOf("drake", "21 savage"), ItunesArt.artists("Drake feat. 21 Savage"))

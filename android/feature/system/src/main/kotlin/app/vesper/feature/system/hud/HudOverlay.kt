@@ -125,8 +125,8 @@ internal class HudOverlay(context: Context, private val ui: SystemUi) : View(con
     override fun onTouchEvent(event: MotionEvent) = false
 
     fun post(h: Hud) {
-        // With the island on screen, volume plays inside it (the capsule would drop onto it).
-        if (h is Hud.Level && h.kind == LevelKind.VOLUME && ui.islandVolume?.invoke(h) == true) return
+        // With the island on screen, the HUD plays inside it (the capsule would drop onto it).
+        if (ui.islandHud?.invoke(h) == true) return
         val now = SystemClock.uptimeMillis()
         val wasShowing = queue.current != null
         queue.post(h, now)

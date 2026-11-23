@@ -68,6 +68,16 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
     private val opacity = Tween(0f)
     private val backY = Tween(-110f)
     private val backOpacity = Tween(0f)
+    // grown out of the island (when it's on screen): the glass shape morphs from the island's box
+    // to the banner's 620×88 and back; the content fades in once there's room for it
+    private var fromIsland = false
+    private val shapeW = Tween(620f)
+    private val shapeH = Tween(88f)
+    private val shapeR = Tween(32f)
+    private val shapeT = Tween(14f)
+    private val contentA = Tween(1f)
+    private val shapeRect = RectF()
+    private val clipPath = android.graphics.Path()
     // expanded
     private val expandA = Tween(0f)
     private var expandedBg: Bitmap? = null
@@ -142,13 +152,37 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
         if (cur != null) {
             if (shown == null || opacity.target == 0f) {
                 takeBackdrop()
-                y.snap(-120f); scale.snap(0.85f); opacity.snap(0f)
+                val ib = ui.islandBox
+                fromIsland = ib != null
+                if (ib != null) {
+                    // start as the island, exactly, and grow into the banner
+                    y.snap(0f); scale.snap(1f); opacity.snap(1f)
+                    shapeW.snap(ib.width()); shapeH.snap(ib.height()); shapeR.snap(ui.islandRadius); shapeT.snap(ib.top)
+                    contentA.snap(0f)
+                } else {
+                    y.snap(-120f); scale.snap(0.85f); opacity.snap(0f)
+                }
             }
             shown = cur
-            y.to(0f, 550, DROP); scale.to(1f, 550, DROP); opacity.to(1f, 250, EASE)
+            if (fromIsland) {
+                shapeW.to(620f, MORPH_MS, DROP); shapeH.to(88f, MORPH_MS, DROP); shapeR.to(32f, MORPH_MS, DROP); shapeT.to(14f, MORPH_MS, DROP)
+                contentA.to(1f, 220, EASE, 160); opacity.to(1f, 120, EASE)
+            } else {
+                y.to(0f, 550, DROP); scale.to(1f, 550, DROP); opacity.to(1f, 250, EASE)
+            }
             announceForAccessibility("${cur.appName}: ${cur.title}. ${cur.body}")
         } else {
-            y.to(-120f, 550, DROP); scale.to(0.85f, 550, DROP); opacity.to(0f, 250, EASE)
+            val ib = ui.islandBox
+            if (fromIsland && ib != null && shown != null) {
+                // shrink back into the island (which fades back in underneath)
+                contentA.to(0f, 140, EASE)
+                // no overshoot on the way back: it lands exactly on the island
+                shapeW.to(ib.width(), SHRINK_MS, EASE); shapeH.to(ib.height(), SHRINK_MS, EASE); shapeR.to(ui.islandRadius, SHRINK_MS, EASE); shapeT.to(ib.top, SHRINK_MS, EASE)
+                opacity.to(0f, 180, EASE, SHRINK_MS - 160)
+            } else {
+                fromIsland = false
+                y.to(-120f, 550, DROP); scale.to(0.85f, 550, DROP); opacity.to(0f, 250, EASE)
+            }
         }
         val b = q.behind
         if (b != null) { back = b; backY.to(12f, 500, EASE); backOpacity.to(0.8f, 400, EASE) }
@@ -236,7 +270,7 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
     private fun drawBanners(canvas: Canvas) {
         val now = Tween.now()
         var running = false
-        for (t in arrayOf(y, scale, opacity, backY, backOpacity, expandA)) running = t.step(now) or running
+        for (t in arrayOf(y, scale, opacity, backY, backOpacity, expandA, shapeW, shapeH, shapeR, shapeT, contentA)) running = t.step(now) or running
 
         if (expandA.value > 0.004f) {
             val eb = expandedBanner ?: q.current
@@ -268,13 +302,15 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
             canvas.restore()
         }
         val b = shown
-        if (b != null && opacity.value > 0.004f) {
+        if (b != null && opacity.value > 0.004f && fromIsland) {
+            drawMorph(canvas, b)
+        } else if (b != null && opacity.value > 0.004f) {
             if (canvas.isHardwareAccelerated) {
                 // Recorded once per banner; the drop animates only the node's transform + alpha (CSS opacity
                 // on the whole banner), so a frame costs no re-recording.
                 val node = compactNode
-                if (nodeFor !== b || nodeNight != night || nodeBackdrop !== glass.backdrop) {
-                    nodeFor = b; nodeNight = night; nodeBackdrop = glass.backdrop
+                if (nodeFor !== b || nodeNight != night || nodeBackdrop !== glass.backdrop || nodeBare) {
+                    nodeFor = b; nodeNight = night; nodeBackdrop = glass.backdrop; nodeBare = false
                     node.setPosition(0, 0, 960, 140)
                     val rc = node.beginRecording(960, 140)
                     try { drawCompact(rc, b, 1f, windowY = 0f) } finally { node.endRecording() }
@@ -292,12 +328,38 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
                 canvas.restore()
             }
         } else if (b != null && !running && opacity.target == 0f) {
-            shown = null
+            shown = null; fromIsland = false
             compactNode.discardDisplayList(); nodeFor = null; nodeBackdrop = null
             glass.backdrop?.bitmap?.recycle(); glass.backdrop = null; backGlass.backdrop = null
         }
         if (!running && q.current == null && expandA.value <= 0f) ui.bannerShowing.value = false
         if (running) postInvalidateOnAnimation()
+    }
+
+    /** The banner while it grows out of / back into the island: glass at the morphing shape, content clipped to it. */
+    private fun drawMorph(canvas: Canvas, b: Banner) {
+        val w = shapeW.value; val h = shapeH.value; val rr = shapeR.value; val t = shapeT.value
+        shapeRect.set(480f - w / 2f, t, 480f + w / 2f, t + h)
+        glass.alpha = opacity.value
+        glass.draw(canvas, shapeRect.left, shapeRect.top, shapeRect.right, shapeRect.bottom, rr, 0f, 0f)
+        val ca = contentA.value * opacity.value
+        if (ca <= 0.004f) return
+        canvas.save()
+        clipPath.reset(); clipPath.addRoundRect(shapeRect, rr, rr, android.graphics.Path.Direction.CW)
+        canvas.clipPath(clipPath)
+        if (canvas.isHardwareAccelerated) {
+            val node = compactNode
+            if (nodeFor !== b || nodeNight != night || !nodeBare) {
+                nodeFor = b; nodeNight = night; nodeBackdrop = null; nodeBare = true
+                node.setPosition(0, 0, 960, 140)
+                val rc = node.beginRecording(960, 140)
+                try { drawCompact(rc, b, 1f, windowY = 0f, withGlass = false) } finally { node.endRecording() }
+            }
+            node.setTranslationY(0f); node.setScaleX(1f); node.setScaleY(1f)
+            node.setAlpha(ca)
+            canvas.drawRenderNode(node)
+        } else drawCompact(canvas, b, ca, 0f, withGlass = false)
+        canvas.restore()
     }
 
     private fun ink(c: Int, a: Float = 1f) = withAlpha(if (night) Night.COLOR else c, Color.alpha(c) / 255f * a)
@@ -307,16 +369,20 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
     private var nodeFor: Banner? = null
     private var nodeNight = false
     private var nodeBackdrop: Any? = null
+    /** The compact node was recorded without its glass (for the island morph). */
+    private var nodeBare = false
     private val expandedNode = android.graphics.RenderNode("banner-expanded")
     private var expNodeFor: Banner? = null
     private var expNodeNight = false
     private var expNodeBg: Bitmap? = null
     private var expNodeBd: Any? = null
 
-    private fun drawCompact(c: Canvas, b: Banner, a: Float, windowY: Float) {
+    private fun drawCompact(c: Canvas, b: Banner, a: Float, windowY: Float, withGlass: Boolean = true) {
         val l = 170f; val t = 14f
-        glass.alpha = a
-        glass.draw(c, l, t, l + 620f, t + 88f, 32f, 0f, windowY)
+        if (withGlass) {
+            glass.alpha = a
+            glass.draw(c, l, t, l + 620f, t + 88f, 32f, 0f, windowY)
+        }
         // app tile 54 r15 + 28 px glyph
         val tl = l + 16f; val tcy = t + 44f
         r.set(tl, tcy - 27f, tl + 54f, tcy + 27f)
@@ -477,6 +543,8 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
     }
 
     companion object {
+        const val MORPH_MS = 550L
+        const val SHRINK_MS = 420L
         val DROP = bezier(0.3f, 1.4f, 0.5f, 1f)
     }
 }
