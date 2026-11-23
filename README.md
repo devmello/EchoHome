@@ -17,6 +17,7 @@ A Liquid Glass smart-display interface for a jailbroken **Amazon Echo Show 5 (1s
 - **StandBy and Widgets pages:** two glass stacks you swipe through: clock, weather, calendar, next alarm, timers, Now Playing, air quality and UV, sun and moon.
 - **Echo Island:** a live surface for timers, music, AirPlay, calls, rain alerts and the leave-now time. Volume, brightness and mic/camera messages, plus notification banners, grow out of the island.
 - **AirPlay receiver (audio only):** AirPlay 1 by default, with play/pause/skip back to the iPhone. AirPlay 2 is an option. The sender's volume sets the Echo's speaker.
+- **Spotify Connect receiver:** the Echo shows up as "Echo Show" in the Spotify app's device list (Spotify Premium is needed). Track info, cover art, play/pause/skip/seek and volume both ways, at 96 or 160 kbps. Based on librespot.
 - **Bluetooth speaker:** track info, cover art and controls on Now Playing and the island.
 - **Now Playing:** ambient colour from the artwork, seek and volume. Optional live lyrics from LRCLIB.
 - **iPhone notifications and calls** over Bluetooth LE (ANCS): glass banners with actions, incoming calls on the island, iPhone battery.
@@ -25,7 +26,7 @@ A Liquid Glass smart-display interface for a jailbroken **Amazon Echo Show 5 (1s
 - **Alarms:** sunrise ramp, snooze, leave-by alarms (earlier when the first event with a place needs it) and skipping holidays. A morning brief screen.
 - **Glances:** weather, rain soon, air quality, UV and pollen (Open-Meteo), calendar (iCal URLs), travel times (OpenStreetMap Nominatim and OSRM), photo frame (Immich). None of these need an API key.
 - **Profiles by face:** an on-device camera pipeline (BlazeFace detection, EdgeFace embeddings) recognises who is in the room and shows their alarm, calendar and colour. The screen turns off when the room is empty. Face templates stay on the device.
-- **Control Center:** pull down from the top edge for Wi-Fi, Bluetooth, AirPlay, brightness, volume, Do Not Disturb, Night mode, mic and camera.
+- **Control Center:** pull down from the top edge for Wi-Fi, Bluetooth, AirPlay, Spotify, brightness, volume, Do Not Disturb, Night mode, mic and camera.
 - **The mic button mutes the microphone**, and the camera shutter switch is detected.
 - **Settings web page** on port 8080 of your local network, with a phone remote and diagnostics.
 - **Optional Home Assistant** screen for lights, climate, scenes and locks when you configure it.
@@ -57,7 +58,7 @@ You need JDK 17 (newer JDKs are too new for this Gradle setup), the Android SDK 
 
 - **First run:** on a fresh install (no settings yet) EchoHome opens a short setup: Wi-Fi, the device name, location and units, a QR code for the settings page on your phone, adding yourself and your face, the clock face and Night mode. Every step can be skipped. An Echo that already has settings skips it. To see it again, use **General › Run setup again** on the settings page (or `--es screen onboarding` when launching from adb).
 - **Voice models and libraries** aren't in the repository. `./scripts/fetch-voice.sh --push` downloads them from the sherpa-onnx releases (checked against pinned SHA-256 sums) and pushes them to the Echo.
-- **The AirPlay library** is Rust, built for armv7 with `android/feature/airplay/rust/build.sh` (needs the Android NDK, the `armv7-linux-androideabi` Rust target and `cargo-ndk`).
+- **The AirPlay and Spotify libraries** are Rust, built for armv7 with `android/feature/airplay/rust/build.sh` and `android/feature/spotify/rust/build.sh` (needs the Android NDK, the `armv7-linux-androideabi` Rust target and `cargo-ndk`). The built `.so` files are committed, so the app builds without Rust.
 - **The Anthropic API key** goes in the settings page's secret field (stored on the device), or at build time in `android/secrets.properties`, which git ignores. See `android/secrets.properties.example` and [`docs/assistant-setup.md`](docs/assistant-setup.md).
 - Some features need the app installed in `/system/priv-app` (`scripts/echo-system-install.sh`) because of privileged permissions. That script and `scripts/echo-overlays.sh` remount `/system`, so back up your partitions first.
 
@@ -70,6 +71,7 @@ EchoHome is licensed under the **GNU General Public License v3.0**. See [`LICENS
 | Component | Licence | Notes |
 |---|---|---|
 | [shairplay](https://crates.io/crates/shairplay) 0.13.0 (vendored in `android/feature/airplay/rust/vendor/shairplay`) | LGPL-3.0-or-later | One small EchoHome patch, described in `VESPER-PATCH.md`. Upstream notes that its FairPlay code has uncertain provenance; see its `docs/fairplay-provenance.md`. |
+| [librespot](https://github.com/librespot-org/librespot) 0.8.0 (core and discovery vendored in `android/feature/spotify/rust/vendor/`) | MIT | Small EchoHome patches, described in `vendor/VESPER-PATCH.md`. Unofficial Spotify Connect client; Spotify's terms apply. Built with [tokio](https://tokio.rs), [hyper](https://hyper.rs), [rustls](https://github.com/rustls/rustls) with [ring](https://github.com/briansmith/ring) and [webpki-roots](https://github.com/rustls/webpki-roots), [symphonia](https://github.com/pdeljanov/Symphonia) (Vorbis), [libmdns](https://github.com/librespot-org/libmdns) and [jni](https://github.com/jni-rs/jni-rs): MIT and/or Apache-2.0 (exceptions: ring is Apache-2.0 AND ISC, webpki-roots is CDLA-Permissive-2.0, symphonia is MPL-2.0). |
 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) libraries, keyword-spotting and speech-to-text models | Apache-2.0 | Downloaded by `fetch-voice.sh`, not in the repository. |
 | Piper voice `en_US-amy-low` (sherpa-onnx package) | See the voice's `MODEL_CARD` | Downloaded by `fetch-voice.sh`, not in the repository. |
 | [MediaPipe](https://github.com/google-ai-edge/mediapipe) BlazeFace short-range model | Apache-2.0 | In `android/feature/camera/src/main/assets/models/`. |
@@ -78,4 +80,4 @@ EchoHome is licensed under the **GNU General Public License v3.0**. See [`LICENS
 | [OkHttp](https://square.github.io/okhttp/) and [kotlinx.coroutines](https://github.com/Kotlin/kotlinx.coroutines) | Apache-2.0 | |
 | [Inter](https://rsms.me/inter/) and [Nunito](https://github.com/googlefonts/nunito) fonts | SIL Open Font License 1.1 | The licence texts are next to the font files. |
 
-Online services the app calls directly, keyless unless noted: Open-Meteo, LRCLIB, OpenStreetMap Nominatim, OSRM, an IP-geolocation service, and the Anthropic API (your own key). Their terms apply to your use.
+Online services the app calls directly, keyless unless noted: Open-Meteo, LRCLIB, OpenStreetMap Nominatim, OSRM, an IP-geolocation service, the Anthropic API (your own key), and Spotify (your own Premium account, for Spotify Connect). Their terms apply to your use.
