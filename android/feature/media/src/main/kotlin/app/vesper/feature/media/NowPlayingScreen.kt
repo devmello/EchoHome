@@ -168,6 +168,8 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
         add(empty, 0f, 0f, NP.W, NP.H)
         trackViews = listOf(art, progress, prev.lift, prev, play.lift, play, next.lift, next, volume, route, lyricsBtn)
         lyricsView.visibility = GONE
+        lyricsView.wordMode = MediaSettings.lyricsWords(services.settings)
+        lyricsView.positionMs = { session?.state?.positionNow() ?: 0L }
         lyricsBtn.visibility = if (lyricsEnabled) INVISIBLE else GONE
         artHit.setOnClickListener { if (lyricsEnabled && session != null) setLyricsMode(!lyricsMode) }
         lyricsBtn.setOnClickListener { setLyricsMode(!lyricsMode) }
@@ -191,6 +193,7 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
                     empty.deviceName = DeviceName.get(services.settings)
                     if (popoverOpen) fillPopover()
                 }
+                MediaSettings.LYRICS_WORDS -> lyricsView.wordMode = MediaSettings.lyricsWords(services.settings)
                 MediaSettings.LYRICS -> {
                     lyricsEnabled = MediaSettings.lyrics(services.settings)
                     if (!lyricsEnabled) setLyricsMode(false)
@@ -360,6 +363,7 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
         val d = lyricsData as? Lyrics.Synced ?: return
         val s = session ?: return
         if (!lyricsMode || !shown) return
+        lyricsView.setPlaying(s.state.playing)
         val pos = s.state.positionNow() + LYRICS_LEAD_MS
         val idx = Lrc.lineAt(d.lines, pos)
         lyricsView.setIndex(idx, animate = lyricsPlacedAt != -2 && idx != lyricsPlacedAt)
@@ -595,7 +599,11 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
             // Debug only: hide view groups to profile GPU cost, e.g. "perf:ar" (a ambient, r art, g glass, t text).
             // Debug only: a real song LRCLIB has, position advancing (np=lyrics or np=lyrics:<start seconds>).
             else -> if (cmd.startsWith("lyrics")) {
-                publishLyricsDemo((cmd.substringAfter(':', "0").toLongOrNull() ?: 0L) * 1000, true)
+                // Flags after the start second: ":lines" = no word sweep, ":noamb" = hide the ambient (isolates the lyrics cost).
+                val parts = cmd.split(':')
+                if ("lines" in parts) lyricsView.wordMode = false
+                if ("noamb" in parts) ambient.visibility = INVISIBLE
+                publishLyricsDemo((parts.getOrNull(1)?.toLongOrNull() ?: 0L) * 1000, true)
                 wantLyrics = true
             } else if (cmd.startsWith("perf:")) {
                 val f = cmd.removePrefix("perf:")

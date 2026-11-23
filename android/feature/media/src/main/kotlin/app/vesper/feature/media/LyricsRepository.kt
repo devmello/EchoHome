@@ -96,7 +96,9 @@ internal class LyricsRepository(private val dir: File, private val http: OkHttpC
     private fun file(key: String) = File(dir, Integer.toHexString(key.hashCode()) + "_" + key.length)
 
     private fun encode(v: Lyrics): String = when (v) {
-        is Lyrics.Synced -> "S\n" + v.lines.joinToString("\n") { "${it.timeMs}\t${it.text}" }
+        is Lyrics.Synced -> "S\n" + v.lines.joinToString("\n") { l ->
+            "${l.timeMs}\t${l.text}" + (l.words?.joinToString("") { "\t${it.startMs}:${it.from}:${it.to}" } ?: "")
+        }
         is Lyrics.Plain -> "P\n" + v.lines.joinToString("\n")
         Lyrics.None -> "N\n"
     }
@@ -106,7 +108,11 @@ internal class LyricsRepository(private val dir: File, private val http: OkHttpC
         return when (s.firstOrNull()) {
             'S' -> Lyrics.Synced(body.lines().mapNotNull { l ->
                 val tab = l.indexOf('\t'); val t = if (tab > 0) l.substring(0, tab).toLongOrNull() else null
-                t?.let { LyricLine(it, l.substring(tab + 1)) }
+                t?.let {
+                    val f = l.substring(tab + 1).split('\t')
+                    val words = f.drop(1).mapNotNull { w -> w.split(':').takeIf { p -> p.size == 3 }?.let { p -> Word(p[0].toLong(), p[1].toInt(), p[2].toInt()) } }
+                    LyricLine(it, f[0], words.ifEmpty { null })
+                }
             }).takeIf { it.lines.isNotEmpty() }
             'P' -> Lyrics.Plain(body.lines())
             'N' -> if (System.currentTimeMillis() - modified < NEGATIVE_TTL_MS) Lyrics.None else null

@@ -20,6 +20,8 @@ object MediaSettings {
     const val ISLAND = "media.island"
     /** Live lyrics from lrclib.net on Now Playing. */
     const val LYRICS = "media.lyrics"
+    /** Karaoke-style word fill of the current lyric line; off = the whole line lights at once. */
+    const val LYRICS_WORDS = "media.lyricsWords"
 
     val section = SettingsSection(
         id = "media",
@@ -39,6 +41,10 @@ object MediaSettings {
                 help = "Shows synced lyrics on Now Playing. The song title and artist (plus album and length) are sent to lrclib.net to look them up; nothing else is.",
             ),
             SettingSpec(
+                LYRICS_WORDS, "Word-by-word lyrics", SettingType.BOOLEAN, "true",
+                help = "Fills the current lyric line word by word as it is sung. Word timing is estimated when the lyrics only have line times. Off: the whole line lights at once.",
+            ),
+            SettingSpec(
                 PAUSED_DRIFT, "Keep the background moving while paused", SettingType.BOOLEAN, "false",
                 help = "Off: the colours behind Now Playing settle 30 seconds after you pause, so the screen draws nothing.",
             ),
@@ -48,6 +54,7 @@ object MediaSettings {
     fun otherApps(s: SettingsStore) = s.getBoolean(OTHER_APPS, true)
     fun island(s: SettingsStore) = s.getBoolean(ISLAND, true)
     fun lyrics(s: SettingsStore) = s.getBoolean(LYRICS, true)
+    fun lyricsWords(s: SettingsStore) = s.getBoolean(LYRICS_WORDS, true)
     fun pausedDrift(s: SettingsStore) = s.getBoolean(PAUSED_DRIFT, false)
 
     /** The current value of [key], then every change to it. */

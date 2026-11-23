@@ -6,13 +6,64 @@ import java.util.Locale
 import kotlin.math.abs
 
 /** One synced lyric line: shown from [timeMs] until the next line's time. Blank [text] = an instrumental gap. */
-internal class LyricLine(val timeMs: Long, val text: String)
+internal class LyricLine(val timeMs: Long, val text: String, val words: List<Word>? = null)
+
+/** A word (or syllable) of a line: sung from [startMs]; [from]..[to] are char offsets into the line's text. */
+internal class Word(val startMs: Long, val from: Int, val to: Int)
 
 /** What LRCLIB knows about one track. */
 internal sealed class Lyrics {
     class Synced(val lines: List<LyricLine>) : Lyrics()
     class Plain(val lines: List<String>) : Lyrics()
     object None : Lyrics()
+}
+
+/** Word start times for lines that only have a line stamp. */
+internal object WordTiming {
+    /** Fraction of the gap to the next line that a line's words may use. */
+    const val SPAN = 0.9f
+
+    fun syllables(w: String): Int {
+        var n = 0; var inV = false
+        for (c in w.lowercase()) {
+            val v = c in "aeiouy"
+            if (v && !inV) n++
+            inV = v
+        }
+        // Silent trailing "e" ("love", "time"), not "-le" / a lone "e".
+        if (n > 1 && w.length > 2 && w.endsWith("e", true) && !w.endsWith("le", true) && w[w.length - 2].lowercaseChar() !in "aeiouy") n--
+        return maxOf(1, n)
+    }
+
+    /** End of the sung part of a line starting at [startMs] with the next line at [nextMs]. */
+    fun sungEnd(startMs: Long, nextMs: Long, text: String): Long {
+        val gap = maxOf(0L, nextMs - startMs)
+        // 0.9 of the gap, and never more than ~0.6 s per syllable (a long instrumental gap doesn't stretch the line).
+        val syl = text.split(' ').filter { it.isNotEmpty() }.sumOf { syllables(it) }
+        val cap = maxOf(2500L, syl * 600L)
+        return startMs + minOf((gap * SPAN).toLong(), cap)
+    }
+
+    /** Words of [text] with estimated starts inside [startMs, sungEnd): weighted by syllables, plus a small floor per word. */
+    fun estimate(text: String, startMs: Long, nextMs: Long): List<Word> {
+        val spans = ArrayList<IntArray>()
+        var i = 0
+        while (i < text.length) {
+            if (text[i] == ' ') { i++; continue }
+            var j = i
+            while (j < text.length && text[j] != ' ') j++
+            spans.add(intArrayOf(i, j)); i = j
+        }
+        if (spans.isEmpty()) return emptyList()
+        val weights = spans.map { syllables(text.substring(it[0], it[1])) + 0.3 }
+        val total = weights.sum()
+        val span = sungEnd(startMs, nextMs, text) - startMs
+        var acc = 0.0
+        return spans.mapIndexed { k, sp ->
+            val w = Word(startMs + (span * acc / total).toLong(), sp[0], sp[1])
+            acc += weights[k]; w
+        }
+    }
 }
 
 internal object Lrc {
@@ -42,12 +93,51 @@ internal object Lrc {
                 if (t == null) break // a metadata tag has no text
             }
             if (times.isEmpty()) continue
-            val text = WORD_TAG.replace(s, "").trim()
-            for (t in times) out.add(LyricLine(t, text))
+            val (text, words) = splitWords(s)
+            for (t in times) out.add(LyricLine(t, text, words))
         }
-        if (offset != 0L) return out.map { LyricLine((it.timeMs - offset).coerceAtLeast(0), it.text) }.sortedBy { it.timeMs }
+        if (offset != 0L) return out.map { l ->
+            LyricLine((l.timeMs - offset).coerceAtLeast(0), l.text, l.words?.map { Word((it.startMs - offset).coerceAtLeast(0), it.from, it.to) })
+        }.sortedBy { it.timeMs }
         return out.sortedBy { it.timeMs } // stable
     }
+
+    /**
+     * Enhanced LRC (A2): `<mm:ss.xx>Hello <mm:ss.xx>world`. Returns the plain text (single spaces) and,
+     * when the line carries word stamps, the words with their start times (never going backwards).
+     * Text before the first stamp starts with the line.
+     */
+    internal fun splitWords(src: String): Pair<String, List<Word>?> {
+        val tags = WORD_TAG.findAll(src).toList()
+        if (tags.isEmpty()) return src.trim().replace(WS, " ") to null
+        val sb = StringBuilder()
+        val words = ArrayList<Word>()
+        var last = 0L
+        fun seg(raw: String, t: Long?) {
+            if (raw.isEmpty()) return
+            if (raw.first().isWhitespace() && sb.isNotEmpty() && sb.last() != ' ') sb.append(' ')
+            val core = raw.trim().replace(WS, " ")
+            if (core.isNotEmpty()) {
+                val from = sb.length
+                sb.append(core)
+                last = maxOf(last, t ?: last)
+                words.add(Word(last, from, sb.length))
+            }
+            if (raw.last().isWhitespace() && sb.isNotEmpty() && sb.last() != ' ') sb.append(' ')
+        }
+        var pos = 0
+        var pending: Long? = null
+        for (m in tags) {
+            seg(src.substring(pos, m.range.first), pending)
+            pending = time(m.value.substring(1, m.value.length - 1))
+            pos = m.range.last + 1
+        }
+        seg(src.substring(pos), pending)
+        val text = sb.toString().trim()
+        return text to words.filter { it.from < text.length }.map { Word(it.startMs, it.from, minOf(it.to, text.length)) }.ifEmpty { null }
+    }
+
+    private val WS = Regex("""\s+""")
 
     private fun time(tag: String): Long? {
         val m = TIME.matchEntire(tag) ?: return null
