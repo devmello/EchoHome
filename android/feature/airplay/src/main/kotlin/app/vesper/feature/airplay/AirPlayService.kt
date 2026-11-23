@@ -242,7 +242,14 @@ class AirPlayService : Service() {
         }
     }
 
+    /** A paused-away track (see ReceiverState.pausedAway) that nobody resumed. */
+    private val endPausedAway = Runnable {
+        update { Reducer.endPausedAway(it) }
+        if (!state.anyConnection && !state.pausedAway) forgetSender()
+    }
+
     private fun clientConnected(ip: String) {
+        h.removeCallbacks(endPausedAway)
         val firstFromIp = !state.connections.containsKey(ip)
         update { Reducer.clientConnected(it, ip) }
         Log.i(TAG, "client connected $ip (${state.connections.values.sum()} connections)")
@@ -252,16 +259,24 @@ class AirPlayService : Service() {
     }
 
     private fun clientDisconnected(ip: String) {
-        update { Reducer.clientDisconnected(it, ip) }
-        Log.i(TAG, "client disconnected $ip (${state.connections.values.sum()} left)")
+        update { Reducer.clientDisconnected(it, ip, now()) }
+        Log.i(TAG, "client disconnected $ip (${state.connections.values.sum()} left)" + if (state.pausedAway) ", track kept as paused" else "")
         if (!state.anyConnection) {
             endSession()
-            artwork = null
-            names.cancel()
-            if (handle != 0L) NativeBridge.nativeClearRemote(handle)
             if (!libMdns) setMulticastLock(false)
+            if (state.pausedAway) {
+                // Artwork, sender name and the DACP remote stay, so play on the Echo resumes the phone.
+                h.postDelayed(endPausedAway, PAUSED_AWAY_MS)
+            } else forgetSender()
             publish()
         }
+    }
+
+    private fun forgetSender() {
+        artwork = null
+        names.cancel()
+        if (handle != 0L) NativeBridge.nativeClearRemote(handle)
+        publish()
     }
 
     private fun audioStart(sampleRate: Int, channels: Int) {
@@ -596,6 +611,8 @@ class AirPlayService : Service() {
 
     companion object {
         private const val NOW_PLAYING_SCREEN = "nowplaying"
+        /** How long a track the sender paused (and disconnected from) stays on screen. */
+        private const val PAUSED_AWAY_MS = 30 * 60_000L
         private const val TAG = "VesperAirPlay"
         const val SOURCE_ID = "airplay"
         const val ISLAND_ID = "airplay"

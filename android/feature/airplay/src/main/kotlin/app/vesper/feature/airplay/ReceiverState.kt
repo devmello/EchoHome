@@ -69,6 +69,12 @@ internal data class ReceiverState(
     val volumeDb: Float? = null,
     /** DACP remote control is available. */
     val hasRemote: Boolean = false,
+    /**
+     * The sender ended the session while a track was loaded (iOS tears AirPlay 1 down a few
+     * seconds after pause and connects again on play): keep showing the track, paused, the way a
+     * paused Bluetooth phone stays on screen. DACP still reaches the sender, so play works.
+     */
+    val pausedAway: Boolean = false,
     /** When the current artwork arrived; null = no artwork for this track. */
     val artworkAt: Long? = null,
     /** When the last progress message arrived. */
@@ -92,7 +98,7 @@ internal data class ReceiverState(
      * the Echo's own music volume (0..1), which Now Playing shows; without it, the sender's.
      */
     fun toMediaState(artwork: Bitmap?, speakerVolume: Float? = null): MediaState? {
-        if (!anyConnection || (!streaming && title == null)) return null
+        if ((!anyConnection && !pausedAway) || (!streaming && title == null)) return null
         return MediaState(
             title = title ?: "",
             artist = artist ?: "",
@@ -136,14 +142,24 @@ internal object Reducer {
     const val GRACE_MS = 1_500L
 
     fun clientConnected(s: ReceiverState, ip: String) =
-        s.copy(connections = s.connections + (ip to (s.connections[ip] ?: 0) + 1), lastIp = ip)
+        s.copy(connections = s.connections + (ip to (s.connections[ip] ?: 0) + 1), lastIp = ip, pausedAway = false)
 
-    fun clientDisconnected(s: ReceiverState, ip: String): ReceiverState {
+    fun clientDisconnected(s: ReceiverState, ip: String, now: Long = 0L): ReceiverState {
         val left = (s.connections[ip] ?: 0) - 1
         val connections = if (left > 0) s.connections + (ip to left) else s.connections - ip
-        if (connections.isEmpty()) return ReceiverState(volumeDb = s.volumeDb, ap2 = s.ap2)
+        if (connections.isEmpty()) {
+            // A loaded track stays, paused (see [ReceiverState.pausedAway]); else start over.
+            if (s.title != null && s.connected) return freeze(s, now).copy(
+                connections = emptyMap(), streaming = false, playing = false, locallyPaused = false, pausedAway = true,
+            )
+            return ReceiverState(volumeDb = s.volumeDb, ap2 = s.ap2)
+        }
         return s.copy(connections = connections, lastIp = if (s.lastIp == ip && left <= 0) connections.keys.last() else s.lastIp)
     }
+
+    /** Nobody resumed a paused-away track in time: forget it. */
+    fun endPausedAway(s: ReceiverState): ReceiverState =
+        if (s.pausedAway && !s.anyConnection) ReceiverState(volumeDb = s.volumeDb, ap2 = s.ap2) else s
 
     /** The connection lasted long enough, or audio started: show "AirPlay connected". */
     fun markConnected(s: ReceiverState): ReceiverState =

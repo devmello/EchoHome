@@ -177,6 +177,28 @@ class ReceiverStateTest {
         assertEquals("96 kHz", ReceiverState.formatRate(96_000))
     }
 
+    @Test fun pausedTrackSurvivesTeardown() {
+        // iOS tears an AirPlay 1 session down a few seconds after pause and reconnects on play.
+        var s = Reducer.markConnected(Reducer.audioStart(Reducer.clientConnected(ReceiverState(ap2 = false), "10.0.0.5"), 0))
+        s = Reducer.metadata(s, "Song", "Artist", "Album", 200_000, 0)
+        s = Reducer.remote(s, true)
+        s = Reducer.flush(s, 1_000)
+        s = Reducer.clientDisconnected(s, "10.0.0.5", 3_000)
+        assertFalse(s.anyConnection)
+        assertTrue(s.pausedAway)
+        val m = s.toMediaState(null)!!
+        assertEquals("Song", m.title)
+        assertFalse(m.playing)
+        assertTrue(s.hasRemote) // play on the Echo still reaches the phone
+        s = Reducer.clientConnected(s, "10.0.0.5")
+        assertFalse(s.pausedAway)
+        assertEquals("Song", s.title)
+        // nobody resumes it: forgotten
+        val gone = Reducer.endPausedAway(Reducer.clientDisconnected(s, "10.0.0.5", 5_000))
+        assertNull(gone.toMediaState(null))
+        assertFalse(gone.pausedAway)
+    }
+
     @Test fun modeSurvivesLastDisconnect() {
         var s = Reducer.clientConnected(ReceiverState(ap2 = false), "10.0.0.5")
         s = Reducer.clientDisconnected(s, "10.0.0.5")
