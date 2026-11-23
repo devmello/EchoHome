@@ -54,6 +54,7 @@ You need JDK 17 (newer JDKs are too new for this Gradle setup), the Android SDK 
 ./scripts/echo-restore-launcher.sh   # back to the stock launcher
 ```
 
+- **First run:** on a fresh install (no settings yet) EchoHome opens a short setup: Wi-Fi, the device name, location and units, a QR code for the settings page on your phone, adding yourself and your face, the clock face and Night mode. Every step can be skipped. An Echo that already has settings skips it. To see it again, use **General › Run setup again** on the settings page (or `--es screen onboarding` when launching from adb).
 - **Voice models and libraries** aren't in the repository. `./scripts/fetch-voice.sh --push` downloads them from the sherpa-onnx releases (checked against pinned SHA-256 sums) and pushes them to the Echo.
 - **The AirPlay library** is Rust, built for armv7 with `android/feature/airplay/rust/build.sh` (needs the Android NDK, the `armv7-linux-androideabi` Rust target and `cargo-ndk`).
 - **The Anthropic API key** goes in the settings page's secret field (stored on the device), or at build time in `android/secrets.properties`, which git ignores. See `android/secrets.properties.example` and [`docs/assistant-setup.md`](docs/assistant-setup.md).

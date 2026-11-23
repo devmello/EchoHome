@@ -11,6 +11,46 @@ The Echo serves a settings page on the home Wi-Fi. Open it in Safari on an iPhon
 
 Keys (Anthropic, calendar links, Immich, Home Assistant) go in **Accounts & keys**. You can set or clear them, but they are never shown again.
 
+## Nov 23: first-run setup (screen `onboarding`)
+
+A paged, skippable setup for a fresh Echo. Code: `feature/settings/.../setup/` (`SetupFeature`, `SetupModel.kt`, `OnboardingView`, `SetupArt.kt`). It's in `:feature:settings` (not a new module) because the phone step reuses the running settings server's address, QR encoder and pairing.
+
+### When it shows
+- `SetupFeature` is **first in `FeatureList`** (`:app`). At install it reads the settings store's SharedPreferences (`echo_settings`): no keys at all = fresh install. It writes `setup.done` (BOOLEAN) right away: `false` on a fresh install, `true` on an Echo that already has settings, so the user's Echo is never interrupted and the answer never flips on its own later (other features write keys during their first start).
+- Fresh install: the setup opens over StandBy on the first launch of the HOME activity (not when the launch intent names a `screen`), and on every start until Done or "Skip setup".
+- **Run setup again:** General › "Run setup again" (ACTION `setup.runAgain`) on the settings page sets `setup.done=false` and opens it at Welcome.
+- Review on the Echo without touching `setup.done`: `--es screen onboarding` (Welcome), `--es screen onboarding --es step <n>` with `n` = 1..8 or `welcome|wifi|name|location|phone|people|clock|done`. Only Done and "Skip setup" write `setup.done=true`.
+
+### The steps (all optional except Welcome and Done)
+| # | Step | What it writes / does |
+|---|---|---|
+| 1 | Welcome to EchoHome | Big type over the wallpaper, a 0.9 s rise and fade. "Get started", or "Skip setup" (marks done). |
+| 2 | Wi-Fi | Shows on / connected / the SSID (Android hides the SSID without the location permission, so it may just say "Connected to the internet"). "Choose network" opens `Settings.Panel.ACTION_WIFI` (fallback `ACTION_WIFI_SETTINGS`), as Control Center does. |
+| 3 | Name this Echo | `device.name` (`DeviceName.KEY`). Tap presets: Echo Show, Kitchen, Bedroom, Living Room, Office, Nursery; "Other…" opens a text dialog. AirPlay / mDNS follow live. |
+| 4 | Location | Shows `services.location` (auto / manual / fallback / demo). `weather.unit` "F"/"C" (same key and default rule as `:feature:home`). 12/24 h writes Android's `Settings.System.TIME_12_24`, which every face already reads through `DateFormat.is24HourFormat` (faces pick it up on the next minute tick). |
+| 5 | Your phone | QR + address of the settings page (`WebSettings.address`), paired-phone count; Pair shows the usual code overlay. Calendars, the Anthropic key and the rest are set there. |
+| 6 | People | Name (dialog), colour (8 swatches), "Add my face" → `services.profiles.upsert(Profile(...))` then `profiles-enrol` with `profile=<id>` and `return=onboarding`, so enrolment comes back to the setup. Asks for CAMERA first if needed. A name without a face is saved on Next. "Add someone else" after the first. |
+| 7 | Clock and Night | Live, scaled-down preview of the real face (`FaceSpec.factory`, only while this step is shown), tap or arrows to change: `clock.face` (and the new people's `faceId`). Night mode: `clock.night.mode` auto / schedule / off (the schedule text comes from `clock.night.start|end`). |
+| 8 | Done | Three tour cards: swipe sideways, pull down for Control Center, the assistant (says "Hey Nova" only when `assistant.wakeWord` is on and an Anthropic key is set). "Done" marks the setup done and goes to StandBy. |
+
+Back / Next (the tinted button says "Skip" on an optional step you haven't done), page dots, horizontal flings, and the Back key all move between steps. No keyboard except the two name dialogs.
+
+### Look and cost
+- One glass sheet (48,40 → 912,400, radius 40) and a glass bar (Back, page dots, tinted Next) over a code-drawn wallpaper (five soft colour fields, RGB_565, 1114×480), pre-blurred once for the glass. Each step shifts the wallpaper 22 px, so the light drifts as you go. Content is plain fills on the sheet (no glass on glass); only Next is tinted.
+- Nothing draws at rest. A step change is one 0.45 s spring (slide 44 px + fade). The wallpaper (~1.1 MB + a 140 KB blurred copy) is freed whenever the setup isn't on screen; the face preview exists only on step 7. Wi-Fi / time-tick receivers only while shown. The island is hidden on this screen (`hideOnScreen`).
+- Night mode: black background, no wallpaper, red outline glass, every colour mapped to #BE180E.
+
+### Tests
+`setup/SetupTest.kt`, 18 JVM tests: fresh vs existing install, the stored answer winning over later keys, Done / Run again, text-stored values, step order and bounds, Skip / Next / Done labels, skip bookkeeping, `--es step` parsing, name cleaning, °F/°C rule, Night modes, schedule text, face index, the shared keys.
+
+### Not verified (no device time for this branch)
+- Nothing here has run on the Echo: layout, the face preview's scale and clipping, the Wi-Fi panel, whether `Settings.System.TIME_12_24` is writable for the priv-app (it shows "Couldn't change it" if not), the camera permission round trip, return from enrolment, Night mode styling.
+- Text widths were checked against Inter at regular weight on the Mac (bold estimated); long SSIDs, names and city names are ellipsized.
+
+### For the lead
+- Merge note: `:app` `FeatureList` now starts with `SetupFeature` (import `app.vesper.feature.settings.setup.SetupFeature`). `EnrolView` (`:feature:camera`) takes an optional `return` arg. Settings manifest adds `ACCESS_WIFI_STATE` and `WRITE_SETTINGS` (already granted through `:feature:system`).
+- Contract request filed: `SettingsStore.keys()` so the gate doesn't read the prefs file by name.
+
 ## Nov 22 evening: phone remote, people's calendars, alarm fields, diagnostics
 
 The page now has two tabs under the title: **Remote** (default, remembered) and **Settings**.

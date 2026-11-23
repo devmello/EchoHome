@@ -37,7 +37,7 @@ Feature modules depend on `:core:model` and `:core:design` only (add `:core:data
 
 ## How a feature plugs in (no `:app` edits)
 
-Each module has `object XxxFeature : VesperFeature`. `:app` calls `install(host)` once per process, in order system, phone, airplay, media, alarm, home, assistant, camera, photos, clock. In `install`:
+Each module has `object XxxFeature : VesperFeature`. `:app` calls `install(host)` once per process, in order setup, system, phone, airplay, media, alarm, home, assistant, camera, photos, clock, settings. **`SetupFeature` (the first-run gate, in `:feature:settings`) stays first:** it tells a fresh install from a set-up one by reading the settings store before any feature writes to it. In `install`:
 
 - `host.registerScreen(ScreenSpec(id, order, inPager) { ctx -> MyScreenView(ctx, host.services) })`. Pager order: StandBy is 0; pick 10, 20, … for yours. `inPager = false` = only opened by `services.navigator.show(id)` (e.g. alarm ringing, Control Center-style full screens).
 - `host.registerOverlay(OverlaySpec(id, z) { ... })` for layers above every screen (island 300, banners 400, HUDs 500, Control Center 600). **Overlays are full-screen views: empty areas must not consume touches** (return false), so the screens below still get them.

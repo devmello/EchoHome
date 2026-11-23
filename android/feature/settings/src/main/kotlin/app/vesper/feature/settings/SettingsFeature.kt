@@ -16,6 +16,7 @@ import app.vesper.core.model.Secrets
 import app.vesper.core.model.SettingSpec
 import app.vesper.core.model.SettingType
 import app.vesper.core.model.SettingsSection
+import app.vesper.feature.settings.setup.SetupFeature
 import app.vesper.feature.settings.ui.CodeOverlayView
 import app.vesper.feature.settings.ui.PairScreenView
 
@@ -29,7 +30,8 @@ import app.vesper.feature.settings.ui.PairScreenView
  *
  * Registers: screen [SCREEN_PAIR] (URL + QR; open it with `navigator.show("settings-pair")` or
  * `--es screen settings-pair`), overlay "settings-code" (z 650, the 6-digit code), and the
- * General (0) and Accounts & keys (90) sections.
+ * General (0) and Accounts & keys (90) sections. The first-run setup is [SetupFeature] (same
+ * module, installed first); General's "Run setup again" opens it.
  */
 object SettingsFeature : VesperFeature {
     override val id = "settings"
@@ -37,6 +39,9 @@ object SettingsFeature : VesperFeature {
     const val KEY_RESTART = "settings.restartApp"
 
     private var web: WebSettings? = null
+    /** The running settings server (address, pairing), for the setup's phone step; null before install. */
+    internal val webSettings: WebSettings? get() = web
+    const val KEY_RUN_SETUP = "setup.runAgain"
 
     override fun install(host: FeatureHost) {
         val ctx = host.context
@@ -48,6 +53,9 @@ object SettingsFeature : VesperFeature {
             SettingSpec(KEY_RESTART, "Restart app", SettingType.ACTION,
                 help = "Restarts EchoHome on the Echo (about 5 seconds). Needed after changing Home Assistant.",
                 onAction = { restart(ctx); "Restarting the Echo app…" }),
+            SettingSpec(KEY_RUN_SETUP, "Run setup again", SettingType.ACTION,
+                help = "Opens the setup on the Echo: Wi-Fi, name, location, your phone, people, clock and Night mode.",
+                onAction = { SetupFeature.runAgain(host.services) }),
         )))
         host.registerSettings(accountsSection())
 
