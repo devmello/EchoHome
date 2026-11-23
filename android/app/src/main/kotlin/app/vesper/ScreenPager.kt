@@ -2,20 +2,31 @@ package app.vesper
 
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.content.Context
+import android.graphics.RenderNode
+import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import app.vesper.core.design.Motion
+import app.vesper.core.design.QuietWork
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * Horizontal pager of full-screen pages (the launcher's screens). Pages are created lazily on
- * first visit and kept. Only a clear horizontal drag is intercepted, so vertical gestures
- * (face switching, Control Center pull-down, sliders) reach the pages.
+ * Horizontal pager of full-screen pages (the launcher's screens). Pages are created lazily and
+ * kept. Only a clear horizontal drag is intercepted, so vertical gestures (face switching,
+ * Control Center pull-down, sliders) reach the pages.
+ *
+ * The current page's neighbours are built ahead, on quiet moments ([QuietWork]) once the pager
+ * has rested [WARM_DELAY_MS] after attaching, and their display lists are recorded while they're
+ * still off screen ([prerender]). Built on the first drag instead, the Widgets page cost the
+ * first StandBy → Widgets swipe ~160 ms of construction plus ~50 ms of recording (34-40 % janky
+ * frames over the first swipes after a start, against ~4 % later).
  */
 @SuppressLint("ViewConstructor")
 class ScreenPager(context: Context, private val pageCount: Int, private val createPage: (Int) -> View) : ViewGroup(context) {
@@ -34,7 +45,72 @@ class ScreenPager(context: Context, private val pageCount: Int, private val crea
     private var velocity: VelocityTracker? = null
     private var anim: ValueAnimator? = null
 
+    private val prerendered = BooleanArray(pageCount)
+    private val lastPrerender = LongArray(pageCount)
+    private val scratch = RenderNode("pager-prerender")
+    private var warmAllowed = false
+    private val allowWarm = Runnable { warmAllowed = true; warm.start() }
+    private val warm = QuietWork { warmStep() }
+    private val rewarm = Runnable { scheduleWarm() }
+
     init { ensurePage(0) }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        // not during startup: the first StandBy frames and the features' own start come first
+        if (!warmAllowed) postDelayed(allowWarm, WARM_DELAY_MS) else warm.start()
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(allowWarm); removeCallbacks(rewarm)
+        warm.stop()
+        super.onDetachedFromWindow()
+    }
+
+    private fun scheduleWarm() { if (warmAllowed && isAttachedToWindow) warm.start() }
+
+    /**
+     * One unit of ahead-of-time work per quiet moment, only while the pager rests: build a
+     * missing neighbour of the current page, or record a neighbour that changed since it was last
+     * recorded. Returns false when there's nothing left (restarted by [scheduleWarm]).
+     */
+    private fun warmStep(): Boolean {
+        if (dragging || anim != null || width == 0) return false // [scrollToPage] restarts it at rest
+        val now = SystemClock.uptimeMillis()
+        var later = Long.MAX_VALUE
+        for (i in intArrayOf(currentPage + 1, currentPage - 1)) {
+            if (i !in 0 until pageCount) continue
+            val p = pages[i]
+            if (p == null) { ensurePage(i); return true }
+            if (p.isLayoutRequested || !p.isLaidOut) return false // the next traversal lays it out; [onLayout] restarts this
+            if (prerendered[i] && !p.isDirty) continue
+            val wait = lastPrerender[i] + PRERENDER_EVERY_MS - now
+            if (wait > 0) { later = minOf(later, wait); continue }
+            prerender(p)
+            prerendered[i] = true
+            lastPrerender[i] = now
+            return true
+        }
+        if (later != Long.MAX_VALUE) { removeCallbacks(rewarm); postDelayed(rewarm, later) }
+        return false
+    }
+
+    /**
+     * Records [page]'s views into their display lists while it's off screen (the pager's own
+     * draw skips it there): drawing it into a scratch [RenderNode] makes every child view record
+     * its own node, which the first frame of a swipe onto the page then only replays.
+     */
+    private fun prerender(page: View) {
+        scratch.setPosition(0, 0, page.width, page.height)
+        val c = scratch.beginRecording(page.width, page.height)
+        try { page.draw(c) } finally { scratch.endRecording(); scratch.discardDisplayList() }
+    }
+
+    /** A neighbour changed while off screen (e.g. a widget built ahead): record it again on a quiet moment. */
+    override fun onDescendantInvalidated(child: View, target: View) {
+        super.onDescendantInvalidated(child, target)
+        if (child !== pages.getOrNull(currentPage) && !warm.isRunning) scheduleWarm()
+    }
 
     private fun ensurePage(i: Int): View? {
         if (i !in 0 until pageCount) return null
@@ -59,6 +135,7 @@ class ScreenPager(context: Context, private val pageCount: Int, private val crea
         val w = r - l
         pages.forEachIndexed { i, v -> v?.layout(i * w, 0, (i + 1) * w, b - t) }
         if (anim == null && !dragging) scrollTo(currentPage * w, 0)
+        scheduleWarm()
     }
 
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
@@ -123,14 +200,25 @@ class ScreenPager(context: Context, private val pageCount: Int, private val crea
         if (!animate || width == 0) {
             scrollTo(to, 0)
             anim = null
+            scheduleWarm()
         } else {
             anim = ValueAnimator.ofInt(scrollX, to).apply {
                 duration = 380
                 interpolator = Motion.EASE
                 addUpdateListener { scrollTo(it.animatedValue as Int, 0) }
+                addListener(object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(a: Animator) { if (anim === a) { anim = null; scheduleWarm() } }
+                })
                 start()
             }
         }
         if (changed) onPageSelected?.invoke(target)
+    }
+
+    private companion object {
+        /** Ahead-of-time page work waits this long after the pager attaches (startup). */
+        const val WARM_DELAY_MS = 2_500L
+        /** At most this often per page, in case a hidden page keeps invalidating. */
+        const val PRERENDER_EVERY_MS = 1_000L
     }
 }

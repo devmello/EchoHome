@@ -16,7 +16,6 @@ import android.graphics.RectF
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.MessageQueue
 import android.os.SystemClock
 import android.text.format.DateFormat
 import android.util.Log
@@ -27,6 +26,7 @@ import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import app.vesper.core.design.Motion
 import app.vesper.core.design.Night
+import app.vesper.core.design.QuietWork
 import app.vesper.core.model.VesperScreen
 import app.vesper.core.model.VesperServices
 import app.vesper.core.model.FaceConfig
@@ -284,23 +284,24 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         }
     }
 
-    /** Builds the current face's missing neighbours one per idle moment, never mid-animation. */
-    private val warm = MessageQueue.IdleHandler {
+    /**
+     * Builds the current face's missing neighbours one per quiet moment ([QuietWork]: no finger
+     * down, no frame for ~3 frames), so never mid-animation: also not during the pager's slide
+     * back to StandBy, which starts right when this screen is shown.
+     */
+    private val warm = QuietWork {
         val cur = current
-        if (!shown || cur == null) return@IdleHandler false
-        if (dragging || switchAnim != null || editAnim != null) return@IdleHandler true
+        if (!shown || cur == null) return@QuietWork false
+        if (dragging || switchAnim != null || editAnim != null) return@QuietWork true
         val i = indexOf(cur.spec.id)
         val next = listOfNotNull(faces().getOrNull(i + 1), faces().getOrNull(i - 1)).firstOrNull { f -> f.id !in built }
-            ?: return@IdleHandler false
+            ?: return@QuietWork false
         create(next)
         arrange()
         true
     }
 
-    private fun scheduleWarm() {
-        Looper.myQueue().removeIdleHandler(warm)
-        Looper.myQueue().addIdleHandler(warm)
-    }
+    private fun scheduleWarm() = warm.start()
 
     /** Frees every face but the current one (StandBy hidden, or faces unregistered). */
     private fun releaseBuilt(keepIds: Set<String>) {
@@ -689,7 +690,7 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         current?.face?.onScreenHidden()
         switchAnim?.cancel()
         neighbour = null
-        Looper.myQueue().removeIdleHandler(warm)
+        warm.stop()
         releaseBuilt(emptySet()) // only the current face stays built while other screens show
         arrange()
         night.stop()
@@ -745,7 +746,7 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
     override fun onDetachedFromWindow() {
         context.unregisterReceiver(timeReceiver)
         handler.removeCallbacksAndMessages(null)
-        Looper.myQueue().removeIdleHandler(warm)
+        warm.stop()
         night.stop()
         super.onDetachedFromWindow()
     }
