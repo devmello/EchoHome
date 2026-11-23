@@ -10,6 +10,9 @@ metadata, audio, protocol, oauth) come unchanged from crates.io.
 - `src/server.rs`: `getInfo` reports ZeroConf `version` **2.12.0** instead of 2.9.0. Current
   Spotify apps (iOS 9.1, Windows) request 2.12.0 and send an empty `blob` / `clientKey` to a device
   that reports 2.9.0, so they can't log in. Upstream PR librespot-org/librespot#1847 (open, Nov 2026).
+- `src/server.rs`: `getInfo` reports `brandDisplayName` **EchoHome** and `modelDisplayName`
+  **Echo Show** instead of "librespot" / "librespot" (the Spotify app shows them in its device
+  details). The device's own name is `remoteName` (setting `device.name`).
 - `src/server.rs`: an `addUser` blob shorter than 36 bytes (IV + checksum) is rejected instead of
   panicking on the slice (upstream fixed the same on `dev` after 0.8.0).
 - `src/lib.rs`: `launch_external`, a zeroconf "backend" that advertises nothing, so Android's

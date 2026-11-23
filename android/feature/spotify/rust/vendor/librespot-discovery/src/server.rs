@@ -98,8 +98,10 @@ impl RequestHandler {
             "remoteName": (self.config.name),
             // valid value seen in the wild: "empty"
             "publicKey": (public_key),
-            "brandDisplayName": "librespot",
-            "modelDisplayName": "librespot",
+            // VESPER PATCH: the Spotify app shows these in its device details, so name the product
+            // instead of the library (upstream hard-codes "librespot").
+            "brandDisplayName": "EchoHome",
+            "modelDisplayName": "Echo Show",
             "libraryVersion": crate::core::version::SEMVER,
             "resolverVersion": "1",
             // valid values are "GROUP" and "NONE"

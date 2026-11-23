@@ -586,6 +586,8 @@ mod tests {
         assert!(body.contains("\"version\":\"2.12.0\""), "{body}");
         assert!(body.contains("\"remoteName\":\"Echo Show\""), "{body}");
         assert!(body.contains("\"deviceType\":\"Speaker\""), "{body}");
+        assert!(body.contains("\"brandDisplayName\":\"EchoHome\""), "{body}");
+        assert!(body.contains("\"modelDisplayName\":\"Echo Show\""), "{body}");
         // A malformed login answers with an error instead of panicking the server.
         let mut s = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
         let form = "action=addUser&userName=x&blob=QUJD&clientKey=QUJD";
