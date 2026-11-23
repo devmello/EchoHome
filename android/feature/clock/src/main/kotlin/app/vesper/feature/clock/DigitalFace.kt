@@ -43,6 +43,7 @@ class DigitalFace(context: Context, private val services: VesperServices) : View
     private val dayNumText = SpecText(52f, 600, -0.03f)
     private val tempText = SpecText(36f, 600, -0.03f)
     private val highLowText = SpecText(15f, 500)
+    private val airText = SpecText(13f, 600, 0.02f)
     private val alarmText = SpecText(20f, 600, -0.02f)
 
     private val weatherIcon: Drawable = context.getDrawable(R.drawable.ic_cx_weather)!!.mutate()
@@ -55,6 +56,7 @@ class DigitalFace(context: Context, private val services: VesperServices) : View
     private var dayNum = ""
     private var tempNow = ""
     private var highLow = ""
+    private var airLine = ""
     private var alarmLabel: String? = null
     private val cal = Calendar.getInstance()
 
@@ -82,14 +84,18 @@ class DigitalFace(context: Context, private val services: VesperServices) : View
         val w = weather
         val newTemp = w?.let { "${it.temperature}°" } ?: ""
         val newHl = w?.let { "H:${it.high}° L:${it.low}°" } ?: ""
+        val newAir = airLine(w)
         val newAlarm = nextAlarm?.let { formatAlarm(it.triggerAtMillis, is24) }
         if (newHh != hh || newMm != mm || newDayShort != dayShort || newDayNum != dayNum ||
-            newTemp != tempNow || newHl != highLow || newAlarm != alarmLabel) {
+            newTemp != tempNow || newHl != highLow || newAir != airLine || newAlarm != alarmLabel) {
             hh = newHh; mm = newMm; dayShort = newDayShort; dayNum = newDayNum
-            tempNow = newTemp; highLow = newHl; alarmLabel = newAlarm
+            tempNow = newTemp; highLow = newHl; airLine = newAir; alarmLabel = newAlarm
             invalidate()
         }
     }
+
+    /** "AQI 42 · UV 3": only the parts that exist (UV is left out when it's 0, e.g. at night). */
+    private fun airLine(w: Weather?): String = formatAir(w?.air)
 
     private fun formatAlarm(at: Long, is24: Boolean): String {
         val c = Calendar.getInstance().apply { timeInMillis = at }
@@ -141,7 +147,7 @@ class DigitalFace(context: Context, private val services: VesperServices) : View
         // Block heights (CSS: gap 2 / gap 6 inside blocks, gap 30 between blocks).
         val dateH = dayShortText.normalLineHeight + 2f + dayNumText.size // dayNum has line-height 1
         val weatherRowH = max(30f, tempText.normalLineHeight)
-        val weatherH = weatherRowH + 6f + highLowText.normalLineHeight
+        val weatherH = weatherRowH + 6f + highLowText.normalLineHeight + (if (airLine.isNotEmpty()) 4f + airText.normalLineHeight else 0f)
         val alarmRowH = max(20f, alarmText.normalLineHeight)
         val colH = dateH + (if (hasWeather) 30f + weatherH else 0f) + (if (alarm != null) 30f + alarmRowH else 0f)
         var y = H / 2f - colH / 2f
@@ -159,7 +165,13 @@ class DigitalFace(context: Context, private val services: VesperServices) : View
                 tempText.baselineIn(y + (weatherRowH - tempText.normalLineHeight) / 2f), fg2)
             y += weatherRowH + 6f
             highLowText.draw(canvas, highLow, x, highLowText.baselineIn(y), fg3)
-            y += highLowText.normalLineHeight + 30f
+            y += highLowText.normalLineHeight
+            if (airLine.isNotEmpty()) {
+                y += 4f
+                airText.draw(canvas, airLine, x, airText.baselineIn(y), fg3)
+                y += airText.normalLineHeight
+            }
+            y += 30f
         }
 
         // Next alarm: icon + "7:00 AM"
@@ -188,4 +200,13 @@ class DigitalFace(context: Context, private val services: VesperServices) : View
         const val COL_W = 168f
         private val DAYS = arrayOf("SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT")
     }
+}
+
+/** "AQI 42 · UV 3" from [Weather.air]; empty when neither is known (UV below 1 is left out). */
+fun formatAir(air: app.vesper.core.model.AirQuality?): String {
+    if (air == null) return ""
+    val parts = ArrayList<String>(2)
+    air.usAqi?.let { parts += "AQI $it" }
+    air.uvIndex?.let { if (it >= 0.5f) parts += "UV ${Math.round(it)}" }
+    return parts.joinToString(" · ")
 }
