@@ -46,10 +46,13 @@ object CameraFeature : VesperFeature {
      * "Camera & people" on the web settings page. Everything applies live (the pipeline and the
      * profile manager watch these keys). Enrolment stays on the Echo: it needs the camera.
      */
-    fun settingsSection() = SettingsSection(
+    fun settingsSection(openPeople: () -> Unit = {}) = SettingsSection(
         id = "camera", title = "Camera & people", order = 60,
         help = "The camera only looks for motion and faces; no image is ever saved. Faces are added on the Echo itself (Profiles screen), since that needs the camera.",
         settings = listOf(
+            SettingSpec("camera.people", "Add people and faces", SettingType.ACTION,
+                help = "Opens the People screen on the Echo: add a person, then look at the Echo to add their face.",
+                onAction = { openPeople(); "The People screen is open on the Echo." }),
             SettingSpec("camera.stage.presence", "Presence detection", SettingType.BOOLEAN,
                 CameraPipeline.STAGE_DEFAULTS.getValue("presence").toString(),
                 help = "Use the camera to notice when someone is in the room (dims an empty room, wakes face matching). Off keeps the camera off."),
@@ -85,7 +88,7 @@ object CameraFeature : VesperFeature {
         pipeline = CameraPipeline(ctx, services, manager)
         pipeline.start()
 
-        host.registerSettings(settingsSection())
+        host.registerSettings(settingsSection { host.services.navigator.show("profiles") })
         host.registerOverlay(OverlaySpec("camera", z = 250) { c -> CameraOverlayView(c, services, pipeline) })
         host.registerScreen(ScreenSpec("profiles", order = 910, inPager = false) { c -> ProfilesView(c, services, manager, pipeline) })
         host.registerScreen(ScreenSpec("profiles-enrol", order = 911, inPager = false) { c -> EnrolView(c, services, manager, pipeline) })

@@ -41,7 +41,7 @@ object PhoneFeature : VesperFeature {
         // Start after every feature is installed (no work during install).
         handler.post { try { c.start() } catch (e: Exception) { Log.e(PhoneController.TAG, "phone start failed", e) } }
 
-        host.registerSettings(settingsSection(c))
+        host.registerSettings(settingsSection(c) { host.services.navigator.show(SCREEN_ID) })
 
         val demo = if (services.config.debug) PhoneDemo(services, handler) else null
         host.registerScreen(ScreenSpec(SCREEN_ID, order = 90, inPager = false) { ctx ->
@@ -71,10 +71,13 @@ object PhoneFeature : VesperFeature {
     }
 
     /** The "iPhone" card on the web settings page; every value applies live (PhoneController.applySetting). */
-    private fun settingsSection(c: PhoneController) = SettingsSection(
+    private fun settingsSection(c: PhoneController, openPairing: () -> Unit) = SettingsSection(
         id = "phone", title = "iPhone", order = 40,
         help = "Notifications (ANCS) and Now Playing (AMS) come over Bluetooth LE; calls are answered on the iPhone. Pair from the iPhone's Settings › Bluetooth.",
         settings = listOf(
+            SettingSpec("phone.pair", "Pair an iPhone", SettingType.ACTION,
+                help = "Opens the pairing screen on the Echo (it stays visible to Bluetooth for 5 minutes). Then on the iPhone: Settings › Bluetooth › Echo Show, and confirm the code on both.",
+                onAction = { openPairing(); "The Echo is ready to pair. On the iPhone: Settings › Bluetooth › Echo Show." }),
             SettingSpec(PhoneController.KEY_NOTIFICATIONS, "Show iPhone notifications", SettingType.BOOLEAN, "true",
                 help = "Banners for the iPhone's notifications and incoming calls."),
             SettingSpec(PhoneController.KEY_AUDIO, "Bluetooth audio", SettingType.BOOLEAN, "true",
