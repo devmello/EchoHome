@@ -53,8 +53,9 @@ object CameraFeature : VesperFeature {
             SettingSpec("camera.stage.presence", "Presence detection", SettingType.BOOLEAN,
                 CameraPipeline.STAGE_DEFAULTS.getValue("presence").toString(),
                 help = "Use the camera to notice when someone is in the room (dims an empty room, wakes face matching). Off keeps the camera off."),
-            SettingSpec(CameraPipeline.KEY_DUTY, "Duty-cycled presence", SettingType.BOOLEAN, CameraPipeline.DUTY_DEFAULT.toString(),
-                help = "Stop the camera between presence samples: about a third less CPU, slower to notice motion.", advanced = true),
+            SettingSpec(CameraPipeline.KEY_REST, "Rest the camera while someone's here", SettingType.BOOLEAN, CameraPipeline.REST_DEFAULT.toString(),
+                help = "After the camera sees someone move (or the screen is touched) it turns off for a minute, since it already knows someone's here. " +
+                    "Saves most of its CPU while you're in the room; an empty room is noticed up to a minute later.", advanced = true),
             SettingSpec(FaceProfileManager.KEY_AUTO, "Auto by face", SettingType.BOOLEAN, "true",
                 help = "Switch to a person's profile when the camera recognises them."),
             SettingSpec(CameraPipeline.KEY_EMBEDDER, "Face model", SettingType.CHOICE, ModelFiles.EMBEDDERS[0].key,

@@ -79,6 +79,8 @@ object Icons {
     // Island timer actions (viewBox 24)
     val pause24 by lazy { Icon("M7 4.5h3.4v15H7zM13.6 4.5H17v15h-3.6z", fill = true) }
     val play24 by lazy { Icon("M7 4.7a1.2 1.2 0 0 1 1.8-1l10.5 7.3a1.2 1.2 0 0 1 0 2l-10.5 7.3A1.2 1.2 0 0 1 7 19.3z", fill = true) }
+    /** "Leave for Android": the app grid. */
+    val apps by lazy { Icon("M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z") }
     val close by lazy { Icon("M6 6l12 12M18 6 6 18", stroke = 2.8f) }
     val phone by lazy { Icon("M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z", fill = true) }
     val video by lazy { Icon("M3 7.5A1.5 1.5 0 0 1 4.5 6h9A1.5 1.5 0 0 1 15 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 3 16.5zM16 10.5l4.2-2.6a.5.5 0 0 1 .8.4v7.4a.5.5 0 0 1-.8.4L16 13.5z", fill = true) }

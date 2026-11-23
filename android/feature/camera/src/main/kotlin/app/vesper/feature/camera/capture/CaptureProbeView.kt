@@ -58,6 +58,7 @@ class CaptureProbeView(context: Context, private val services: VesperServices) :
         queue = if (api != null) mutableListOf(api) else mutableListOf("camera2", "camera1")
         val interval = args?.getString("interval")?.toLongOrNull() ?: 0L
         flash = args?.getString("flash") == "true"
+        Camera2Source.debugMode = args?.getString("mode")
         next(interval)
     }
 

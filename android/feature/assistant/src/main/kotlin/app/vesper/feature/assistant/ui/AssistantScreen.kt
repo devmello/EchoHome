@@ -122,6 +122,10 @@ class AssistantScreen(context: Context, private val services: VesperServices, pr
 
     // ---------------- frames ----------------
 
+    /** Last state change, touch or screen show; the idle droplet stops breathing [IDLE_REST_MS] after it. */
+    private var idleSince = 0L
+    private var contentAnimating = false
+
     private val callback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             if (!shown) return
@@ -133,8 +137,19 @@ class AssistantScreen(context: Context, private val services: VesperServices, pr
                 lastFrame = now
                 frame(now)
             }
+            // Nobody has used it for a while: hold the droplet still (no frames at all) until a
+            // touch or a state change; only the clock still ticks, once a minute.
+            if (!active && !contentAnimating && now - idleSince >= IDLE_REST_MS) { scheduleClockTick(); return }
             Choreographer.getInstance().postFrameCallback(this)
         }
+    }
+
+    private val clockTick = Runnable { if (shown) { content.setClock(clockText()); scheduleClockTick() } }
+
+    private fun scheduleClockTick() {
+        removeCallbacks(clockTick)
+        val now = System.currentTimeMillis()
+        postDelayed(clockTick, 60_000 - now % 60_000 + 20)
     }
 
     private fun frame(now: Long) {
@@ -158,7 +173,7 @@ class AssistantScreen(context: Context, private val services: VesperServices, pr
         val gs = 0.9f + 0.2f * level
         glow.scaleX += (gs - glow.scaleX) * 0.25f
         glow.scaleY = glow.scaleX
-        content.frame(now)
+        contentAnimating = content.frame(now)
         if (now / 1000 != lastClockSec) { lastClockSec = now / 1000; content.setClock(clockText()) }
     }
 
@@ -172,6 +187,8 @@ class AssistantScreen(context: Context, private val services: VesperServices, pr
 
     private fun kick() {
         if (!shown) return
+        idleSince = System.currentTimeMillis()
+        removeCallbacks(clockTick)
         Choreographer.getInstance().removeFrameCallback(callback)
         Choreographer.getInstance().postFrameCallback(callback)
     }
@@ -191,6 +208,7 @@ class AssistantScreen(context: Context, private val services: VesperServices, pr
     override fun onScreenHidden() {
         shown = false
         Choreographer.getInstance().removeFrameCallback(callback)
+        removeCallbacks(clockTick)
         engine.screenHidden()
         background.setSnapshot(null)
         content.backdrop = null
@@ -249,12 +267,14 @@ class AssistantScreen(context: Context, private val services: VesperServices, pr
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (ev.actionMasked == MotionEvent.ACTION_DOWN) engine.userInteracted()
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) { engine.userInteracted(); kick() }
         return super.dispatchTouchEvent(ev)
     }
 
     companion object {
         /** `:feature:media`'s Now Playing screen (see docs/status/assistant.md open items). */
         const val NOW_PLAYING_SCREEN = "nowplaying"
+        /** The idle droplet breathes this long after the last touch or change, then holds still. */
+        const val IDLE_REST_MS = 30_000L
     }
 }

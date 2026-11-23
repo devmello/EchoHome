@@ -179,8 +179,11 @@ class MainActivity : Activity() {
         return super.dispatchTouchEvent(ev)
     }
 
+    private val systemBars by lazy { SystemBars(this) }
+
     override fun onResume() {
         super.onResume()
+        systemBars.hide()
         (currentScreenView() as? VesperScreen)?.onScreenShown(null)
         // The assistant's microphone (declared in :feature:assistant). Ask once per process; the
         // assistant re-checks it in onScreenShown, so no result callback is needed.
@@ -192,6 +195,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         (currentScreenView() as? VesperScreen)?.onScreenHidden()
+        systemBars.restore()
         super.onPause()
     }
 

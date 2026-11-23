@@ -17,11 +17,12 @@ import app.vesper.core.model.VesperServices
 import app.vesper.feature.camera.CameraFeature
 import app.vesper.feature.camera.CameraPhase
 import app.vesper.feature.camera.CameraPipeline
+import app.vesper.feature.camera.capture.Camera1Source
 
 /**
  * "camera-bench" (debug): holds one pipeline stage continuously so its cost can be measured with
  * scripts/echo-perf.sh before the stage is turned on by default (NOTES §6.6).
- * `--es screen camera-bench --es stage presence|presence-duty|detect|detect-compare|recognize|selftest`
+ * `--es screen camera-bench --es stage presence|presence-cam1|presence-duty|detect|detect-compare|recognize|selftest`
  * Logs per-stage timings every 10 s (tag VesperCamera).
  */
 @SuppressLint("ViewConstructor")
@@ -46,7 +47,9 @@ class CameraBenchView(context: Context, private val services: VesperServices, pr
         stage = args?.getString("stage") ?: "presence"
         pipeline.stats = CameraPipeline.Stats()
         if (stage == "selftest") { selfTest(args?.getString("model"), args?.getString("threads")?.toIntOrNull() ?: 2, args?.getString("xnnpack") != "false"); return }
+        Camera1Source.debugParams = args?.getString("params")
         pipeline.benchDuty = stage == "presence-duty"
+        pipeline.benchCamera1 = stage == "presence-cam1"
         pipeline.benchCompare = stage == "detect-compare"
         pipeline.benchStage = when (stage) {
             "detect", "detect-compare" -> CameraPhase.DETECTING
@@ -59,7 +62,7 @@ class CameraBenchView(context: Context, private val services: VesperServices, pr
 
     override fun onScreenHidden() {
         main.removeCallbacks(tick)
-        pipeline.benchDuty = false; pipeline.benchCompare = false
+        pipeline.benchDuty = false; pipeline.benchCamera1 = false; pipeline.benchCompare = false
         if (pipeline.benchStage != null) pipeline.benchStage = null
         if (selfTesting) { selfTesting = false; pipeline.externalUser = false }
     }

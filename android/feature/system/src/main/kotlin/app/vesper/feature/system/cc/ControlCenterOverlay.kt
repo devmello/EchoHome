@@ -15,6 +15,7 @@ import android.provider.Settings
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import app.vesper.core.design.Backdrop
 import app.vesper.core.model.observeWhileAttached
@@ -45,6 +46,10 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
     private var snapshotPending = false
     /** The panel is on screen (revealing, open or closing). */
     private var revealed = false
+    /** Views under us hidden while Control Center is fully open (its background is opaque). */
+    private val hiddenBelow = ArrayList<View>()
+    /** A new glass backdrop that arrived while the panel was moving as a layer; applied once it stops. */
+    private var pendingBackdrop: Backdrop? = null
 
     private val back: () -> Boolean = { if (open) { close(); true } else false }
 
@@ -71,7 +76,36 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
 
     private val warm = Runnable { if (!open && isAttachedToWindow) panel.prewarm() }
 
-    override fun onDetachedFromWindow() { removeCallbacks(warm); ui.backHandlers -= back; super.onDetachedFromWindow() }
+    override fun onDetachedFromWindow() { removeCallbacks(warm); showBelow(); ui.backHandlers -= back; super.onDetachedFromWindow() }
+
+    /**
+     * Fully open, the background is opaque, so stop drawing everything under it: otherwise every
+     * clock tick below redraws the whole window, Control Center included (~26 ms of GPU each second
+     * on the Echo), and an animating screen below would cost that every frame.
+     */
+    private fun hideBelow() {
+        if (bg.alpha < 1f || !bg.opaque) return
+        val p = parent as? ViewGroup ?: return
+        for (i in 0 until p.indexOfChild(this)) {
+            val v = p.getChildAt(i)
+            if (v.visibility == VISIBLE) { v.visibility = INVISIBLE; hiddenBelow += v }
+        }
+    }
+
+    private fun showBelow(): Boolean {
+        if (hiddenBelow.isEmpty()) return false
+        for (v in hiddenBelow) v.visibility = VISIBLE
+        hiddenBelow.clear()
+        return true
+    }
+
+    /** The new tiles' glass, unless the panel is a moving layer (each change would re-render the whole layer mid-slide). */
+    private fun applyBackdrop(b: Backdrop) {
+        if (panel.layerType == LAYER_TYPE_HARDWARE) { pendingBackdrop?.bitmap?.recycle(); pendingBackdrop = b }
+        else { pendingBackdrop?.bitmap?.recycle(); pendingBackdrop = null; panel.setBackdrop(b) }
+    }
+
+    private fun flushBackdrop() { pendingBackdrop?.let { pendingBackdrop = null; panel.setBackdrop(it) } }
 
     // --- the edge pull (closed) ---
 
@@ -123,7 +157,7 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
                 if (r != null) {
                     val t0 = System.nanoTime()
                     bg.setBitmap(r.first)
-                    panel.setBackdrop(Backdrop(r.second, 0f, 0f, width.toFloat().coerceAtLeast(960f), height.toFloat().coerceAtLeast(480f)))
+                    applyBackdrop(Backdrop(r.second, 0f, 0f, width.toFloat().coerceAtLeast(960f), height.toFloat().coerceAtLeast(480f)))
                     val ms = (System.nanoTime() - t0) / 1_000_000
                     if (ui.debugBuild && ms >= 8) android.util.Log.d("VesperPerf", "cc backdrop set $ms ms")
                 }
@@ -187,12 +221,20 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
     private fun settle(toOpen: Boolean) {
         open = toOpen
         if (toOpen) {
-            panel.animate().translationY(0f).alpha(1f).setDuration(500).setInterpolator(PANEL_SPRING).withEndAction { if (open) panel.setLayerType(LAYER_TYPE_NONE, null) }.start()
+            panel.animate().translationY(0f).alpha(1f).setDuration(500).setInterpolator(PANEL_SPRING).withEndAction {
+                if (open) { panel.setLayerType(LAYER_TYPE_NONE, null); flushBackdrop(); hideBelow() }
+            }.start()
             bg.animate().alpha(1f).setDuration(450).setInterpolator(EASE).start()
             panel.announceForAccessibility("Control Center")
         } else {
-            panel.animate().translationY(-480f).alpha(0f).setDuration(380).setInterpolator(EASE).withEndAction { finishClose() }.start()
-            bg.animate().alpha(0f).setDuration(380).setInterpolator(EASE).start()
+            // A fading view with children is drawn into an offscreen buffer every frame unless it's a layer.
+            if (panel.layerType != LAYER_TYPE_HARDWARE) panel.setLayerType(LAYER_TYPE_HARDWARE, null)
+            val start = {
+                panel.animate().translationY(-480f).alpha(0f).setDuration(380).setInterpolator(EASE).withEndAction { finishClose() }.start()
+                bg.animate().alpha(0f).setDuration(380).setInterpolator(EASE).start()
+            }
+            // The screen below re-records on its first frame back: give it that frame before anything moves.
+            if (showBelow()) postOnAnimation { if (!open) start() } else start()
         }
     }
 
@@ -217,6 +259,7 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
     private fun dragClose(dy: Float, done: Boolean, fling: Boolean) {
         if (!done) {
             panel.animate().cancel(); bg.animate().cancel()
+            showBelow()
             if (panel.layerType != LAYER_TYPE_HARDWARE) panel.setLayerType(LAYER_TYPE_HARDWARE, null)
             panel.translationY = dy.coerceAtMost(0f)
             bg.alpha = (1f + dy / 400f).coerceIn(0f, 1f)
@@ -226,6 +269,8 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
     }
 
     private fun finishClose() {
+        showBelow()
+        flushBackdrop()
         bg.visibility = INVISIBLE
         revealed = false
         panel.translationY = -480f; panel.alpha = 0f
@@ -239,9 +284,14 @@ internal class ControlCenterOverlay(context: Context, private val ui: SystemUi) 
     /** The blurred screen behind the panel, drawn scaled up 4× (it's a blur, so 1/4 size is enough). */
     private class BackgroundView(context: Context) : View(context) {
         private var bmp: Bitmap? = null
+        /** The snapshot is composited over black: nothing below shows through at full alpha. */
+        val opaque get() = bmp != null
         private val p = Paint(Paint.FILTER_BITMAP_FLAG)
         private val m = Matrix()
         fun setBitmap(b: Bitmap?) { val old = bmp; bmp = b; if (old !== b) old?.recycle(); invalidate() }
+        // One bitmap draw: fading it puts the alpha on the paint instead of a full-screen offscreen
+        // layer per frame (on the Mali-T720 that layer was most of the fade's GPU time).
+        override fun hasOverlappingRendering() = false
         override fun onDraw(canvas: Canvas) {
             val b = bmp
             if (b == null) { canvas.drawColor(Color.argb(140, 0, 0, 0)); return }

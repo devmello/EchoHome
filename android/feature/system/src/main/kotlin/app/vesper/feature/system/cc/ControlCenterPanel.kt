@@ -92,7 +92,7 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
     private val brightFill = Tween(0.6f)
     private val volFill = Tween(0.5f)
 
-    private enum class Hit { WIFI, BT, AIRPLAY, SPOTIFY, PREV, PLAY, NEXT, MEDIA, BRIGHT, VOL, DND, NIGHT, MIC, CAM, TIMER, AUTO, P0, P1, P2, P3, SETTINGS, GRABBER }
+    private enum class Hit { WIFI, BT, AIRPLAY, SPOTIFY, PREV, PLAY, NEXT, MEDIA, BRIGHT, VOL, DND, NIGHT, MIC, CAM, TIMER, AUTO, P0, P1, P2, P3, EXIT, SETTINGS, GRABBER }
     private val hits = LinkedHashMap<Hit, RectF>()
     private var pressed: Hit? = null
     private var dragSlider: Hit? = null
@@ -176,6 +176,7 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         hits[Hit.CAM] = RectF(688f, 202f, 804f, 318f)
         hits[Hit.TIMER] = RectF(820f, 202f, 936f, 318f)
         hits[Hit.SETTINGS] = RectF(892f, 14f, 936f, 58f)
+        hits[Hit.EXIT] = RectF(838f, 14f, 882f, 58f)
         hits[Hit.GRABBER] = RectF(430f, 458f, 530f, 480f)
         // AUTO and avatars depend on text widths: set in draw
     }
@@ -273,10 +274,16 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         glass(c, roundBtn, "settings", sr.left, sr.top, sr.right, sr.bottom, -1f)
         rec(c, "settings", n) { rc -> Icons.gear.drawCentered(rc, sr.centerX(), sr.centerY(), 22f, ink(Color.WHITE), paint) }
         c.restore()
+        // "Leave for Android" 44 round glass button, left of settings: opens the stock launcher
+        val er = hits[Hit.EXIT]!!
+        c.save(); pressScale(c, Hit.EXIT, er)
+        glass(c, roundBtn, "exit", er.left, er.top, er.right, er.bottom, -1f)
+        rec(c, "exit", n) { rc -> Icons.apps.drawCentered(rc, er.centerX(), er.centerY(), 20f, ink(Color.WHITE), paint) }
+        c.restore()
         if (state.micMuted) rec(c, "chip", n) { rc ->
             val tw = tChip.width("Mic off")
             val w = 14f + 8f + 7f + tw + 14f
-            val l = sr.left - 10f - w
+            val l = er.left - 10f - w
             chip.draw(rc, l, 14f, l + w, 58f, 22f)
             paint.color = ink(Color.WHITE); paint.style = Paint.Style.FILL
             rc.drawCircle(l + 14f + 4f, 36f, 4f, paint)
@@ -614,10 +621,23 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
                         try { context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {}
                 }, 200)
             }
+            Hit.EXIT -> { requestClose(); leaveForAndroid() }
             Hit.GRABBER -> requestClose()
             Hit.BRIGHT, Hit.VOL -> {}
         }
         invalidate()
+    }
+
+    /**
+     * Opens Android's own launcher (Vesper stays the Home app, so Home brings you back). The system
+     * bars come back while another app is in front (MainActivity re-enables them on pause).
+     */
+    private fun leaveForAndroid() {
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            .setClassName(STOCK_LAUNCHER_PKG, STOCK_LAUNCHER_CLS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try { context.startActivity(launcher) } catch (_: Exception) {
+            try { context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {}
+        }
     }
 
     override fun onDetachedFromWindow() { handler.removeCallbacksAndMessages(null); super.onDetachedFromWindow() }
@@ -626,6 +646,9 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         const val KEY_AIRPLAY = "system.cc.airplay"
         const val KEY_SPOTIFY = "system.cc.spotify"
         const val SETTINGS_SCREEN = "settings-pair"
+        /** LineageOS' launcher (scripts/echo-restore-launcher.sh). */
+        const val STOCK_LAUNCHER_PKG = "com.android.launcher3"
+        const val STOCK_LAUNCHER_CLS = "com.android.launcher3.uioverrides.QuickstepLauncher"
         val BLUE = 0xFF0A84FF.toInt()
         val GREEN = 0xFF30D158.toInt()
         val ORANGE = 0xFFFF9F0A.toInt()

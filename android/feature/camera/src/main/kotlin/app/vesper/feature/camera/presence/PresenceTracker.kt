@@ -14,7 +14,8 @@ import app.vesper.core.model.Presence
  */
 class PresenceTracker(
     var enterMotions: Int = 2,
-    var enterWindowMs: Long = 2_000,
+    /** Two 1 fps samples (with a little jitter) must fit in it. */
+    var enterWindowMs: Long = 2_500,
     var emptyAfterMs: Long = 3 * 60_000,
 ) {
     var state: Presence = Presence.UNKNOWN; private set
@@ -51,6 +52,17 @@ class PresenceTracker(
         if (sinceAt < 0) sinceAt = nowMs
         set(Presence.PRESENT)
         return state
+    }
+
+    /**
+     * The camera rested while someone was here (it turned off right after seeing them). Stay
+     * PRESENT and count quiet time from now: the rest itself wasn't observed.
+     */
+    fun holdPresent(nowMs: Long) {
+        arrived = false
+        recent.clear()
+        if (state == Presence.PRESENT) lastMotionAt = nowMs
+        if (sinceAt < 0) sinceAt = nowMs
     }
 
     /** The camera stopped: we no longer know. The next start counts quiet time from scratch. */

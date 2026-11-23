@@ -20,11 +20,19 @@ import java.util.concurrent.TimeUnit
 /**
  * Camera2 low-res YUV_420_888 preview into an [ImageReader]; only the Y plane is read.
  * Uses the lowest AE fps range the HAL offers so the sensor itself produces fewer frames.
+ *
+ * [sparse]: after a short repeating warm-up (so auto-exposure settles), it asks for one frame
+ * every [minIntervalMs] with single capture requests instead of a 15 fps repeating request. The
+ * HAL then only works for the frames we use: on the Echo, presence at 1 fps costs 6.9 % of a core
+ * in total (app + cameraserver + camerahalserver) against 19.3 % for Camera1's 15 fps preview
+ * (docs/status/camera.md, "Cheaper presence").
  */
 class Camera2Source(
     context: Context,
     private val preferredWidth: Int = 160,
     override var minIntervalMs: Long = 500,
+    private val sparse: Boolean = false,
+    private val warmupMs: Long = 600,
 ) : FrameSource {
     override val name = "camera2"
     override var size: Pair<Int, Int>? = null; private set
@@ -76,7 +84,8 @@ class Camera2Source(
             try {
                 framesSeen++
                 val now = SystemClock.elapsedRealtime()
-                if (running && now - lastDelivered >= minIntervalMs) {
+                // Sparse captures arrive one per interval, give or take; don't drop one for being a few ms early.
+                if (running && now - lastDelivered >= (if (sparse) minIntervalMs * 3 / 4 else minIntervalMs)) {
                     lastDelivered = now
                     val p = img.planes[0]
                     listener.onFrame(YPlane(p.buffer, img.width, img.height, p.rowStride, p.pixelStride, img.timestamp))
@@ -101,7 +110,33 @@ class Camera2Source(
                                         addTarget(r.surface)
                                         fpsRange?.let { set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(it.first, it.second)) }
                                     }
-                                    s.setRepeatingRequest(req.build(), null, h)
+                                    val mode = debugMode
+                                    if (mode != null && mode.startsWith("slow")) {
+                                        val ms = mode.substringAfter(':', "400").toLongOrNull() ?: 400L
+                                        req.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
+                                        req.set(CaptureRequest.SENSOR_FRAME_DURATION, ms * 1_000_000L)
+                                        req.set(CaptureRequest.SENSOR_EXPOSURE_TIME, 30_000_000L)
+                                        req.set(CaptureRequest.SENSOR_SENSITIVITY, 800)
+                                    }
+                                    val built = req.build()
+                                    if (sparse || mode == "sparse") {
+                                        // Warm up with the repeating request (AE converges over a few frames), then one capture per interval.
+                                        val warm = if (sparse) warmupMs else 0L
+                                        if (warm > 0) s.setRepeatingRequest(built, null, h)
+                                        h.postDelayed(object : Runnable {
+                                            var first = true
+                                            override fun run() {
+                                                if (!running) return
+                                                try {
+                                                    if (first && warm > 0) s.stopRepeating()
+                                                    first = false
+                                                    s.capture(built, null, h)
+                                                } catch (e: Exception) { fail("capture: $e"); return }
+                                                h.postDelayed(this, minIntervalMs.coerceAtLeast(100))
+                                            }
+                                        }, warm)
+                                    } else s.setRepeatingRequest(built, null, h)
+                                    Log.i(TAG, "streaming ${if (sparse) "sparse every ${minIntervalMs}ms" else mode ?: "repeating"}")
                                 } catch (e: Exception) { fail("setRepeatingRequest: $e") }
                             }
                             override fun onConfigureFailed(s: CameraCaptureSession) = fail("session configure failed")
@@ -142,5 +177,9 @@ class Camera2Source(
         session = null; device = null; reader = null
     }
 
-    companion object { const val TAG = "VesperCam2" }
+    companion object {
+        const val TAG = "VesperCam2"
+        /** Debug (camera-probe `--es mode sparse|slow:MS`): how frames are requested, to measure HAL cost. */
+        @Volatile var debugMode: String? = null
+    }
 }

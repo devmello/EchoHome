@@ -21,7 +21,7 @@ with `./scripts/echo-shot.sh` + `./scripts/echo-perf.sh 6`. Shots: `docs/status/
 - PSS grows to ~88 MB after every screen has been opened once (screens stay built), well under
   the 200 MB budget. Device MemAvailable stayed 330–400 MB. No crash in `logcat -b crash`.
 - Jank: under 1 % on every animated screen; p99 ≤ 11 ms.
-- **Whole device:** the biggest steady cost isn't the app. It's `camerahalserver` streaming for
+- **Whole device (superseded 19:05, see `docs/status/camera.md` "Cheaper presence": ~6 % now, 0 while resting):** the biggest steady cost isn't the app. It's `camerahalserver` streaming for
   presence (~14–18 % of a core, H's measurement; `top` showed 30 % in one sample), plus
   `cameraserver` ~3–7 %. The HAL won't go below 15 fps. It stops in the dark and whenever
   our window isn't visible. `camera.presence.duty=true` saves about a third at ~1 fps sampling.
@@ -43,13 +43,23 @@ with `./scripts/echo-shot.sh` + `./scripts/echo-perf.sh 6`. Shots: `docs/status/
 
 ## Still open (none block use)
 
-- **Assistant idle at 19 %**: the droplet still breathes forever while the screen is open. Could
-  stop after ~30 s idle. Low priority: nobody leaves it open.
+- ~~Assistant idle at 19 %~~ **Fixed (18:50):** the droplet holds still 30 s after the last touch or
+  state change (0 frames; the clock ticks once a minute), and a touch restarts it.
 - **Timers hint** says "Try “Hey Nova, add a 12-minute rice timer”", but the wake word is off by
   default and no API key is set. Should follow the assistant's availability (like its subtitle).
 - **Home screen** only exists with Home Assistant configured (as designed); `--es screen home`
   falls through to the current screen.
-- **Control Center** opening: 6.3 % janky, p99 36 ms (target < 5 %, < 33 ms). Close.
+- **Control Center** (release build, 18:47–19:00; the 6.3 % was a debug build driven by debug extras,
+  a release build opened by real swipes measured 28–32 % frames over 17 ms). GPU-bound, not UI: each
+  full-screen fill is ~4 ms on the Mali-T720. Fixed: the blurred background faded through a full-screen
+  offscreen layer every frame (`hasOverlappingRendering = false`); the close slide didn't use the panel's
+  hardware layer; StandBy painted a third redundant black fill; a glass backdrop landing mid-slide
+  re-rendered the panel layer (now applied when it stops); and with Control Center open every clock tick
+  below redrew the whole window (~26 ms GPU each second; everything under the opaque background is now
+  INVISIBLE while it's open: 0 frames in 5 s). Close is now 1–2 slow frames. **Still open:** opening by swipe
+  has ~10 frames at 25–28 ms GPU, and they coincide with Android's own bars sliding in (SurfaceFlinger
+  composites them on the same GPU). Re-measure once the bars are off (`SystemBars`, needs STATUS_BAR in
+  the /system copy).
 - **Hands-on items** (mic polarity, shutter, reboot alarm, iPhone, AirPlay, face enrolment):
   NOTES.md §7.1.
 - Not reviewed here, because they need data: Weather/Calendar cards with a real calendar,

@@ -107,7 +107,8 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
     private val redim = Runnable { applyDim(animate = true) }
 
     init {
-        setBackgroundColor(Color.BLACK)
+        // No background of our own: the window is black and every face paints black. On the
+        // Mali-T720 each full-screen fill costs ~4 ms of GPU per frame, and this one was hidden.
         clipChildren = false
         addView(stage, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         // Parked neighbours sit just outside the stage; clipChildren only clips each face to its

@@ -72,6 +72,44 @@ Measured Nov 22, 2026 ~04:00 on the Echo (`--es screen camera-probe`, `tools/pro
   - `neural.sh`: live recognize bench, detect-compare, PSS after the camera is off.
 - **Tests**: 94 JVM tests. New in phase 3: the embedder registry (unique ids and keys, XXS default, unknown or `mobilefacenet` keys fall back to the default, assets and 512-value references present) and the Face model setting. Phase 2: similarity fit, the landmark → template transform (eye order irrelevant), alignment on a drawn face, NV21 → RGB, letterbox, BlazeFace anchors, decode with weighted NMS on synthetic tensors, embedder fallback, neural threshold clamping, the settings section, and live settings. The original 76 cover covering frame differencing (noise, global shift, small changes, dark frames, strided, pixel-stride-2 and direct buffers), hysteresis, cosine and the matcher (thresholds, margin, exclusion), consecutive-match logic, LBP, the quality filter, the crop, the SecretBox envelope (round trip, layout, fresh IV, tampering, wrong AAD or key, truncation, version, IV length), TemplateStore (encrypted on disk, AAD binding, path safety) and FaceProfileManager (persistence, Auto, Not me cool-down, timeout with virtual time).
 
+## Cheaper presence (lead, Nov 22, 2026, 18:30–19:05, release build)
+
+Presence was the biggest steady CPU cost on the whole device: Camera1's 15 fps preview keeps the HAL busy
+(~19 % of a core in total) even though we use 1–2 frames a second. Measured with `tools/measure.sh`
+(app + cameraserver + camerahalserver, % of one core) and the `camera-probe` / `camera-bench` debug options
+`--es mode sparse|slow:MS` (Camera2) and `--es params "k=v;…"` (Camera1).
+
+| Presence capture | total | HAL |
+|---|---|---|
+| Camera1 preview 15 fps (old default) | 19.3–19.8 | 14.6 |
+| Camera1 + `picture-size=176x144`, no JPEG thumbnail | 18.7 | 14.0 (HAL PSS −3.6 MB) |
+| Camera2 repeating 15 fps | 16.7–19.0 | 12–13.6 |
+| **Camera2 single captures, 1 per second (new default)** | **6.9** | 5.8 |
+| Camera2 single captures, 2 / s | 8.8 | 6.6 |
+| Camera2 single captures, 3 / s | 10.0 | 7.4 |
+| Camera2 open, one capture per 10 s (cost of just being open) | 4.8 | 4.2 |
+| Camera2 AE off, 400 ms frames (2.5 fps, fixed exposure) | 5.4 | 3.4 |
+
+- Camera1 parameters barely matter: the HAL cost is per streamed frame. Camera2 lets us ask for single frames
+  (`CameraCaptureSession.capture` on a timer after a 0.6 s repeating warm-up so AE settles). Mean luma
+  matched the repeating stream (48 vs 49), so AE works with sparse captures. AE-off is cheaper still but
+  needs our own exposure loop; not worth the risk.
+- An open camera costs ~4.5 % on its own, so the only way below that is closing it. Hence **resting**: after
+  motion or a touch (presence PRESENT, face check done) the camera closes for 60 s (`REST_MS`; a touch
+  extends it). On resume the tracker stays PRESENT and counts the 3 min of quiet from the resume (`holdPresent`),
+  so an empty room dims at most a minute later than before. Setting "Rest the camera while someone's here"
+  (`camera.presence.rest`, advanced, default on) replaces "Duty-cycled presence" (Camera1 duty mode, 12.2 %).
+- Detection bursts and enrolment stay on Camera1 (NV21 colour for alignment, 5 fps). If Camera2 errors,
+  presence falls back to Camera1 for the rest of the process.
+- Opening and closing run on a `vesper-cam-ctl` thread (closing took the main thread 100–300 ms);
+  frames from a source being closed are dropped by a generation counter.
+- **Dark-room bug fixed:** the back-off (30 s → 5 min) reset on every `stopCamera()`, so in a dark room the
+  camera opened every ~33 s all night (~3.5 s of streaming each). Now it only resets on a lit frame, and
+  while the light sensor still reads what it read when the frames went black the retry is skipped
+  (lights on and touches still retry at once; a real check at least every 20 min). Dark needs 4 samples (was 6).
+- On the Echo (StandBy, lit room): nobody moving 8.0 % (app 2.2 incl. the clock, HAL 5.3) vs ~20 % before;
+  resting 1.9 % (the app alone, camera closed).
+
 ## Measured on the Echo (debug build, Nov 22, 2026 04:28–04:44, dark room)
 
 CPU is % of one core over 30 s (`tools/measure.sh`; CLK_TCK 100). The camera HAL does most of the work.
@@ -80,7 +118,7 @@ CPU is % of one core over 30 s (`tools/measure.sh`; CLK_TCK 100). The camera HAL
 |---|---|---|---|---|---|---|
 | Baseline: StandBy, camera released | 0.0 | 0.0 | 0.0 | **0** | 0.8 % | 32.3 / 5.1 / 15.8 MB |
 | 1 Presence, 176×144 @ 2 fps (default) | 1.6 | 3.1 | 13.5 | **18.2** | 5.5 % | 34.6 / 6.2 / 42.6 MB |
-| 1 Presence, duty-cycled preview (option) | 0.8 | 1.4 | 10.0 | **12.2** | 4.6 % | 36.2 / 6.2 / 42.6 MB |
+| 1 Presence, duty-cycled preview (former option, removed) | 0.8 | 1.4 | 10.0 | **12.2** | 4.6 % | 36.2 / 6.2 / 42.6 MB |
 | 2 Detection, 320×240 @ 5 fps (burst only) | 49.0 | 3.7 | 14.1 | **66.8** | 18.8 % | 38.7 / 6.7 / 43.1 MB |
 | 3 Recognition, LBP (phase 1; neural numbers below) | +16 ms per try | | | | | |
 

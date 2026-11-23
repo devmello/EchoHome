@@ -16,6 +16,7 @@ import app.vesper.core.model.Presence
 import app.vesper.core.model.Profile
 import app.vesper.core.model.SwitchReason
 import app.vesper.feature.camera.capture.Camera1Source
+import app.vesper.feature.camera.capture.Camera2Source
 import app.vesper.feature.camera.capture.FrameSource
 import app.vesper.feature.camera.capture.YPlane
 import app.vesper.feature.camera.face.BlazeFaceFinder
@@ -45,11 +46,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.util.concurrent.Executors
 
 /** What the camera is doing, for the indicator and the Profiles overlay (Profiles.dc.html). */
 enum class CameraPhase { OFF, PRESENCE, DETECTING, RECOGNIZED, ENROLLING }
 
-enum class OffReason { NONE, HIDDEN, BLOCKED, DARK, DISABLED, NO_PERMISSION, ERROR, BUSY }
+/** Why the camera is off. RESTING: someone was just seen (or touched the screen), so presence stays PRESENT. */
+enum class OffReason { NONE, HIDDEN, BLOCKED, DARK, DISABLED, NO_PERMISSION, ERROR, BUSY, RESTING }
 
 data class CameraUi(
     val phase: CameraPhase = CameraPhase.OFF,
@@ -57,8 +60,8 @@ data class CameraUi(
     val presence: Presence = Presence.UNKNOWN,
     /** Set while the "Hi <name>" greeting is up. */
     val greeting: Profile? = null,
-    /** Presence sampling rate, for the "Presence · 2 fps" label. */
-    val presenceFps: Int = 2,
+    /** Presence sampling rate, for the "Presence · 1 fps" label. */
+    val presenceFps: Int = (1000 / CameraPipeline.PRESENCE_INTERVAL_MS).toInt().coerceAtLeast(1),
 )
 
 /** One enrolment frame: where the face is (for the guide) and, if it passed quality, its embedding. */
@@ -72,7 +75,9 @@ class EnrolSample(val box: FaceBox?, val frameW: Int, val frameH: Int, val issue
  *  1. Gate: runs only while our window is visible, the camera isn't blocked (button, toggle,
  *     shutter), we have the permission, and frames aren't near-black (closed shutter / dark
  *     room → release the camera and retry with back-off, or when the light rises / on touch).
- *  2. Presence at [PRESENCE_WIDTH] px, Y plane only, 80×60 differencing at 2 fps.
+ *  2. Presence at [PRESENCE_WIDTH] px, Y plane only, 80×60 differencing at 1 fps: Camera2 single
+ *     captures (Camera1's 15 fps preview if Camera2 fails). After motion or a touch the camera
+ *     rests for [REST_MS] (presence stays PRESENT), since nothing needs it while someone's here.
  *  3. Detection burst (~5 fps for ~2 s) after someone arrives.
  *  4. Quality filter. 5. Recognition (≤3 tries, 2 consecutive matches). 6. Greeting + switch.
  *
@@ -112,6 +117,15 @@ class CameraPipeline(
 
     private var source: FrameSource? = null
     private var sourceWidth = 0
+    /** Opens and closes the camera off the main thread (closing takes 100–300 ms), one after another. */
+    private val camCtl = Executors.newSingleThreadExecutor { r -> Thread(r, "vesper-cam-ctl") }
+    /** Which source frames are taken from; frames from a source being closed are ignored. */
+    @Volatile private var generation = 0
+    private var usingCamera2 = false
+    private var camera2Failed = false
+    // resting (main thread)
+    private var restUntil = 0L
+    private var resumeFromRest = false
     private var visible = false
     private var started = false
 
@@ -130,6 +144,8 @@ class CameraPipeline(
     private val crop = GreyImage(112, 112)
     private val aligned = FaceImage(112)
     private var darkStreak = 0
+    /** A usable (not near-black) frame since this camera start: resets the dark back-off once. */
+    private var litSeen = false
     @Volatile private var touchAt = 0L
     @Volatile private var burstUntil = 0L
     @Volatile private var burstTemplates: List<FaceTemplates> = emptyList()
@@ -138,8 +154,10 @@ class CameraPipeline(
     /** Debug: hold a stage continuously for measurements ("camera-bench" screen). */
     @Volatile var benchStage: CameraPhase? = null
         set(v) { field = v; main.post { reconfigure() } }
-    /** Debug: presence with the duty-cycled preview (bench stage "presence-duty"). */
+    /** Debug: presence with Camera1's duty-cycled preview (bench stage "presence-duty"). */
     @Volatile var benchDuty = false
+    /** Debug: presence with Camera1's plain 15 fps preview, the old way (bench stage "presence-cam1"). */
+    @Volatile var benchCamera1 = false
     /** Debug: run both detectors on every detection frame (bench stage "detect-compare"). */
     @Volatile var benchCompare = false
 
@@ -153,6 +171,8 @@ class CameraPipeline(
     private var darkRetryMs = DARK_RETRY_MIN_MS
     private var darkUntil = 0L
     private var luxAtDark = -1f
+    /** When the camera last opened and saw near-black frames (the light sensor can stand in for it). */
+    private var darkCheckedAt = 0L
     private var errorUntil = 0L
     // Another user of the camera in this app (the capture probe): stay off.
     var externalUser = false
@@ -177,7 +197,8 @@ class CameraPipeline(
         services.scope.launch { profiles.autoByFace.collect { evaluate() } }
         services.scope.launch {
             settings.changes.collect { k ->
-                if (k.startsWith("camera.stage.") || k == KEY_DUTY) evaluate()
+                if (k == KEY_REST && !restEnabled()) endRestNow()
+                if (k.startsWith("camera.stage.")) evaluate()
                 if (k == KEY_EMBEDDER) synchronized(modelLock) { embedder.release(); embedder = buildEmbedder(); Log.i(TAG, "face model: ${embedder.id}") }
             }
         }
@@ -194,6 +215,7 @@ class CameraPipeline(
 
     /** A touch anywhere: someone is here (also retries a dark camera now). */
     fun onTouch() {
+        if (_ui.value.off == OffReason.RESTING) { startRest(); return } // still here: rest longer
         if (_ui.value.off == OffReason.DARK) { darkUntil = 0L; evaluate() }
         touchAt = SystemClock.elapsedRealtime()
     }
@@ -224,18 +246,63 @@ class CameraPipeline(
         !stageEnabled("presence") && enrolListener == null && benchStage == null -> OffReason.DISABLED
         SystemClock.elapsedRealtime() < errorUntil -> OffReason.ERROR
         SystemClock.elapsedRealtime() < darkUntil && enrolListener == null && benchStage == null -> OffReason.DARK
+        SystemClock.elapsedRealtime() < restUntil && enrolListener == null && benchStage == null &&
+            SystemClock.elapsedRealtime() >= burstUntil -> OffReason.RESTING
         else -> OffReason.NONE
     }
 
     fun evaluate() {
         val why = offReason()
+        if (why == OffReason.RESTING) {
+            if (source != null) stopCamera(keepPresence = true)
+            _ui.value = _ui.value.copy(phase = CameraPhase.OFF, off = why)
+            return
+        }
         if (why != OffReason.NONE) {
             if (source != null) stopCamera()
+            else if (restUntil != 0L) { // was resting: we no longer know who's there
+                restUntil = 0L; resumeFromRest = false; main.removeCallbacks(endRest)
+                camCtl.execute { tracker.reset() }
+                postPresence(Presence.UNKNOWN, false)
+            }
             _ui.value = _ui.value.copy(phase = CameraPhase.OFF, off = why, presence = Presence.UNKNOWN)
             return
         }
         reconfigure()
     }
+
+    // --- resting while someone's here ---
+
+    private fun restEnabled() = settings.getBoolean(KEY_REST, REST_DEFAULT)
+
+    /** A further face check may still run for this arrival: keep looking until it's done. */
+    private fun faceCheckPending() = !arrivalDone && burstsThisArrival in 1 until MAX_BURSTS &&
+        stageEnabled("detect") && profiles.autoByFace.value
+
+    /** Someone moved (or touched the screen): presence is PRESENT for a while, so turn the camera off. */
+    private fun maybeRest() {
+        if (!restEnabled() || enrolListener != null || benchStage != null) return
+        if (SystemClock.elapsedRealtime() < burstUntil || _ui.value.greeting != null || faceCheckPending()) return
+        startRest()
+    }
+
+    private fun startRest() {
+        restUntil = SystemClock.elapsedRealtime() + REST_MS
+        touchAt = 0L
+        main.removeCallbacks(endRest)
+        main.postDelayed(endRest, REST_MS + 50)
+        if (_ui.value.off != OffReason.RESTING) Log.i(TAG, "someone's here: camera rests ${REST_MS / 1000}s")
+        evaluate()
+    }
+
+    private val endRest = Runnable {
+        if (restUntil == 0L) return@Runnable
+        restUntil = 0L
+        resumeFromRest = true
+        evaluate()
+    }
+
+    private fun endRestNow() { if (restUntil != 0L) { main.removeCallbacks(endRest); endRest.run() } }
 
     /** Opens the camera at the size the current stage needs (restarting it if the size changes). */
     private fun reconfigure() {
@@ -246,16 +313,28 @@ class CameraPipeline(
         val interval = if (detecting) DETECT_INTERVAL_MS else PRESENCE_INTERVAL_MS
         if (source != null && sourceWidth != width) stopCamera(keepPresence = true)
         if (source == null) {
-            val src = Camera1Source(preferredWidth = width, minIntervalMs = interval,
-                dutyCycle = !detecting && (benchDuty || settings.getBoolean(KEY_DUTY, DUTY_DEFAULT)))
+            // Presence: Camera2 single captures (a third of the HAL work). Detection and enrolment
+            // keep Camera1's NV21 preview: they need colour (alignment) and 5 fps.
+            val cam2 = !detecting && !camera2Failed && !benchDuty && !benchCamera1
+            val src: FrameSource = if (cam2) Camera2Source(context, preferredWidth = width, minIntervalMs = interval, sparse = true)
+                else Camera1Source(preferredWidth = width, minIntervalMs = interval, dutyCycle = !detecting && benchDuty)
             source = src
             sourceWidth = width
-            motion.reset()
-            darkStreak = 0
+            usingCamera2 = cam2
+            val gen = ++generation
+            val resume = resumeFromRest
+            resumeFromRest = false
             services.system.update { it.copy(cameraInUse = true) }
-            src.start({ f -> onFrame(f) }, { err -> main.post { onCameraError(err) } })
-            Log.i(TAG, "camera on: ${src.name} width=$width every ${interval}ms")
-        } else source?.let { it.minIntervalMs = interval; (it as? Camera1Source)?.dutyCycle = !detecting && (benchDuty || settings.getBoolean(KEY_DUTY, DUTY_DEFAULT)) }
+            camCtl.execute {
+                // The previous source is closed by now (same executor), so no frame races these.
+                motion.reset()
+                darkStreak = 0
+                litSeen = false
+                if (resume) tracker.holdPresent(SystemClock.elapsedRealtime())
+                if (generation == gen) src.start({ f -> if (generation == gen) onFrame(f) }, { err -> main.post { if (generation == gen) onCameraError(err) } })
+            }
+            Log.i(TAG, "camera on: ${src.name} width=$width every ${interval}ms${if (resume) " (after rest)" else ""}")
+        } else source?.minIntervalMs = interval
         val phase = when {
             enrolListener != null -> CameraPhase.ENROLLING
             detecting -> CameraPhase.DETECTING
@@ -268,22 +347,29 @@ class CameraPipeline(
     private fun stopCamera(keepPresence: Boolean = false) {
         val s = source ?: return
         source = null
-        s.stop()
-        releaseModels()
-        stats.framesSeen += s.framesSeen
+        generation++
+        camCtl.execute {
+            s.stop()
+            releaseModels()
+            stats.framesSeen += s.framesSeen
+            if (!keepPresence) tracker.reset()
+        }
         services.system.update { it.copy(cameraInUse = false) }
         if (!keepPresence) {
-            tracker.reset()
             burstUntil = 0L
+            restUntil = 0L; resumeFromRest = false; main.removeCallbacks(endRest)
             postPresence(Presence.UNKNOWN, false)
         }
-        Log.i(TAG, "camera off")
+        Log.i(TAG, "camera off${if (keepPresence) " (presence kept)" else ""}")
     }
 
     private fun onCameraError(err: String) {
         Log.w(TAG, "camera error: $err")
+        // Camera2 didn't work on this HAL: presence falls back to Camera1's preview.
+        if (usingCamera2) { camera2Failed = true; Log.w(TAG, "presence falls back to Camera1") }
         source = null
-        releaseModels()
+        generation++
+        camCtl.execute { releaseModels() }
         services.system.update { it.copy(cameraInUse = false) }
         _ui.value = _ui.value.copy(phase = CameraPhase.OFF, off = OffReason.ERROR)
         // Another client (or the HAL) took the camera: try again later.
@@ -293,12 +379,32 @@ class CameraPipeline(
 
     private fun onDark() {
         luxAtDark = lux
-        darkUntil = SystemClock.elapsedRealtime() + darkRetryMs
+        darkCheckedAt = SystemClock.elapsedRealtime()
         Log.i(TAG, "frames near-black (lux=$lux): camera off, retry in ${darkRetryMs / 1000}s")
-        val retry = darkRetryMs
-        darkRetryMs = (darkRetryMs * 2).coerceAtMost(DARK_RETRY_MAX_MS)
+        scheduleDarkRetry()
         evaluate()
-        main.postDelayed({ if (_ui.value.off == OffReason.DARK) evaluate() }, retry + 50)
+    }
+
+    /** Waits out the back-off (30 s, doubling to 5 min), then tries the camera again. */
+    private fun scheduleDarkRetry() {
+        val retry = darkRetryMs
+        darkUntil = SystemClock.elapsedRealtime() + retry
+        darkRetryMs = (darkRetryMs * 2).coerceAtMost(DARK_RETRY_MAX_MS)
+        main.removeCallbacks(darkRetry)
+        main.postDelayed(darkRetry, retry + 50)
+    }
+
+    /**
+     * A back-off retry. While the light sensor still reads what it read when the frames were black,
+     * opening the camera would only see black again (~3.5 s of HAL streaming each time), so wait
+     * longer; the lux listener and touches still retry at once. A real check every
+     * [DARK_SAFETY_MS] in case the sensor and the camera disagree.
+     */
+    private val darkRetry = Runnable {
+        if (_ui.value.off != OffReason.DARK) return@Runnable
+        val sensorStillDark = lux >= 0f && luxAtDark >= 0f && lux <= luxAtDark * 2f + 1f
+        if (sensorStillDark && SystemClock.elapsedRealtime() - darkCheckedAt < DARK_SAFETY_MS) scheduleDarkRetry()
+        else evaluate()
     }
 
     /** Frees the detector and embedder (the camera thread is stopped, or between frames). */
@@ -349,12 +455,13 @@ class CameraPipeline(
             if (++darkStreak >= DARK_SAMPLES) { darkStreak = 0; main.post { if (source != null) onDark() } }
             return
         }
+        if (!litSeen) { litSeen = true; main.post { darkRetryMs = DARK_RETRY_MIN_MS } }
         darkStreak = 0
         val touched = touchAt
         var touchArrived = false
         if (touched != 0L) { touchAt = 0L; tracker.onTouch(touched); touchArrived = tracker.arrived }
         val p = tracker.onSample(m.motion || (benchStage != null), now)
-        postPresence(p, tracker.arrived || touchArrived, m.motion)
+        postPresence(p, tracker.arrived || touchArrived, m.motion || touched != 0L)
 
         val enrol = enrolListener
         val inBurst = now < burstUntil || benchStage == CameraPhase.DETECTING || benchStage == CameraPhase.RECOGNIZED
@@ -428,10 +535,10 @@ class CameraPipeline(
 
     private fun postPresence(p: Presence, arrived: Boolean, moved: Boolean = false) {
         main.post {
-            darkRetryMs = DARK_RETRY_MIN_MS
             if (services.system.state.value.presence != p) services.system.update { it.copy(presence = p) }
             if (_ui.value.presence != p) _ui.value = _ui.value.copy(presence = p)
             onPresence(p, arrived, moved)
+            if (p == Presence.PRESENT && moved && source != null) maybeRest()
         }
     }
 
@@ -528,16 +635,19 @@ class CameraPipeline(
 
     companion object {
         const val TAG = "VesperCamera"
-        const val KEY_DUTY = "camera.presence.duty"
+        /** Rest the camera while someone's here (after motion or a touch). */
+        const val KEY_REST = "camera.presence.rest"
+        const val REST_DEFAULT = true
+        /** How long the camera stays off after seeing someone; an empty room is noticed this much later. */
+        const val REST_MS = 60_000L
         const val KEY_DETECTOR = "camera.detector"
         const val DETECTOR_DEFAULT = "blazeface"
         /** The face model: [ModelFiles.EMBEDDERS] keys (debug: "lbp" forces LBP). */
         const val KEY_EMBEDDER = "camera.embedder"
         /** The neural model's minimum match threshold ([MatchPolicy.floor]). */
         const val KEY_THRESHOLD = "camera.match.threshold"
-        const val DUTY_DEFAULT = false
         const val PRESENCE_WIDTH = 176
-        const val PRESENCE_INTERVAL_MS = 500L
+        const val PRESENCE_INTERVAL_MS = 1_000L
         const val DETECT_WIDTH = 320
         const val DETECT_INTERVAL_MS = 200L
         const val BURST_MS = 2_000L
@@ -545,9 +655,11 @@ class CameraPipeline(
         const val BURST_GAP_MS = 8_000L
         const val MAX_BURSTS = 3
         const val GREETING_MS = 4_000L
-        const val DARK_SAMPLES = 6
+        const val DARK_SAMPLES = 4
         const val DARK_RETRY_MIN_MS = 30_000L
         const val DARK_RETRY_MAX_MS = 5 * 60_000L
+        /** With the light sensor still dark, the camera itself checks at most this often. */
+        const val DARK_SAFETY_MS = 20 * 60_000L
         const val ERROR_RETRY_MS = 60_000L
         /** Defaults after measuring each stage on the Echo (docs/status/camera.md). */
         val STAGE_DEFAULTS = mapOf("presence" to true, "detect" to true, "recognize" to true)

@@ -147,6 +147,31 @@ class PresenceTrackerTest {
         assertEquals(Presence.EMPTY, t.onSample(false, 60_500))
     }
 
+    @Test fun oneFpsSamplesEnterWithTheDefaultWindow() {
+        val t = PresenceTracker()
+        t.onSample(true, 0)
+        assertEquals(Presence.PRESENT, t.onSample(true, 1_040))
+    }
+
+    @Test fun restCountsQuietFromTheResume() {
+        val t = PresenceTracker(enterMotions = 2, enterWindowMs = 2500, emptyAfterMs = 180_000)
+        t.onSample(true, 0); t.onSample(true, 1_000)
+        // The camera rested for a minute (no samples), then resumes: still PRESENT, quiet from now.
+        t.holdPresent(61_000)
+        assertEquals(Presence.PRESENT, t.state)
+        assertFalse(t.arrived)
+        assertEquals(Presence.PRESENT, t.onSample(false, 62_000))
+        assertFalse("resuming isn't an arrival", t.arrived)
+        assertEquals(Presence.PRESENT, t.onSample(false, 61_000 + 179_000))
+        assertEquals(Presence.EMPTY, t.onSample(false, 61_000 + 180_000))
+    }
+
+    @Test fun holdPresentDoesNotInventPresence() {
+        val t = PresenceTracker()
+        t.holdPresent(5_000)
+        assertEquals(Presence.UNKNOWN, t.state)
+    }
+
     @Test fun oneMotionKeepsPresentAlive() {
         val t = PresenceTracker(enterMotions = 2, enterWindowMs = 2000, emptyAfterMs = 10_000)
         t.onSample(true, 0); t.onSample(true, 500)

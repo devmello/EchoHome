@@ -242,13 +242,13 @@ class SettingsSectionTest {
     @Test fun cameraSectionDeclaresTheKeysTheCodeReads() {
         val s = CameraFeature.settingsSection()
         val keys = s.settings.associateBy { it.key }
-        assertEquals(setOf("camera.stage.presence", CameraPipeline.KEY_DUTY, FaceProfileManager.KEY_AUTO, CameraPipeline.KEY_EMBEDDER,
+        assertEquals(setOf("camera.stage.presence", CameraPipeline.KEY_REST, FaceProfileManager.KEY_AUTO, CameraPipeline.KEY_EMBEDDER,
             CameraPipeline.KEY_THRESHOLD, FaceProfileManager.KEY_TIMEOUT_MIN), keys.keys)
         val model = keys.getValue(CameraPipeline.KEY_EMBEDDER)
         assertEquals(SettingType.CHOICE, model.type); assertTrue(model.advanced)
         assertEquals(ModelFiles.EMBEDDERS.map { it.key }, model.options.map { it.first })
         assertEquals(ModelFiles.EMBEDDERS[0].key, model.default)
-        assertTrue(keys.getValue(CameraPipeline.KEY_DUTY).advanced)
+        assertTrue(keys.getValue(CameraPipeline.KEY_REST).advanced)
         assertTrue(keys.getValue(CameraPipeline.KEY_THRESHOLD).advanced)
         assertFalse(keys.getValue(FaceProfileManager.KEY_AUTO).advanced)
         assertEquals(ModelFiles.EMBEDDERS[0].policy.floor, keys.getValue(CameraPipeline.KEY_THRESHOLD).default.toFloat(), 0f)

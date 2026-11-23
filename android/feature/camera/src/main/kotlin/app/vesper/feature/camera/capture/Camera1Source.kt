@@ -71,7 +71,10 @@ class Camera1Source(
                 p.setPreviewSize(sz.first, sz.second)
                 p.previewFormat = ImageFormat.NV21
                 pickLowestFps(offeredFps)?.let { fpsRange = it; p.setPreviewFpsRange(it.first, it.second) }
+                if (!paramsLogged) { paramsLogged = true; p.flatten().chunked(900).forEach { Log.i(TAG, "params: $it") } }
+                debugParams?.split(';')?.map { it.split('=', limit = 2) }?.filter { it.size == 2 }?.forEach { (k, v) -> p.set(k.trim(), v.trim()) }
                 cam.parameters = p
+                debugParams?.let { Log.i(TAG, "debug params $it → ${cam.parameters.flatten().length} chars") }
                 // A preview target is mandatory; an unattached SurfaceTexture is never drawn.
                 val st = SurfaceTexture(0).also { texture = it }
                 cam.setPreviewTexture(st)
@@ -137,5 +140,10 @@ class Camera1Source(
         texture?.release(); texture = null
     }
 
-    companion object { const val TAG = "VesperCam1" }
+    companion object {
+        const val TAG = "VesperCam1"
+        private var paramsLogged = false
+        /** Debug (camera-bench `--es params "k=v;k=v"`): extra Camera1 parameters, to measure HAL cost. */
+        @Volatile var debugParams: String? = null
+    }
 }
