@@ -38,5 +38,5 @@ sealed interface ResultCard {
     /** Demo C: hands off to Now Playing. */
     data class Media(val title: String, val subtitle: String) : ResultCard
 
-    enum class Icon { LAMP, TV, PAUSE, PLAY, TIMER, ALARM, POWER, CALENDAR, BRIGHTNESS }
+    enum class Icon { LAMP, TV, PAUSE, PLAY, TIMER, ALARM, POWER, CALENDAR, BRIGHTNESS, REMINDER, LIST }
 }

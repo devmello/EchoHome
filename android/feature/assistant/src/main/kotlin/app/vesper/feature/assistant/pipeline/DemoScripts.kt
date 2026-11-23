@@ -9,6 +9,8 @@ import app.vesper.feature.assistant.pipeline.ResultCard.Icon
  *  - working: each step starts 520 ms after the previous one, then 500 ms
  *  - answer: the screen reveals a word every 70 ms, then fades the cards in.
  * Used in demo mode (demo data on and no Anthropic key) and for the screenshots.
+ * Demo d (reminders and the shopping list) isn't one of the design's chips: play it with
+ * `--es screen assistant --es script d`.
  */
 object DemoScripts {
     data class Demo(
@@ -42,7 +44,18 @@ object DemoScripts {
             listOf("Music"),
             "Here’s Afterglow from Night Swim, a slow one. I’ll fade it out after 30 minutes.",
             listOf(ResultCard.Media("Afterglow (Slow)", "Kito Rae · on this display"))),
+        Demo("d", "Remind me about the trash", 0xFF0A84FF.toInt(),
+            "Remind me to take out the trash at seven, and add milk and eggs to the shopping list.",
+            listOf("Reminders", "Shopping list"),
+            "I’ll remind you at 7 PM to take out the trash, and milk and eggs are on the shopping list.",
+            listOf(
+                ResultCard.Action("Take out the trash", "7:00 PM", Icon.REMINDER),
+                ResultCard.Action("Shopping list", "Added 2 items", Icon.LIST),
+            )),
     )
+
+    /** The design's three chips (the idle screen). */
+    val chips get() = all.take(3)
 
     fun byId(id: String?): Demo = all.firstOrNull { it.id == id } ?: all[0]
 

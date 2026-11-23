@@ -34,7 +34,7 @@ import kotlinx.coroutines.withContext
  * voice light, the content and the droplet. Animates on the Choreographer only while shown
  * (15 fps when idle, 60 while listening / working / answering); nothing runs while hidden.
  *
- * Screen args (adb `--es screen assistant --es <key> <value>`): `script` a|b|c plays a demo,
+ * Screen args (adb `--es screen assistant --es <key> <value>`): `script` a|b|c|d plays a demo (d: a reminder and the shopping list),
  * `at` <ms> freezes it there (screenshots), `mictest` 1 captures the mic without models,
  * `listen` 1 starts a turn, `wake` 1|0 overrides the wake-word setting, `say` <text> speaks
  * with the on-device voice only, `echo` 1 listens and repeats the transcript (STT + TTS, no Claude),
@@ -89,7 +89,7 @@ class AssistantScreen(context: Context, private val services: VesperServices, pr
 
     /** (label, question, demo id, dot colour). Demo mode keeps the design's chips; real turns ask things the tools can do. */
     private fun chips(): List<Quad> {
-        val d = DemoScripts.all
+        val d = DemoScripts.chips
         if (engine.useDemo()) return d.map { Quad(it.chip, it.query, it.id, it.color) }
         val ha = services.config.secrets.haConfigured
         return listOf(

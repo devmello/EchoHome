@@ -18,6 +18,7 @@ Read this after `CLAUDE.md` and `NOTES.md`. The Android project is in `android/`
 | `:feature:airplay` | C | AirPlay audio receiver |
 | `:feature:media` | D | Now Playing, media island states, other apps' sessions |
 | `:feature:alarm` | E | alarms, timers |
+| `:feature:lists` | L | reminders (exact, persisted, chime + island + banner) and lists (shopping, to-do), the `lists` screen |
 | `:feature:home` | F | weather (Open-Meteo) + calendar (iCal) providers, commute, stocks (free keyless API), optional HA Home screen + doorbell |
 | `:feature:assistant` | G | voice assistant: on-device wake word/STT/TTS + Claude API |
 | `:feature:camera` | H | presence, profiles |
@@ -34,6 +35,12 @@ Feature modules depend on `:core:model` and `:core:design` only (add `:core:data
 - `Alarm.leaveBy` / `readyMinutes` / `skipHolidays`; `NextAlarm.reason`.
 - Island: `ActivityKind.LEAVE_NOW` / `WEATHER_ALERT` / `PHONE_BATTERY` with `LiveContent.LeaveNow` / `RainSoon` / `PhoneBattery` (`:feature:system` renders them).
 - `Banner.actions` (extra expanded-banner buttons) and `NotificationFeed.recent` (last 50 banners, including gone ones).
+
+## Contracts added Nov 23 (lists branch)
+
+- `services.reminders: ReminderStore` and `services.lists: ListStore` (`:feature:lists` binds; in-memory defaults). `Reminder.profileId` is optional, taken from `services.profiles.active`.
+- `ReminderTime` (pure parser and formatter for "at 7pm", "in 20 minutes", "tomorrow morning") and `ListText` / `ListNames` (de-dup keys, list names) in `:core:model`, shared by the store, the assistant tools and the web sync.
+- Island: `ActivityKind.REMINDER` / `REMINDER_MISSED` with `LiveContent.Reminder` (`:feature:system` renders them).
 
 ## How a feature plugs in (no `:app` edits)
 

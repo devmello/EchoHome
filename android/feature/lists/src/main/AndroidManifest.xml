@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- :feature:lists (reminders + shopping list). Exact alarms on API 30 need no permission. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application>
+        <!-- Our AlarmManager wake-up when a reminder is due. -->
+        <receiver
+            android:name="app.vesper.feature.lists.ReminderTriggerReceiver"
+            android:exported="false" />
+
+        <!-- Reschedule after boot, clock / time zone changes and app updates. -->
+        <receiver
+            android:name="app.vesper.feature.lists.ReminderSystemReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

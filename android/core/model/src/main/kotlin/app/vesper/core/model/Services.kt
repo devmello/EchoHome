@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * Slots start as in-memory defaults or fakes (core.model.fake) so each feature runs alone.
  * The feature that owns a contract replaces its slot in [VesperFeature.install]:
  *   system → systemControls · alarm → alarms, timers · home → weather (Open-Meteo), calendar (iCal URLs), location ·
- *   camera → profiles (face switching) · `:app` → homeAssistant (optional), settings, config.
+ *   camera → profiles (face switching) · lists → reminders, lists · `:app` → homeAssistant (optional), settings, config.
  * Read slots lazily (in view factories / on attach), never cache them during install.
  */
 class VesperServices(
@@ -63,6 +63,10 @@ class VesperServices(
     var phone: StateFlow<PhoneStatus?> = MutableStateFlow(null)
     /** Crashes and hangs (`:app`'s watchdog binds it; the settings page shows it). */
     var crashLog: CrashLog = EmptyCrashLog
+    /** Reminders (`:feature:lists` binds the persisted, exactly scheduled store). */
+    var reminders: ReminderStore = InMemoryReminderStore()
+    /** Shopping and other lists (`:feature:lists` binds the persisted store). */
+    var lists: ListStore = InMemoryListStore()
     /** Home location (see [HomeLocation]); `:feature:home` binds manual > auto > San Francisco. */
     var location: StateFlow<HomeLocation> = MutableStateFlow(HomeLocation.default(config.demoData))
 

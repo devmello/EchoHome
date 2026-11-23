@@ -36,8 +36,9 @@ class VesperTools(
 ) : ToolHost {
 
     private val echo = EchoTools(zone, elapsed, wall)
+    private val lists = ListTools(zone, wall)
 
-    override fun specs(): List<ToolSpec> = BASE + EchoTools.SPECS + if (services().config.secrets.haConfigured) HOME else emptyList()
+    override fun specs(): List<ToolSpec> = BASE + EchoTools.SPECS + ListTools.SPECS + if (services().config.secrets.haConfigured) HOME else emptyList()
 
     override suspend fun run(name: String, input: JSONObject): ToolOutcome = withContext(main) {
         val s = services()
@@ -63,7 +64,7 @@ class VesperTools(
             }
             "home_list" -> if (s.config.secrets.haConfigured) homeList(s, input) else notAvailable()
             "home_control" -> if (s.config.secrets.haConfigured) homeControl(s, input) else notAvailable()
-            else -> echo.run(s, name, input) ?: ToolOutcome.error("UNKNOWN_TOOL", "No tool named $name")
+            else -> lists.run(s, name, input) ?: echo.run(s, name, input) ?: ToolOutcome.error("UNKNOWN_TOOL", "No tool named $name")
         }
     }
 

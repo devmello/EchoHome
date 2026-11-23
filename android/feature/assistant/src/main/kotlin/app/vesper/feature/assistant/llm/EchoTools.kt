@@ -118,7 +118,7 @@ internal class EchoTools(
         val target = SCREENS[key] ?: return ToolOutcome.error("UNKNOWN_SCREEN", "Screens: ${SCREENS.keys.joinToString()}")
         val args = target.second?.let { face -> Bundle().apply { putString("face", face) } }
         s.navigator.show(target.first, args)
-        val icon = when (key) { "now_playing" -> Icon.PLAY; "timers" -> Icon.TIMER; "calendar" -> Icon.CALENDAR; else -> Icon.POWER }
+        val icon = when (key) { "now_playing" -> Icon.PLAY; "timers" -> Icon.TIMER; "calendar" -> Icon.CALENDAR; "lists" -> Icon.LIST; else -> Icon.POWER }
         return ToolOutcome(JSONObject().put("opened", key), card = ResultCard.Action(SCREEN_TITLES[key] ?: key.replaceFirstChar(Char::uppercase), "Opened", icon))
     }
 
@@ -204,6 +204,7 @@ internal class EchoTools(
             "calendar" to ("standby" to "calendar"),
             "now_playing" to ("nowplaying" to null),
             "timers" to ("timers" to null),
+            "lists" to ("lists" to null),
             "commute" to ("commute" to null),
             "stocks" to ("stocks" to null),
             "home" to ("home" to null),
@@ -212,7 +213,7 @@ internal class EchoTools(
             "phone" to ("phone-pairing" to null),
             "settings" to ("settings-pair" to null),
         )
-        private val SCREEN_TITLES = mapOf("now_playing" to "Now playing", "phone" to "iPhone")
+        private val SCREEN_TITLES = mapOf("now_playing" to "Now playing", "phone" to "iPhone", "lists" to "Reminders & lists")
 
         fun resolveTimer(list: List<VesperTimer>, input: JSONObject): VesperTimer? {
             val id = input.optString("timer_id", "")
@@ -252,7 +253,7 @@ internal class EchoTools(
                 props("destination" to str("Address or place name."),
                     "depart_in_minutes" to int("Leave this many minutes from now (default 0).", 0, 1440)), listOf("destination")),
             ToolSpec("get_phone_battery", "The paired iPhone's battery level and whether it's charging."),
-            ToolSpec("show_note", "Show a short note on the display as a banner (a reminder or something to read).",
+            ToolSpec("show_note", "Show a short note on the display as a banner right now (something to read). For a reminder at a time, use add_reminder.",
                 props("text" to str("The note, up to 200 characters.", max = 200), "title" to str("Optional heading.", max = 40)), listOf("text")),
         )
     }
