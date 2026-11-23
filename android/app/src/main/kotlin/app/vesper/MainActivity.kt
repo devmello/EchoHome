@@ -15,6 +15,7 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.FrameLayout
+import app.vesper.core.design.UiQuiet
 import app.vesper.core.model.VesperScreen
 import app.vesper.core.model.ScreenSpec
 import kotlinx.coroutines.CoroutineScope
@@ -70,6 +71,7 @@ class MainActivity : Activity() {
             }
         }
         setContentView(root)
+        UiQuiet.install(window.decorView) // ahead-of-time UI work waits for quiet moments (QuietWork)
         watchBars()
 
         scope.launch { app.navigator.requests.collect { (id, args) -> show(id, args) } }
@@ -200,6 +202,7 @@ class MainActivity : Activity() {
 
     /** Two fingers held still for 2 s opens Android Settings (dev escape hatch, any screen). */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        UiQuiet.onTouch(ev)
         when (ev.actionMasked) {
             MotionEvent.ACTION_POINTER_DOWN -> if (ev.pointerCount == 2) handler.postDelayed(escapeHatch, 2000) else handler.removeCallbacks(escapeHatch)
             MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> handler.removeCallbacks(escapeHatch)

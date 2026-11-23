@@ -18,7 +18,6 @@ import android.graphics.RectF
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.MessageQueue
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.VelocityTracker
@@ -32,6 +31,7 @@ import app.vesper.core.design.GlassTokens
 import app.vesper.core.design.Motion
 import app.vesper.core.design.Night
 import app.vesper.core.design.PreBlur
+import app.vesper.core.design.QuietWork
 import app.vesper.core.design.withAlpha
 import app.vesper.core.model.Profile
 import app.vesper.core.model.SwitchReason
@@ -126,23 +126,27 @@ class WidgetStack(context: Context, private val services: VesperServices, val st
         if (!on) { anim?.end(); if (dragging) { dragging = false; settle(0, animate = false) } }
         current.active = on
         if (on) for (w in built.values) w.refresh() // parked ones only note that they are stale
-        Looper.myQueue().removeIdleHandler(warm)
-        if (on && built.size < WidgetStacks.ORDER.size) Looper.myQueue().addIdleHandler(warm)
     }
 
     /**
-     * Builds the widgets not built yet, one per idle moment while the page shows (never
-     * mid-gesture), attached and parked so their display lists are recorded then too.
-     * Building one costs ~10-30 ms on the Echo (cold), and its first record up to ~18 ms: done
-     * on the first slide onto it, that dropped frames (swipe p99 85 ms). Built widgets are
-     * kept for the life of the page (16 small views).
+     * Builds the widgets not built yet, one per quiet moment ([QuietWork]: no finger down, no
+     * frame for ~3 frames) from the time the page is attached, also before it first shows (the
+     * pager builds it ahead, next to StandBy). They're attached and parked, so their display
+     * lists get recorded off screen too. Building one costs ~10-30 ms on the Echo (cold), and its
+     * first record up to ~18 ms: done on the first slide onto it, that dropped frames (swipe p99
+     * 85 ms); done on plain idle moments right after the page showed, it dropped the frames of
+     * the pager's own slide. Built widgets are kept for the life of the page (16 small views).
      */
-    private val warm = MessageQueue.IdleHandler {
-        if (!shown) return@IdleHandler false
-        if (dragging || anim != null) return@IdleHandler true
-        val k = WidgetStacks.ORDER.firstOrNull { it !in built } ?: return@IdleHandler false
+    private val warm = QuietWork {
+        if (dragging || anim != null) return@QuietWork true
+        val k = WidgetStacks.ORDER.firstOrNull { it !in built } ?: return@QuietWork false
         obtain(k)
         true
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (built.size < WidgetStacks.ORDER.size) warm.start()
     }
 
     fun setNight(on: Boolean) {
@@ -298,7 +302,7 @@ class WidgetStack(context: Context, private val services: VesperServices, val st
 
     override fun onDetachedFromWindow() {
         anim?.cancel(); anim = null
-        Looper.myQueue().removeIdleHandler(warm)
+        warm.stop()
         super.onDetachedFromWindow()
     }
 
@@ -407,7 +411,12 @@ class WidgetsScreen(context: Context, private val services: VesperServices, priv
             val bmp = paint(name)
             android.util.Log.i(TAG, "baked $name in ${SystemClock.uptimeMillis() - t0} ms")
             withContext(Dispatchers.Main) {
-                if (bakedFor == name && isAttachedToWindow) { wallpaper = bmp; invalidate() } // the old one is left to the GC (a display list may hold it)
+                if (bakedFor == name && isAttachedToWindow) {
+                    wallpaper = bmp // the old one is left to the GC (a display list may hold it)
+                    // upload it to the GPU now (RenderThread, async), not in the first frame that shows the page
+                    bmp.prepareToDraw()
+                    invalidate()
+                }
                 else bmp.recycle()
             }
         }

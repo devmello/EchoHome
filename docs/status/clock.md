@@ -176,3 +176,33 @@ Measured on the Echo (debug build, `echo-perf.sh`; swipes are raw `sendevent` on
 - **`Profile.nightMode`** (null = follow Shared): `NightController` uses the person's mode while they're active (`auto` / `schedule` / `on` / `off`) and goes back to `clock.night.mode` when they leave. A Night change made then (edit mode, Control Center, the phone remote) goes into their mode if they have one, else the setting, so a person's choice never overwrites everyone's.
 - Demo: `FaceProfileManager.DEMO_MAYA` is now Liquid Glass on **Dusk** in orange (Shared is Liquid Glass on Blue), so `profiles-demo` shows the wallpaper change.
 - **Unverified on the Echo**: all of it (built and unit-tested only). To see it: `--es screen profiles-demo --es step personalized` (Maya on Dusk), then long-press for edit mode and tap the wallpaper pill; `--es screen widgets --es profile maya` for the Widgets page on her wallpaper. The pill's position (22, 410, 44 tall) wasn't checked against the face card's corner on screen.
+
+## Nov 23 early morning: first StandBy ⇄ Widgets swipes after a start
+
+**Problem.** Right after EchoHome starts, the first pager swipes between StandBy and Widgets dropped frames. Later swipes were smooth. AOT compiling (`cmd package compile -m speed`) didn't help, so it isn't JIT warm-up.
+
+**Baseline** (release build of 9e452f4, stock SystemUI config, 3 runs). Each run: force-stop, HOME relaunches, wait 20 s, `gfxinfo reset`, then 3 × (`input swipe 800 240 150 240 250`, 1.2 s, `input swipe 150 240 800 240 250`, 1.2 s). The "warm" pass repeats that in the same process.
+
+| | Frames | Janky | p50 / p90 / p95 / p99 |
+|---|---|---|---|
+| First 6 swipes, run 1 | 272 | 40.4 % | 6 / 24 / 97 / 150 ms |
+| run 2 | 275 | 37.5 % | 6 / 19 / 61 / 150 ms |
+| run 3 | 272 | 38.2 % | 6 / 20 / 61 / 150 ms |
+| **median** | 272 | **38.2 %** | **6 / 20 / 61 / 150 ms** |
+| Next 6 swipes, same process (median) | 210 | 4.3 % | 5 / 6 / 15 / 125 ms |
+
+- PSS: 44.1 MB 20 s after the start (median of 41.5 / 44.1 / 45.1 MB). After the swipes, which build Widgets and Now Playing, it was 69.0 MB (65.5 / 69.0 / 69.4 MB).
+- Time to first frame: the system relaunches HOME right after `am force-stop`, so `am start -W` reports `TotalTime: 0`. `ActivityTaskManager: Displayed app.vesper/.MainActivity` gave +1722 / 1682 / 1676 ms (median 1682 ms).
+
+**Cause** (atrace with `gfx view input am dalvik sched freq res`, main thread):
+1. **The Widgets page was built inside the first drag.** `ScreenPager` created a page's neighbours when it intercepted a drag. The first StandBy → Widgets move spent 160 ms in input (constructing `WidgetsScreen` and its two first widgets). The next frame spent 47 ms recording it.
+2. **Idle-time warm-up ran between the frames of the pager's slide.** A `MessageQueue.IdleHandler` runs whenever the queue is empty, and the queue is also empty between animation frames. Widgets showed at the moment the finger lifted, at the start of the 380 ms settle. Its stacks then built the 14 missing widgets, one per idle moment (10–30 ms each, plus a 20–65 ms first record), so frames of 30, 41, 30, 32, 21, 58 and 66 ms ran every ~160 ms. StandBy does the same on every return: it rebuilds its released neighbour faces, so each pass had one 58 ms frame (the warm pass's p99 of 125 ms).
+3. **The second swipe built Now Playing mid-drag.** Leaving Widgets also creates page 2. That cost 43 ms of input plus a 48 ms record.
+
+**Fix** (code done, **not yet measured on the Echo**; the device went offline during the lead's SystemUI change):
+- `:core:design` `UiQuiet` + `QuietWork`. The screen is quiet when no finger is down and no frame has drawn for 50 ms (about three frames). `MainActivity` installs the frame listener and feeds touches. `QuietWork` runs one small step per idle moment, only while the screen is quiet, and waits again after each step. StandBy's face warm-up and the widget stacks' warm-up now use it instead of a bare IdleHandler.
+- `ScreenPager` builds the current page's ±1 neighbours ahead, starting 2.5 s after it attaches and only on quiet moments while the pager rests. This keeps the first StandBy frame unchanged. It then records the neighbours' display lists off screen: it draws the page into a scratch `RenderNode`, so every child records its own node. It records again, on a quiet moment and at most once a second per page, when an off-screen neighbour invalidates (e.g. a widget built ahead).
+- The widget stacks warm up from attach, not only while shown. All 16 widgets are built and recorded before the first visit.
+- The baked Widgets wallpaper is uploaded with `Bitmap.prepareToDraw()` as soon as it's baked.
+
+**Still to measure:** the first 6 swipes after the fix (goal: about the warm pass's ~4 %); PSS 20 s after a start (now includes the Widgets page built ahead, about +2–5 MB expected: the 1.8 MB wallpaper plus its GPU copy and 16 small views); PSS after the swipes (should be unchanged); time to first frame (should be unchanged).
