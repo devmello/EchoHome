@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <bool name="avrcp_controller_enable_cover_art">true</bool>
+</resources>

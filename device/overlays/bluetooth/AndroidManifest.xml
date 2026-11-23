@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AVRCP 1.6 cover art (BIP) from the phone: off in this ROM. On, the art arrives as a content
+     URI from AvrcpCoverArtProvider, which BluetoothMediaSource reads. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="app.vesper.overlay.bluetooth">
+    <application android:hasCode="false" />
+    <overlay android:targetPackage="com.android.bluetooth" android:isStatic="true" android:priority="10" />
+</manifest>
