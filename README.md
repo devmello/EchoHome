@@ -39,7 +39,7 @@ Location for weather and travel: manual coordinates if you set them, otherwise k
 | `design/` | Source of every designed screen (`*.dc.html`). It's the visual spec in device pixels at 960×480, not runnable code. All data in the designs is sample data. |
 | `device/overlays/` | Optional ROM resource overlays: turn off the SystemUI volume panel and turn on Bluetooth cover art. |
 | `scripts/` | Build, install and device helper scripts. |
-| `docs/` | Architecture, per-feature status notes and assistant setup. |
+| `docs/` | Architecture, per-feature status notes, assistant setup and the [software update plan](docs/software-updates.md). |
 | `NOTES.md` | Device facts, the design system, every screen's spec and the project's decisions. |
 
 ## Building
