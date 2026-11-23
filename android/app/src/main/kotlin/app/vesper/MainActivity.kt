@@ -70,6 +70,7 @@ class MainActivity : Activity() {
             }
         }
         setContentView(root)
+        watchBars()
 
         scope.launch { app.navigator.requests.collect { (id, args) -> show(id, args) } }
         handleIntent(intent, initial = true)
@@ -165,6 +166,28 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * A swipe from the screen edge (e.g. opening Control Center) shows the system bars for a moment.
+     * With the status bar disabled (SystemBars) SystemUI no longer hides them again, and the visible
+     * status bar then covers the top edge, so the next Control Center swipe never reaches us. Asking
+     * for them visible then hidden ends the transient reveal (InsetsPolicy aborts it) and hides them.
+     */
+    private val rehideBars = Runnable {
+        if (hasWindowFocus()) window.insetsController?.let {
+            it.show(WindowInsets.Type.systemBars())
+            it.hide(WindowInsets.Type.systemBars())
+        }
+    }
+
+    private fun watchBars() {
+        window.decorView.setOnApplyWindowInsetsListener { v, insets ->
+            handler.removeCallbacks(rehideBars)
+            if (insets.isVisible(WindowInsets.Type.statusBars()) || insets.isVisible(WindowInsets.Type.navigationBars()))
+                handler.postDelayed(rehideBars, BARS_REHIDE_MS)
+            v.onApplyWindowInsets(insets)
+        }
+    }
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         for (h in app.keyHandlers) if (h.onKey(event)) return true
         return super.dispatchKeyEvent(event)
@@ -208,6 +231,8 @@ class MainActivity : Activity() {
         scope.cancel()
         super.onDestroy()
     }
+
+    private companion object { const val BARS_REHIDE_MS = 2_500L }
 
     /** We're the launcher: Back closes a top screen, or goes to StandBy. */
     @Deprecated("Deprecated in Java")
