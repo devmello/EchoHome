@@ -84,6 +84,14 @@ object Icons {
     val close by lazy { Icon("M6 6l12 12M18 6 6 18", stroke = 2.8f) }
     val phone by lazy { Icon("M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z", fill = true) }
     val video by lazy { Icon("M3 7.5A1.5 1.5 0 0 1 4.5 6h9A1.5 1.5 0 0 1 15 7.5v9a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 3 16.5zM16 10.5l4.2-2.6a.5.5 0 0 1 .8.4v7.4a.5.5 0 0 1-.8.4L16 13.5z", fill = true) }
+    /** Island "Leave now" (viewBox 24, stroked). */
+    val car by lazy { Icon("M5 11l1.6-4.3A2 2 0 0 1 8.5 5.5h7a2 2 0 0 1 1.9 1.2L19 11M3.5 11h17A1.5 1.5 0 0 1 22 12.5V16a1 1 0 0 1-1 1h-1M4 17H3a1 1 0 0 1-1-1v-3.5A1.5 1.5 0 0 1 3.5 11M8.5 17h7M9 17.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM20 17.5a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0z") }
+    /** Island "Rain soon": cloud with three drops. */
+    val rain by lazy { Icon("M7 14a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 7.5 3.5 3.5 0 0 1 17.5 14H7zM8.5 17l-1 3M12.5 17l-1 3M16.5 17l-1 3") }
+    val umbrella by lazy { Icon("M12 3a9 9 0 0 1 9 9H3a9 9 0 0 1 9-9zM12 12v6a2 2 0 0 1-4 0M12 3V2") }
+    /** Island "Phone battery": the handset outline (viewBox 24, stroked). */
+    val handset by lazy { Icon("M8 2.5h8A1.5 1.5 0 0 1 17.5 4v16a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 20V4A1.5 1.5 0 0 1 8 2.5zM10.5 18.5h3") }
+    val bolt by lazy { Icon("M13.5 2 5 13.5h6L10 22l9-12h-6z", fill = true) }
     val alarm by lazy { Icon("M12 7v5l3 2M5 3 2 6M22 6l-3-3M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z") }
 
     // Banners.dc.html app glyphs (viewBox 24, stroked)

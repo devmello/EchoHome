@@ -16,7 +16,7 @@ import app.vesper.core.model.MediaSourceKind
  * Debug-only demo activities for the island (the producers are other agents' features), matching
  * Island.dc.html's scenes. Launch with `--es island <scene>` or
  * `adb shell am broadcast -a app.vesper.system.DEBUG --es island <scene>`:
- * story · timer · music+timer · assistant · doorbell · call · iphonecall · bluetooth · nowplaying · off.
+ * story · timer · music+timer · assistant · doorbell · call · iphonecall · bluetooth · nowplaying · leave · rain · battery · battery-low · off.
  * (`iphonecall`/`bluetooth` stand in for `:feature:phone`: an ANCS call has Decline/Silence only.)
  */
 internal class IslandDemo(private val island: IslandManager) {
@@ -53,6 +53,10 @@ internal class IslandDemo(private val island: IslandManager) {
             "call" -> listOf(music(), call())
             "iphonecall" -> listOf(bluetooth(), iphoneCall())
             "bluetooth", "bt" -> listOf(bluetooth())
+            "leave" -> listOf(leave())
+            "rain" -> listOf(rain())
+            "battery" -> listOf(battery(82, true))
+            "battery-low" -> listOf(battery(14, false))
             "nowplaying", "music" -> listOf(music(), timer())
             else -> emptyList()
         }
@@ -91,6 +95,18 @@ internal class IslandDemo(private val island: IslandManager) {
 
     private fun bluetooth() = LiveActivity("${PREFIX}bluetooth", ActivityKind.BLUETOOTH_CONNECTED,
         LiveContent.BluetoothConnected("Maya’s iPhone", audio = true, notifications = true))
+
+    private fun leave(): LiveActivity {
+        val at = System.currentTimeMillis() + 8 * 60_000L
+        return LiveActivity("${PREFIX}leave", ActivityKind.LEAVE_NOW,
+            LiveContent.LeaveNow("Dentist with Maya", at, 25, "Elm Street Dental"),
+            actions = listOf(IslandAction("dismiss", "Dismiss") { island.end("${PREFIX}leave") }))
+    }
+
+    private fun rain() = LiveActivity("${PREFIX}rain", ActivityKind.WEATHER_ALERT, LiveContent.RainSoon(20))
+
+    private fun battery(pct: Int, charging: Boolean) = LiveActivity("${PREFIX}battery", ActivityKind.PHONE_BATTERY,
+        LiveContent.PhoneBattery("Maya’s iPhone", pct, charging))
 
     companion object { const val PREFIX = "demo:" }
 }

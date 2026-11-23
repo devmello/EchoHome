@@ -18,6 +18,9 @@ internal object SystemSettings {
     const val DND_CRITICAL = "system.dnd.critical"        // doorbell / alarm / calls still show in DND
     const val HUD_SECONDS = "system.hud.seconds"
     const val HUD_BADGES = "system.hud.badges"            // red mic/camera badges top-right
+    const val SCREENOFF_ENABLED = "system.screenoff.enabled" // blank the screen when the room is empty
+    const val SCREENOFF_MINUTES = "system.screenoff.minutes"
+    const val SCREENOFF_SAVED = "system.screenoff.saved"      // internal: brightness to restore if we died while dark
     const val CC_AIRPLAY = "system.cc.airplay"            // read by :feature:airplay
 
     fun bannerShowMs(s: SettingsStore) = (s.getFloat(BANNER_SECONDS, 5f).coerceIn(2f, 30f) * 1000).toLong()
@@ -28,6 +31,10 @@ internal object SystemSettings {
             SettingSpec(ISLAND_LOOK, "Echo Island look", SettingType.CHOICE, "glass",
                 help = "The live-activity capsule at the top of the screen.",
                 options = listOf("glass" to "Glass", "black" to "Black")),
+            SettingSpec(SCREENOFF_ENABLED, "Turn the screen off when the room is empty", SettingType.BOOLEAN, "true",
+                help = "Needs camera presence. The screen goes black and the backlight to minimum; the camera keeps watching, and a touch, someone arriving, an alarm, a call or the doorbell wakes it."),
+            SettingSpec(SCREENOFF_MINUTES, "Turn it off after (minutes)", SettingType.FLOAT, "15",
+                help = "How long the room has to stay empty first.", min = 1f, max = 120f, step = 1f),
         )),
         SettingsSection("system.notifications", "Notifications", 30, listOf(
             SettingSpec(BANNERS_ENABLED, "Show banners", SettingType.BOOLEAN, "true",

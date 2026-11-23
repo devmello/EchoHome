@@ -44,6 +44,9 @@ internal class SystemUi(val app: Context, val services: VesperServices) {
     /** Island hit areas in window px (main + bead); Control Center's edge pull ignores touches there. */
     val islandHitAreas = mutableListOf<RectF>()
 
+    /** The "screen off when the room is empty" overlay (set while attached): keys wake it. */
+    var screenOff: app.vesper.feature.system.screenoff.ScreenOffOverlay? = null
+
     /** Debug commands (see DebugReceiver): "island" → scene, "hud" → kind, "banner" → index, "cc" → open/close. */
     val debug = MutableStateFlow<Bundle?>(null)
 

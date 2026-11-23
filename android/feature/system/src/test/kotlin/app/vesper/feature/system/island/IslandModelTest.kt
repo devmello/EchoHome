@@ -111,4 +111,22 @@ class IslandModelTest {
         assertEquals(IslandMode.COMPACT, m.tapBead().mode)
         assertEquals(IslandMode.COMPACT, IslandModel().apply { update(visible(bt)) }.tapMain().mode)
     }
+
+    @Test fun leaveNowExpandsOnItsOwnAndCollapsesToCompact() {
+        val leave = LiveActivity("leave", ActivityKind.LEAVE_NOW, LiveContent.LeaveNow("Dentist", 1_000_000, 25))
+        val m = IslandModel()
+        val l = m.update(visible(leave))
+        assertEquals(IslandMode.EXPANDED, l.mode)                       // alerts expand on their own
+        assertEquals(IslandModel.expandedBox(ActivityKind.LEAVE_NOW), l.box)
+        assertEquals(IslandMode.COMPACT, m.collapse().mode)
+        assertEquals(IslandMode.EXPANDED, m.tapMain().mode)             // and tap expands it again
+    }
+
+    @Test fun rainAndPhoneBatteryAreCompactOnly() {
+        val rain = LiveActivity("rain", ActivityKind.WEATHER_ALERT, LiveContent.RainSoon(20))
+        val bat = LiveActivity("bat", ActivityKind.PHONE_BATTERY, LiveContent.PhoneBattery("Phone", 14, false))
+        assertEquals(IslandMode.COMPACT, IslandModel().apply { update(visible(rain)) }.tapMain().mode)
+        assertEquals(IslandMode.COMPACT, IslandModel().apply { update(visible(bat)) }.tapMain().mode)
+        assertEquals(IslandBox(190f, 44f, 22f), IslandModel().update(visible(bat)).box)
+    }
 }
