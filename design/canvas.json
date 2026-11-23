@@ -47,10 +47,11 @@
     "Lamp.dc.html": {
       "h": 480,
       "radius": 20,
-      "title": "Lamp · controls",
+      "title": "Lamp · light detail (interactive)",
       "w": 960,
       "x": 1040,
-      "y": 600
+      "y": 600,
+      "is_interactive": true
     },
     "Night.dc.html": {
       "h": 480,

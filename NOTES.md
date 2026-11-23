@@ -85,7 +85,7 @@ All artboards are **960×480**, the Echo's native resolution, so the px values m
 | Stocks | `Stocks.dc.html` | Designed | Featured chart with area fill + 5-symbol watchlist with sparklines and change pills. Market-closed state on weekends. **Prices are demo data.** |
 | Echo Island (live) | `Island.dc.html` | Designed | Dynamic-Island-style live surface. Tweaks: `scene` (Story cycle, Timer, Music + timer, Assistant, Doorbell, Call, Now Playing expanded), `look` (Liquid Glass / Black), `background`. Tap to expand. See §5.4. |
 | Echo Island (states sheet) | `IslandSheet.dc.html` | Designed | 1440×1060 spec sheet: all island states side by side, with sizes. |
-| Lamp | `Lamp.dc.html` | **Old style** | Not yet redesigned to the current system. |
+| Lamp | `Lamp.dc.html` | Designed (redesigned Nov 23, 2026) | One light in detail, opened by a long press on the Home lamp tile. Tall glass brightness slider filled with the light's own colour, On/Off pill, warm ↔ cool track with 7 colour swatches (5 whites on white-only lights, brightness steps on dim-only), Reading / Relax / Night light presets, the room's other lights with switches. Tweaks: `kind` (Colour / White / Dim only), `night`. |
 
 **All data in the designs is sample data:** weather, events, the "Santa Cruz" location, world-clock cities, the 7:00 alarm, and the tracks/artists/album art (all made up, original artwork). **"Hey Nova" is a placeholder wake word.**
 
@@ -95,7 +95,6 @@ All artboards are **960×480**, the Echo's native resolution, so the px values m
 - **Communication:** full-screen incoming call and video call, full-screen doorbell with live camera, intercom/announcement. (The island already has compact/expanded doorbell and call states.)
 - **Home:** camera grid, lock confirmation, thermostat detail.
 - **Everyday:** reminders and shopping list, sleep sounds / wind-down.
-- Redesign Lamp to the current system.
 
 ---
 

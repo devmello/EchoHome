@@ -75,6 +75,15 @@ The module works with **no Home Assistant and no API keys**. Weather, calendar, 
   - Thermostat +/- taps are debounced into one `set_temperature` (700 ms). heat_cool modes send both ends.
   - The lamp tile drags in 5 % steps, and 0 % turns it off. The active scene is the most recently activated one.
   - Night mode uses the red outline and ink.
+- **Lamp screen** (`lamp`, not in the pager; `lamp/`, design `design/Lamp.dc.html`, redesigned Nov 23):
+  - Opened by a **long press (450 ms) on the Home lamp tile**, or a tap on its bulb icon. A drag still sets brightness and cancels the long press; a tap elsewhere still sets 5 % steps. Back (system Back, or the chevron) returns to Home.
+  - One light in detail over the Home wallpaper: a 156×380 brightness slider whose fill is the light's own colour (its white, its colour, or 2700 K for dim-only lights), drag relative / tap in 5 % steps; an On/Off pill; a warm ↔ cool track over the light's own kelvin range; swatches; three presets (Reading 100 % 4000 K, Relax 50 % 2700 K, Night light 5 % 2200 K, clamped to the light's range; the matching one turns white); the room's other lights (max 4) with switches, and a tap on a row shows that light.
+  - What shows follows `supported_color_modes` (legacy `supported_features` 1/2/16 as fallback): colour (`hs`/`xy`/`rgb*`) → track + 7 colours; `color_temp` → track + 5 whites; brightness/white → steps 10/25/50/75/100 %; `onoff` → a note, presets dimmed, the slider toggles.
+  - HA calls (`LightCalls`): `light.turn_on` with `brightness_pct`, `color_temp_kelvin` (rounded to 50 K, clamped to `min/max_color_temp_kelvin`, else mireds, else 2000–6500), `rgb_color` (HA converts to hs/xy); 0 % → `light.turn_off`. The current white / colour is read by `color_mode` (HA fills `rgb_color` in every mode). Same optimistic update + rollback as the Home tiles (`LampController`): the patch is the state HA should report (`LightCalls.expected`), rolled back with "Couldn't change X" on an error, dropped when HA reports or after 5 s.
+  - Sliders and the track preview locally and send one call on release. Shadows baked into the wallpaper once; tiles redraw only on change; labels (`0%`…`100%`, `2700 K`), paths and shaders are cached, nothing allocated per frame. Stops following HA in `onScreenHidden`.
+  - Night mode: black, red ink, glass as red outlines, swatches as red rings.
+  - No `entity` argument: the first dimmable light of the Home screen's selected room, else the first dimmable light.
+  - Demo home: the bedside lamp is now a colour bulb (2700 K), and the bedroom gained "Reading light" (white-only, 40 %, 4000 K) and "Strip light" (colour, purple, 80 %). The Home tiles are unchanged (toggles are still Air purifier and Ceiling). The demo's `light.*` services use `LightCalls.expected`, so kelvin and colours change the demo state.
 - **Demo Home**: in demo mode without HA, `home` is still registered with an in-memory home that matches the design (Bedroom / Living / Kitchen). It is marked "Demo data · connect Home Assistant for your home". Taps work and change the demo state.
 - **Doorbell**, only with HA (or in the demo via a launch extra):
   - Watches the doorbell for a ring. It auto-detects a `binary_sensor` going off → on, or a new state on an `event.*` doorbell. `home.doorbell.entity` overrides the detection.
@@ -90,7 +99,8 @@ The module works with **no Home Assistant and no API keys**. Weather, calendar, 
   - **Commute** (40): where to, destination, arrive by, name, arrive early by; advanced: look-ahead hours, start from (LOCATION).
   - **Stocks** (50): watchlist (TEXT_LIST).
   - **Home Assistant** (60): room order; advanced: doorbell entity, camera, lock, talk script.
-- **Unit tests**: 46 JVM tests in `src/test`, all passing.
+- **Unit tests**: 95 JVM tests in `src/test` (whole module, Nov 23), all passing.
+  - Lamp (`LampTest.kt`, 14): kinds from `supported_color_modes` and legacy features; brightness / kelvin / mireds / colour read by `color_mode`; the call mapping (brightness_pct, 0 → turn_off, no brightness on on/off lights, kelvin rounded and clamped, colour lights take kelvin, rgb_color, presets clamped); the expected state after each call; hue matching; the presenter's room list on the demo home; the controller's default light, optimistic kelvin → confirmed, colour + preset on the demo home, rollback with the error, room-list switches.
   - Location: precedence (manual > demo > auto > San Francisco), `weather.location` over the old keys, the resolver flow, the daily cache, failure keeping the cache, failure with no cache → San Francisco, forced-lookup rate limit, the 150 km hold-back and its repeat, the ipapi.co → ipwho.is fallback with reverse geocoding, and the release provider fetching San Francisco → the auto place after a network change → the manual place.
   - ICS: zones, folding, all-day, weekly BYDAY+COUNT+EXDATE, daily UNTIL across DST, monthly 2TU / -1FR / 31st, overrides, skip-ahead.
   - Home model: registry and room grouping, tile mapping, presenter, SVG path parser.
@@ -111,6 +121,8 @@ The module works with **no Home Assistant and no API keys**. Weather, calendar, 
   - Quiet hours (the user is asleep) rule out a doorbell test on the device.
   - The flow is covered end to end by `DoorbellTest` (the real HA client against a mock HA).
 - HA screens are registered at install. If HA secrets are added later on the settings page, the Home screen appears after the next app start, because `:app` binds the HA client at startup.
+
+- **Lamp screen, not yet on the Echo** (built and JVM-tested only): screenshots, frame times and PSS are still to measure; the long press on the Home tile and the drag on the big slider haven't been tried by hand; Night mode not seen. Against a real HA: color_temp_kelvin on a colour-only bulb, and the hue match of the selected swatch after HA renormalises the colour, are only unit-tested.
 
 ## Measured on the Echo
 
@@ -193,7 +205,19 @@ Nothing beyond installing the app. For debugging, the same settings can also be 
   --es home.set "'weather.location=37.77,-122.42;weather.location.place=San Francisco;commute.destination=Oakland, CA'"
 ```
 
-Screens: `--es screen home|commute|stocks`. Doorbell demo (makes no sound itself, but don't run it during quiet hours): `--es screen home --es doorbell ring`.
+Screens: `--es screen home|commute|stocks|lamp`.
+
+Lamp screen states (demo data, or a real HA entity id):
+
+| Extras | Shows |
+|---|---|
+| `--es screen lamp --es entity light.bedside_lamp` | Colour bulb, 60 %, warm white 2700 K: track + 7 colours, room list (Ceiling off, Reading light, Strip light) |
+| `--es screen lamp --es entity light.strip_light` | Colour light showing a colour (Purple, 80 %): no thumb, Purple swatch ringed |
+| `--es screen lamp --es entity light.reading_light` | White-only light, 40 % at 4000 K: track + 5 whites |
+| `--es screen lamp --es entity light.floor_lamp` | White-only, Living Room, 35 % at 3000 K, room list with TV light |
+| `--es screen lamp --es entity light.pendants` | Dim-only, Kitchen, 80 %: brightness steps |
+| `--es screen lamp --es entity light.ceiling` | On/off-only light, off: note, presets dimmed |
+| add `--es night on` | Night mode (red) | Doorbell demo (makes no sound itself, but don't run it during quiet hours): `--es screen home --es doorbell ring`.
 
 ## Nov 22 evening batch (air/UV/pollen, nowcast, alerts, travel, brief, per-person calendars)
 

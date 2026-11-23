@@ -24,6 +24,7 @@ import app.vesper.feature.home.glance.NetworkChanges
 import app.vesper.feature.home.glance.OpenMeteoWeatherProvider
 import app.vesper.feature.home.ha.DemoHomeAssistant
 import app.vesper.feature.home.home.HomeScreenView
+import app.vesper.feature.home.lamp.LampScreenView
 import app.vesper.feature.home.stocks.StocksView
 
 /**
@@ -36,6 +37,7 @@ import app.vesper.feature.home.stocks.StocksView
  *  - Commute (order 40): Nominatim + OSRM, no key. Stocks (order 50): Yahoo chart, no key.
  *  - Home (order 20) + doorbell: only with Home Assistant configured. In demo mode without HA the
  *    Home screen still shows, driven by [DemoHomeAssistant] and labelled demo.
+ *  - Lamp (`lamp`, not in the pager): one light in detail, opened from the Home lamp tile. Same rules.
  */
 object HomeFeature : VesperFeature {
     override val id = "home"
@@ -86,9 +88,12 @@ object HomeFeature : VesperFeature {
             // services.homeAssistant is bound by :app before install when HA is configured.
             doorbell = DoorbellWatcher(s.homeAssistant, s.settings, s.notifications, s.island, s.scope).also { it.start() }
             host.registerScreen(ScreenSpec("home", order = 20) { ctx -> HomeScreenView(ctx, host.services, host.services.homeAssistant, demo = false) })
+            // Light detail, opened from the Home lamp tile (long press) or `--es screen lamp --es entity <id>`.
+            host.registerScreen(ScreenSpec(LampScreenView.SCREEN_ID, order = 25, inPager = false) { ctx -> LampScreenView(ctx, host.services, host.services.homeAssistant, demo = false) })
         } else if (s.config.demoData) {
+            host.registerScreen(ScreenSpec(LampScreenView.SCREEN_ID, order = 25, inPager = false) { ctx -> LampScreenView(ctx, host.services, demoHome(host), demo = true) })
             host.registerScreen(ScreenSpec("home", order = 20) { ctx ->
-                val ha = DemoHomeAssistant(host.services.scope).also { demoHa = it }
+                val ha = demoHome(host)
                 object : HomeScreenView(ctx, host.services, ha, demo = true, defaults = DemoHomeAssistant::demoDefaults) {
                     override fun onScreenShown(args: Bundle?) {
                         super.onScreenShown(args)
@@ -118,6 +123,9 @@ object HomeFeature : VesperFeature {
             }
         }
     }
+
+    /** One demo home for the Home and Lamp screens, so both show (and change) the same lights. */
+    private fun demoHome(host: FeatureHost): DemoHomeAssistant = demoHa ?: DemoHomeAssistant(host.services.scope).also { demoHa = it }
 
     private fun demoRing(host: FeatureHost) {
         val ha = demoHa ?: return

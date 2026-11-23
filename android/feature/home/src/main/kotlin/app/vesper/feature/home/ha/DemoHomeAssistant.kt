@@ -5,6 +5,8 @@ import app.vesper.core.model.HaEntity
 import app.vesper.core.model.HaException
 import app.vesper.core.model.HomeAssistant
 import app.vesper.feature.home.home.Slot
+import app.vesper.feature.home.lamp.LightCalls
+import app.vesper.feature.home.lamp.ServiceCall
 import java.time.OffsetDateTime
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -64,10 +66,12 @@ class DemoHomeAssistant(private val scope: CoroutineScope, private val latencyMs
         val a = JSONObject(e.attributes.toString())
         var state = e.state
         when ("$domain.$service") {
-            "light.turn_on" -> { state = "on"; data?.optInt("brightness_pct", -1)?.takeIf { it >= 0 }?.let { a.put("brightness", it * 255 / 100) }
-                if (!a.has("brightness") || a.isNull("brightness")) a.put("brightness", 255) }
-            "light.turn_off" -> { state = "off"; a.remove("brightness") }
-            "light.toggle", "switch.toggle", "fan.toggle" -> state = if (state == "on") "off" else "on"
+            // Brightness, color_temp_kelvin and rgb_color, as HA reports them (the Lamp screen's mapping).
+            "light.turn_on", "light.turn_off", "light.toggle" -> {
+                val after = LightCalls.expected(e, ServiceCall(domain, service, id, data))
+                state = after.state; after.attributes.keys().forEach { k -> a.put(k, after.attributes.get(k)) }
+            }
+            "switch.toggle", "fan.toggle" -> state = if (state == "on") "off" else "on"
             "switch.turn_on", "fan.turn_on", "input_boolean.turn_on" -> state = "on"
             "switch.turn_off", "fan.turn_off", "input_boolean.turn_off" -> state = "off"
             "climate.set_temperature" -> data?.keys()?.forEach { k -> a.put(k, data.get(k)) }
@@ -112,6 +116,7 @@ class DemoHomeAssistant(private val scope: CoroutineScope, private val latencyMs
         private val ENTITY_AREAS = mapOf(
             "climate.thermostat" to "hallway",
             "light.bedside_lamp" to "bedroom", "light.ceiling" to "bedroom", "fan.air_purifier" to "bedroom",
+            "light.reading_light" to "bedroom", "light.strip_light" to "bedroom",
             "light.floor_lamp" to "living_room", "light.tv_backlight" to "living_room", "switch.speakers" to "living_room",
             "light.pendants" to "kitchen", "light.under_cabinet" to "kitchen", "switch.coffee_maker" to "kitchen",
             "scene.good_morning" to null, "scene.movie" to null, "scene.sleep" to null, "scene.away" to null,
@@ -137,10 +142,17 @@ class DemoHomeAssistant(private val scope: CoroutineScope, private val latencyMs
                 ent("climate.thermostat", "heat", "friendly_name" to "Thermostat", "temperature" to 68, "current_temperature" to 66,
                     "hvac_action" to "heating", "min_temp" to 50, "max_temp" to 90, "target_temp_step" to 1,
                     "hvac_modes" to modes("heat", "cool", "heat_cool", "off")),
-                ent("light.bedside_lamp", "on", "friendly_name" to "Bedside lamp", "brightness" to 153, "supported_color_modes" to modes("brightness")),
+                // Lamp.dc.html's sample: a colour bulb at 60 % in warm white (2700 K).
+                ent("light.bedside_lamp", "on", "friendly_name" to "Bedside lamp", "brightness" to 153, "supported_color_modes" to modes("color_temp", "hs"),
+                    "color_mode" to "color_temp", "color_temp_kelvin" to 2700, "min_color_temp_kelvin" to 2000, "max_color_temp_kelvin" to 6500),
+                ent("light.reading_light", "on", "friendly_name" to "Reading light", "brightness" to 102, "supported_color_modes" to modes("color_temp"),
+                    "color_mode" to "color_temp", "color_temp_kelvin" to 4000, "min_color_temp_kelvin" to 2200, "max_color_temp_kelvin" to 6500),
+                ent("light.strip_light", "on", "friendly_name" to "Strip light", "brightness" to 204, "supported_color_modes" to modes("hs"),
+                    "color_mode" to "hs", "hs_color" to JSONArray().put(280.0).put(63.0), "rgb_color" to JSONArray().put(191).put(90).put(242)),
                 ent("light.ceiling", "off", "friendly_name" to "Ceiling", "supported_color_modes" to modes("onoff")),
                 ent("fan.air_purifier", "on", "friendly_name" to "Air purifier", "preset_mode" to "auto", "percentage" to 25),
-                ent("light.floor_lamp", "on", "friendly_name" to "Floor lamp", "brightness" to 89, "supported_color_modes" to modes("color_temp")),
+                ent("light.floor_lamp", "on", "friendly_name" to "Floor lamp", "brightness" to 89, "supported_color_modes" to modes("color_temp"),
+                    "color_mode" to "color_temp", "color_temp_kelvin" to 3000, "min_color_temp_kelvin" to 2200, "max_color_temp_kelvin" to 6500),
                 ent("light.tv_backlight", "on", "friendly_name" to "TV light", "supported_color_modes" to modes("onoff")),
                 ent("switch.speakers", "off", "friendly_name" to "Speakers"),
                 ent("light.pendants", "on", "friendly_name" to "Pendants", "brightness" to 204, "supported_color_modes" to modes("brightness")),
