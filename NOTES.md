@@ -352,6 +352,14 @@ The user picked the "slimmed-down LineageOS" option over a custom firmware. A RO
 - **Platform key:** with test keys, EchoHome could be signed with the AOSP platform key and run as the system user (no init file for the mic latch). Moving to it means reinstalling the app, which loses its data, so it's not done.
 - The camera HAL once came up half-initialised after a reboot (10 metadata entries, no stream configurations). The app crashed in a loop on it; `Camera2Source` now catches it and retries later.
 
+### 7.3 Lean SystemUI (Nov 23, 2026)
+
+SystemUI was the biggest process after system_server (about 63 MB PSS) and it can't be turned off (§7.2). It can be started in its **Android TV configuration** instead. AOSP ships that in the same APK (`values-television`): `TvSystemUIFactory` and a 15-component list without the phone `StatusBar` (status bar, navigation bar, shade, Quick Settings), `KeyguardViewMediator`, `Recents`, `ScreenDecorations`, `GlobalActions` and biometrics. `device/overlays/systemui-lean` sets those two values on this phone build. It keeps notification channels, toasts, the ringtone player, storage and power warnings, and SystemUI's dialogs (wireless/USB debugging approval).
+
+- **Switch:** `./scripts/echo-systemui-lean.sh on|off|status` enables or disables the overlay and restarts SystemUI, with no reboot. The overlay isn't static; `echo-overlays.sh --install` puts it in `/system/product/overlay`, disabled. Its state survives reboots.
+- **No navigation bar means no way out of Android Settings,** so EchoHome shows an "EchoHome" pill at the bottom while another app is in front (`HomeButton.kt`, only when there's no navigation bar). It needs the `SYSTEM_ALERT_WINDOW` app-op, which `echo-system-install.sh` sets.
+- **Results:** see `docs/status/system.md` (memory before/after, what was checked).
+
 ## 8. Suggested build order (for Claude Code)
 
 0. **Setup:** on the Mac you need JDK 17 + the Android SDK (Android Studio or command-line tools; check what's installed). Create a Kotlin app: `minSdk 30`, `targetSdk 30`, ABI `armeabi-v7a` only, landscape 960×480. Install it with `./platform-tools/adb -s "$(cat .echo-serial)" install -r …`. Register a HOME activity and make it the default launcher. Keep Launcher3 installed as a fallback.

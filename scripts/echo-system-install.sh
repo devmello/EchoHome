@@ -48,6 +48,8 @@ echo "Installed; rebooting..."
 adb_echo reboot || true
 wait_boot
 adb_echo shell cmd package set-home-activity "$HOME_ACTIVITY" >/dev/null 2>&1 || true
+# The "EchoHome" pill over other apps when there's no navigation bar (lean SystemUI, HomeButton.kt).
+adb_echo shell cmd appops set app.vesper SYSTEM_ALERT_WINDOW allow || true
 echo "--- verify"
 adb_echo shell "dumpsys package app.vesper | grep -E 'codePath|pkgFlags|privateFlags' | head -6
   dumpsys input | grep -A3 ': gating' | grep -i KeyLayoutFile
