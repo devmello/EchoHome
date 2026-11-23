@@ -358,7 +358,8 @@ SystemUI was the biggest process after system_server (about 63 MB PSS) and it ca
 
 - **Switch:** `./scripts/echo-systemui-lean.sh on|off|status` enables or disables the overlay and restarts SystemUI, with no reboot. The overlay isn't static; `echo-overlays.sh --install` puts it in `/system/product/overlay`, disabled. Its state survives reboots.
 - **No navigation bar means no way out of Android Settings,** so EchoHome shows an "EchoHome" pill at the bottom while another app is in front (`HomeButton.kt`, only when there's no navigation bar). It needs the `SYSTEM_ALERT_WINDOW` app-op, which `echo-system-install.sh` sets.
-- **Results:** see `docs/status/system.md` (memory before/after, what was checked).
+- **First try, Nov 23 05:39 (overlay only, KeyguardService left on): it failed.** SystemUI went from 68 MB to 37 MB PSS, but it crashed on every wake-up the window manager sent it (NPE in `StatusBarKeyguardViewManager.onStartedWakingUp`, called through `KeyguardViewMediator`: the keyguard needs the phone `StatusBar`). Within about 3 minutes the Echo dropped off the network, most likely because Android's RescueParty saw the persistent app crash-looping and escalated to the "Can't load Android system / Try again / Factory data reset" recovery prompt. Wireless adb is gone there, so someone has to tap **Try again** on the Echo (never Factory data reset). A watcher undoes the overlay as soon as adb is back.
+- **Before trying again:** `echo-systemui-lean.sh on` now also disables `KeyguardService` and reboots, so the window manager takes its keyguard-less path at boot. Also set `persist.sys.disable_rescue=true` first: a crash loop then stays a crash loop with adb reachable, instead of a recovery prompt that needs someone at the Echo.
 
 ## 8. Suggested build order (for Claude Code)
 
