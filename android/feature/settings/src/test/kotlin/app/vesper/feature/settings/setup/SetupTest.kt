@@ -167,3 +167,44 @@ class SetupChoicesTest {
         assertEquals("assistant.wakeWord", SetupChoices.KEY_WAKE_WORD)
     }
 }
+
+class SetupResumeTest {
+    private fun SetupResume.feed(needed: Boolean, vararg ids: String) = ids.map { onScreen(it, needed) }
+
+    @Test fun firstRunComesBackAtStandByAfterAnotherScreen() {
+        val r = SetupResume()
+        // Setup open, then `--es screen lamp`, then Back from the lamp: the setup opens again at StandBy.
+        assertEquals(listOf(false, false, false, true), r.feed(true, "standby", "onboarding", "lamp", "standby"))
+        // Shown again: nothing owed any more.
+        assertEquals(listOf(false, false), r.feed(true, "onboarding", "onboarding"))
+    }
+
+    @Test fun transientStandByStaysOwedUntilShown() {
+        val r = SetupResume()
+        // The shell passes StandBy while it swaps the top screen: the caller re-checks after a
+        // post (it's the lamp by then), and the next real StandBy asks again.
+        assertEquals(listOf(false, true, false, true), r.feed(true, "onboarding", "standby", "lamp", "standby"))
+        assertEquals(listOf(false, false, false), r.feed(true, "onboarding", "profiles-enrol", "onboarding"))
+    }
+
+    @Test fun faceEnrolmentIsPartOfTheSetup() {
+        val r = SetupResume()
+        assertEquals(listOf(false, false, false, false), r.feed(true, "onboarding", "profiles-enrol", "onboarding", "profiles-enrol"))
+        // Enrolment left straight to StandBy: back to the setup.
+        assertTrue(r.onScreen("standby", true))
+    }
+
+    @Test fun reviewOrFinishedSetupStaysClosed() {
+        val r = SetupResume()
+        assertEquals(listOf(false, false, false), r.feed(false, "onboarding", "lamp", "standby"))
+        // First-run setup interrupted, then finished or skipped (needed false): nothing owed, even
+        // after "Run setup again" makes it needed again.
+        r.feed(true, "onboarding", "lamp")
+        assertFalse(r.onScreen("standby", false))
+        assertFalse(r.onScreen("standby", true))
+    }
+
+    @Test fun otherScreensNeverOpenIt() {
+        assertEquals(listOf(false, false, false, false), SetupResume().feed(true, "standby", "lamp", "standby", "nowplaying"))
+    }
+}

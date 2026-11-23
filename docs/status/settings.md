@@ -17,7 +17,8 @@ A paged, skippable setup for a fresh Echo. Code: `feature/settings/.../setup/` (
 
 ### When it shows
 - `SetupFeature` is **first in `FeatureList`** (`:app`). At install it reads the settings store's SharedPreferences (`echo_settings`): no keys at all = fresh install. It writes `setup.done` (BOOLEAN) right away: `false` on a fresh install, `true` on an Echo that already has settings, so the user's Echo is never interrupted and the answer never flips on its own later (other features write keys during their first start).
-- Fresh install: the setup opens over StandBy on the first launch of the HOME activity (not when the launch intent names a `screen`), and on every start until Done or "Skip setup".
+- Fresh install: the setup opens over StandBy on the first launch of the HOME activity (not when the launch intent names a `screen`, nor when a second intent opened a screen before the posted open ran, e.g. `am start --es screen X` right after the system started HOME by itself), and on every start until Done or "Skip setup".
+- **Another screen opens** (a later `--es screen lamp`, an alarm ringing, a banner tap): the shell closes the setup and shows that screen; `setup.done` doesn't change. The **first-run** setup (`setup.done=false`) comes back at the step it was on as soon as the Echo is back at StandBy (`SetupResume`; face enrolment doesn't count as leaving). A **review** on a set-up Echo stays closed. Decided this way because the first-run setup has to be finished or skipped, but must never hide an alarm or a screen someone asked for.
 - **Run setup again:** General › "Run setup again" (ACTION `setup.runAgain`) on the settings page sets `setup.done=false` and opens it at Welcome.
 - Review on the Echo without touching `setup.done`: `--es screen onboarding` (Welcome), `--es screen onboarding --es step <n>` with `n` = 1..8 or `welcome|wifi|name|location|phone|people|clock|done`. Only Done and "Skip setup" write `setup.done=true`.
 
