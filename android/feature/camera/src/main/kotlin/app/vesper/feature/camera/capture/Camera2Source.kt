@@ -61,11 +61,16 @@ class Camera2Source(
             } ?: manager.cameraIdList.firstOrNull()
         } catch (e: Exception) { onError("cameraIdList: $e"); return } ?: run { onError("no camera"); return }
 
-        val ch = manager.getCameraCharacteristics(id)
-        hardwareLevel = ch.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL) ?: -1
-        val map = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-        offeredSizes = map?.getOutputSizes(ImageFormat.YUV_420_888)?.map { it.width to it.height }.orEmpty()
-        offeredFps = ch.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)?.map { it.lower to it.upper }.orEmpty()
+        // A camera HAL that came up half-initialised (seen after a reboot, Nov 23 2026: 10 metadata
+        // entries, no stream configurations) makes the framework throw inside get(); that crashed
+        // the app in a loop. Treat it as "no camera" and let the pipeline's retry handle it.
+        try {
+            val ch = manager.getCameraCharacteristics(id)
+            hardwareLevel = ch.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL) ?: -1
+            val map = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+            offeredSizes = map?.getOutputSizes(ImageFormat.YUV_420_888)?.map { it.width to it.height }.orEmpty()
+            offeredFps = ch.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)?.map { it.lower to it.upper }.orEmpty()
+        } catch (e: Exception) { onError("camera characteristics: $e"); return }
         val sz = pickSmallest(offeredSizes, preferredWidth) ?: run { onError("no YUV sizes"); return }
         size = sz
         fpsRange = pickLowestFps(offeredFps)

@@ -339,6 +339,18 @@ Run these the next time the user is next to the Echo. Each needs a physical acti
 
 ---
 
+### 7.2 Slimming LineageOS in place (Nov 23, 2026)
+
+The user picked the "slimmed-down LineageOS" option over a custom firmware. A ROM rebuild needs the checkers sources and a Linux build machine, so this was done on the installed ROM instead. Measured on the Echo:
+
+- **Starting point:** about 397 MB available 2.5 min after boot. The build already runs with `ro.config.low_ram=true`, a 483 MB zram swap and `swappiness` 100, and it's signed with the public AOSP test keys. Boot (kernel to boot animation end) is about 27 s.
+- **Turned off 38 apps** EchoHome replaces or never uses (`device/slim-packages.txt`, `scripts/echo-slim.sh`, `--undo` turns them back on; /system untouched). Available memory went to about 412 MB, within the noise: Android was already dropping those apps when it needed the memory. Fewer apps start on boot broadcasts.
+- **SystemUI (~60–70 MB) can't be turned off this way:** Android starts it while it's disabled, and boot took 48 s instead of 27 s. It's back on. Removing it from /system is the one big saving left, and it needs its own approval and a backup.
+- **Ahead-of-time compiling (`speed`) didn't help:** the same frame times as the default `speed-profile`, with 4.7 MB more memory. Reverted.
+- **What the measurements show instead:** the first swipes after EchoHome starts are janky (about 34 % of frames), and later swipes are smooth (about 4 %, p90 6 ms). The next speed-up is in the app: warm the Widgets page and the blurs at start.
+- **Platform key:** with test keys, EchoHome could be signed with the AOSP platform key and run as the system user (no init file for the mic latch). Moving to it means reinstalling the app, which loses its data, so it's not done.
+- The camera HAL once came up half-initialised after a reboot (10 metadata entries, no stream configurations). The app crashed in a loop on it; `Camera2Source` now catches it and retries later.
+
 ## 8. Suggested build order (for Claude Code)
 
 0. **Setup:** on the Mac you need JDK 17 + the Android SDK (Android Studio or command-line tools; check what's installed). Create a Kotlin app: `minSdk 30`, `targetSdk 30`, ABI `armeabi-v7a` only, landscape 960×480. Install it with `./platform-tools/adb -s "$(cat .echo-serial)" install -r …`. Register a HOME activity and make it the default launcher. Keep Launcher3 installed as a fallback.
