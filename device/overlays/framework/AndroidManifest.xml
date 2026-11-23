@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EchoHome hides Android's bars, but a swipe from the top edge (the Control Center pull) briefly
+     reveals them, and SystemUI draws revealed ("transient") bars over a #66000000 scrim: a dark
+     strip at the top (29 px) and the bottom (59 px). This makes that scrim transparent. Bars that
+     other apps show normally (Android Settings) use their own colours and keep their buttons. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="app.vesper.overlay.framework">
+    <application android:hasCode="false" />
+    <overlay android:targetPackage="android" android:isStatic="true" android:priority="10" />
+</manifest>

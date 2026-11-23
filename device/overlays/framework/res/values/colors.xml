@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- No dark scrim behind bars revealed by an edge swipe (was #66000000). -->
+    <color name="system_bar_background_semi_transparent">#00000000</color>
+</resources>

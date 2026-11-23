@@ -1,15 +1,17 @@
 #!/bin/bash
-# Build EchoHome's two static ROM overlays (device/overlays/), and with --install put them in
+# Build EchoHome's static ROM overlays (device/overlays/), and with --install put them in
 # /system/product/overlay and reboot. --install writes /system: ask the user first (CLAUDE.md).
 #   systemui:  enable_volume_ui=false (no SystemUI volume panel flashing over the island)
 #   bluetooth: avrcp_controller_enable_cover_art=true (album art from the iPhone over Bluetooth)
+#   framework: system_bar_background_semi_transparent=#00000000 (no dark strips at the top and
+#              bottom when the Control Center pull reveals Android's hidden bars)
 # Undo: ./scripts/echo-overlays.sh --remove (also reboots).
 set -e
 . "$(dirname "$0")/lib.sh"
 BT=$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)
 JAR=$(ls -d "$ANDROID_HOME"/platforms/android-* | tail -1)/android.jar
 OUT="$ECHO_ROOT/device/overlays/build"; mkdir -p "$OUT"
-NAMES="systemui bluetooth"
+NAMES="systemui bluetooth framework"
 for n in $NAMES; do
   src="$ECHO_ROOT/device/overlays/$n"; work=$(mktemp -d)
   "$BT/aapt2" compile --dir "$src/res" -o "$work/res.zip"
@@ -41,4 +43,6 @@ wait_boot
 adb_echo shell cmd package set-home-activity "$HOME_ACTIVITY" >/dev/null 2>&1 || true
 echo "--- verify"
 adb_echo shell "cmd overlay list com.android.systemui | grep -i vesper; cmd overlay list com.android.bluetooth | grep -i vesper
-  dumpsys bluetooth_manager | grep -i 'Cover Artwork'"
+  dumpsys bluetooth_manager | grep -i 'Cover Artwork'
+  cmd overlay list android | grep -i vesper
+  cmd overlay lookup android android:color/system_bar_background_semi_transparent"
