@@ -194,3 +194,18 @@ Nothing beyond installing the app. For debugging, the same settings can also be 
 ```
 
 Screens: `--es screen home|commute|stocks`. Doorbell demo (makes no sound itself, but don't run it during quiet hours): `--es screen home --es doorbell ring`.
+
+## Nov 22 evening batch (air/UV/pollen, nowcast, alerts, travel, brief, per-person calendars)
+
+Done (JVM-tested; `:app:assembleDebug` passes):
+- **Weather.air / Weather.nowcast** (`glance/OpenMeteoProvider.kt`, `OpenMeteo.kt`): minutely_15 precipitation rides the forecast call; a nowcast loop refreshes it every ~12 min only while something collects `weather`. Air quality from `air-quality-api.open-meteo.com` (`us_aqi`, `uv_index`, six `*_pollen`, daily `uv_index_max`; checked against the live API). Pollen map empty outside Europe. Air failure keeps the old value up to 3 h.
+- **Rain soon** (`alerts/RainAlert.kt`): `WEATHER_ALERT`/`RainSoon` when rain starts within 30 min and it's dry now; updates each minute, ends at rain start or forecast drop (hysteresis 40 min); 2 h cool-down (persisted). Setting `weather.rainAlert`. Log tag `VesperRain`. Debug: `--es rain_demo 15` (`off` clears).
+- **services.travel** (`commute/HomeTravel.kt`): Nominatim + OSRM via the commute code, 3 h cache, 5 min failure cache, serialised, null on failure.
+- **Leave now** (`alerts/LeaveNow.kt`): start - travel - `commute.bufferMin`(5); shows `leave.leadMin`(15) before the leave time; ends at start or leave+10 min. Settings `leave.enabled`, `leave.leadMin`. Log tag `VesperLeave`. Debug: `--es leave_demo 30`.
+- **Morning brief** (`brief/`): screen `brief` (not in pager). Triggers per `BriefRules`; closes on tap or 60 s. Setting `brief.enabled`. Debug: `--es screen brief --es brief demo` (`demo-day` forces the day palette). Screenshot: `docs/status/shots/home/brief.png`.
+- **Per-person calendars**: `IcsCalendarProvider(personal = PersonalCalendars.flow(...))`; events get `profileId`; reloads on profile/secret changes.
+- Settings section "Alerts & morning brief".
+
+Echo: brief demo, 8 s: PSS 59 MB, 0 janky of 95 frames.
+
+Open: rain/leave alerts not seen on the Echo (island renderer not on this branch; use `logcat -s VesperRain VesperLeave`); brief trigger on real presence/alarm only unit-tested; per-profile calendar secret fields (`calendar.icsUrls.<profileId>`) need exposing in the settings page; leave pill in the brief may ellipsize.

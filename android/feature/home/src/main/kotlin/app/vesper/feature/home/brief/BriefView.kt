@@ -41,7 +41,7 @@ import kotlinx.coroutines.launch
  * (plain fills, no glass: Liquid Glass rule 1), like Alarm.dc.html's Good morning. A tap closes it,
  * and so does 60 s. Draws only when its data changes and once a minute (the clock).
  *
- * Debug: `--es screen brief --es brief demo` shows the designs' sample data.
+ * Debug: `--es screen brief --es brief demo` shows the designs' sample data (`demo-day`: in the day palette even at night).
  */
 @SuppressLint("ViewConstructor")
 class BriefView(
@@ -54,6 +54,8 @@ class BriefView(
     private var demo = false
     private var shown = false
     private var night = false
+    /** Debug (`--es brief demo-day`): draw the day palette even when the room is dark. */
+    private var forceDay = false
     /** Travel to the first event, looked up once per event (null = unknown / none yet). */
     private var travel: Triple<String, Long, Int?>? = null
     private var travelJob: Job? = null
@@ -85,8 +87,9 @@ class BriefView(
     override fun onScreenShown(args: Bundle?) {
         shown = true
         args?.getString("home.set")?.let { HomeSettings.applyAssignments(services.settings, it) }
-        demo = args?.getString("brief") == "demo"
-        night = services.system.state.value.nightActive
+        // The pager may call this again without args once it settles: keep the demo until hidden.
+        when (args?.getString("brief")) { "demo" -> demo = true; "demo-day" -> { demo = true; forceDay = true } }
+        night = services.system.state.value.nightActive && !forceDay
         travel = null
         scope?.cancel()
         val sc = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).also { scope = it }
@@ -96,13 +99,14 @@ class BriefView(
             combine(services.weather.weather, services.calendar.events, services.notifications.recent, services.profiles.active) { _, _, _, _ -> }
                 .collect { rebuild() }
         }
-        sc.launch { services.system.state.collect { st -> if (st.nightActive != night) { night = st.nightActive; invalidate() } } }
+        sc.launch { services.system.state.collect { st -> if ((st.nightActive && !forceDay) != night) { night = st.nightActive && !forceDay; invalidate() } } }
         removeCallbacks(dismiss); postDelayed(dismiss, AUTO_CLOSE_MS)
         removeCallbacks(tick); postDelayed(tick, 60_000L - System.currentTimeMillis() % 60_000L + 50)
     }
 
     override fun onScreenHidden() {
         shown = false
+        demo = false; forceDay = false
         removeCallbacks(dismiss); removeCallbacks(tick)
         scope?.cancel(); scope = null; travelJob = null
     }
