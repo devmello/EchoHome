@@ -381,6 +381,8 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
                 Icons.bluetooth.drawCentered(c, 23f, cy, 22f, ink(BLUE, alpha), paint)
                 tLabel.drawRight(c, tLabel.ellipsize(ct.deviceName, bw - 60f), right, tLabel.baselineCentered(cy), ink(withAlpha(Color.WHITE, 0.85f), alpha))
             }
+            // Placeholder until :feature:system renders these (lead, contracts of Nov 22 evening).
+            is LiveContent.LeaveNow, is LiveContent.RainSoon, is LiveContent.PhoneBattery -> return false to false
         }
         return false to false
     }
@@ -403,6 +405,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
             is LiveContent.Call -> Icons.phone.drawCentered(c, cx, cy, 22f, ink(GREEN, alpha), paint)
             is LiveContent.AirPlayConnected -> Icons.airplay.drawCentered(c, cx, cy, 22f, ink(Color.WHITE, alpha), paint)
             is LiveContent.BluetoothConnected -> Icons.bluetooth.drawCentered(c, cx, cy, 22f, ink(BLUE, alpha), paint)
+            is LiveContent.LeaveNow, is LiveContent.RainSoon, is LiveContent.PhoneBattery -> {}
         }
         return false
     }
@@ -532,7 +535,8 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
                     button(ox + acc, oy + cy - 34f, 68f, 68f) { invoke(accept, true) }
                 }
             }
-            is LiveContent.Assistant, is LiveContent.AirPlayConnected, is LiveContent.BluetoothConnected -> {}
+            is LiveContent.Assistant, is LiveContent.AirPlayConnected, is LiveContent.BluetoothConnected,
+            is LiveContent.LeaveNow, is LiveContent.RainSoon, is LiveContent.PhoneBattery -> {}
         }
         return false
     }

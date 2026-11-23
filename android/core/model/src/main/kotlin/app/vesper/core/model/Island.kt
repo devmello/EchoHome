@@ -36,8 +36,14 @@ enum class ActivityKind(val priority: Int, val alertByDefault: Boolean) {
     ASSISTANT(60, false),
     MUSIC(50, false),
     TIMER(40, false),
+    /** "Leave in 10 min" before an event with a location. */
+    LEAVE_NOW(65, true),
+    /** "Rain in 20 min". */
+    WEATHER_ALERT(35, false),
     AIRPLAY_CONNECTED(30, false),
     BLUETOOTH_CONNECTED(29, false),
+    /** iPhone battery (on connect for a few seconds, and when low). */
+    PHONE_BATTERY(28, false),
 }
 
 /** What the island shows. The renderer lays out compact (44 px) and expanded forms per type. */
@@ -79,6 +85,14 @@ sealed interface LiveContent {
     data class AirPlayConnected(val deviceName: String) : LiveContent
 
     /** A phone is connected over Bluetooth (audio and/or notifications). */
+    /** Leave at [leaveAtMillis] (wall clock) for [title]; [travelMinutes] door to door. */
+    data class LeaveNow(val title: String, val leaveAtMillis: Long, val travelMinutes: Int, val destination: String? = null) : LiveContent
+
+    /** Rain starting in [minutes] (0 = now) from the nowcast; [heavy] ≥ 2.5 mm per 15 min. */
+    data class RainSoon(val minutes: Int, val heavy: Boolean = false) : LiveContent
+
+    data class PhoneBattery(val deviceName: String, val percent: Int, val charging: Boolean?) : LiveContent
+
     data class BluetoothConnected(val deviceName: String, val audio: Boolean, val notifications: Boolean) : LiveContent
 }
 

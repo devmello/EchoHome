@@ -19,10 +19,20 @@ data class Alarm(
     val snoozeMinutes: Int = 9,
     /** Owner profile id; null = shared. */
     val profileId: String? = null,
+    /**
+     * Leave-by: ring earlier when the first calendar event of that day (with a location) needs it:
+     * event start − travel ([VesperServices.travel]) − [readyMinutes]. Never later than [hour]:[minute].
+     */
+    val leaveBy: Boolean = false,
+    /** Getting-ready time for [leaveBy]. */
+    val readyMinutes: Int = 45,
+    /** Don't ring on public holidays (and all-day "holiday" / "vacation" / "day off" events). */
+    val skipHolidays: Boolean = false,
 )
 
 /** The next time an alarm fires. [triggerAtMillis] is wall-clock (System.currentTimeMillis). */
-data class NextAlarm(val alarm: Alarm, val triggerAtMillis: Long)
+/** [reason]: why it rings at a different time than set, e.g. "Earlier for Dentist 9:00 · 25 min drive", or a skipped holiday. */
+data class NextAlarm(val alarm: Alarm, val triggerAtMillis: Long, val reason: String? = null)
 
 sealed interface AlarmPhase {
     data object Idle : AlarmPhase

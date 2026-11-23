@@ -57,6 +57,12 @@ class VesperServices(
     var weather: WeatherProvider = FakeWeatherProvider(config.demoData)
     var calendar: CalendarProvider = FakeCalendarProvider(config.demoData)
     var homeAssistant: HomeAssistant = NotConfiguredHomeAssistant
+    /** Travel time from home (`:feature:home` binds its commute routing). */
+    var travel: TravelEstimator = NoTravelEstimator
+    /** The iPhone link: name, connection, battery (`:feature:phone` binds it). */
+    var phone: StateFlow<PhoneStatus?> = MutableStateFlow(null)
+    /** Crashes and hangs (`:app`'s watchdog binds it; the settings page shows it). */
+    var crashLog: CrashLog = EmptyCrashLog
     /** Home location (see [HomeLocation]); `:feature:home` binds manual > auto > Livermore. */
     var location: StateFlow<HomeLocation> = MutableStateFlow(HomeLocation.default(config.demoData))
 
@@ -120,6 +126,8 @@ class Secrets(
         const val STOCKS_API_KEY = "stocks.apiKey"
         const val CALENDAR_ICS_URLS = "calendar.icsUrls"
         val KEYS = listOf(ANTHROPIC_API_KEY, CALENDAR_ICS_URLS, IMMICH_URL, IMMICH_API_KEY, HA_URL, HA_TOKEN, STOCKS_API_KEY)
+        /** A person's own calendars (iCal URLs, comma/newline separated) in the [SecretStore]; events get [CalendarEvent.profileId]. */
+        fun calendarKeyFor(profileId: String) = "$CALENDAR_ICS_URLS.$profileId"
         fun splitUrls(s: String) = s.split(',', ' ', '\n').map { it.trim() }.filter { it.isNotEmpty() }
     }
     override fun toString() =

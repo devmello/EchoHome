@@ -26,6 +26,15 @@ Read this after `CLAUDE.md` and `NOTES.md`. The Android project is in `android/`
 
 Feature modules depend on `:core:model` and `:core:design` only (add `:core:data` if you need it). **Never on each other** — talk through the contracts in `VesperServices`.
 
+## Contracts added Nov 22 evening (lead)
+
+- `services.travel: TravelEstimator` (home binds) · `services.phone: StateFlow<PhoneStatus?>` (phone binds) · `services.crashLog: CrashLog` (`:app` watchdog binds).
+- `Weather.air: AirQuality?` (US AQI, UV, pollen where available) and `Weather.nowcast: Nowcast?` (15-min precipitation, `minutesUntilRain()`).
+- `CalendarEvent.profileId` (whose calendar; per-person iCal URLs live in the SecretStore under `Secrets.calendarKeyFor(profileId)`).
+- `Alarm.leaveBy` / `readyMinutes` / `skipHolidays`; `NextAlarm.reason`.
+- Island: `ActivityKind.LEAVE_NOW` / `WEATHER_ALERT` / `PHONE_BATTERY` with `LiveContent.LeaveNow` / `RainSoon` / `PhoneBattery` (`:feature:system` renders them).
+- `Banner.actions` (extra expanded-banner buttons) and `NotificationFeed.recent` (last 50 banners, including gone ones).
+
 ## How a feature plugs in (no `:app` edits)
 
 Each module has `object XxxFeature : VesperFeature`. `:app` calls `install(host)` once per process, in order system, phone, airplay, media, alarm, home, assistant, camera, photos, clock. In `install`:

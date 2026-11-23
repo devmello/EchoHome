@@ -59,6 +59,11 @@ data class Banner(
     val sourcePackage: String? = null,
     /** The phone it came from, e.g. "Maya's iPhone"; null = the Echo itself. */
     val sourceDevice: String? = null,
+    /**
+     * More buttons for the expanded banner, after [primaryAction] (e.g. an iPhone notification's
+     * positive / negative ANCS actions: "Decline", "Clear"). The banner closes after one is tapped.
+     */
+    val actions: List<IslandAction> = emptyList(),
 )
 
 interface NotificationFeed {
@@ -69,12 +74,46 @@ interface NotificationFeed {
     fun dismiss(id: String, byUser: Boolean = false)
     /** Ids of banners the user dismissed (see [dismiss]). */
     val userDismissals: kotlinx.coroutines.flow.SharedFlow<String>
+    /** The last [RECENT_MAX] banners posted, newest last, including ones already gone (the morning brief's "overnight"). */
+    val recent: StateFlow<List<Banner>> get() = banners
+
+    companion object { const val RECENT_MAX = 50 }
+}
+
+/** The iPhone link (`:feature:phone` binds [VesperServices.phone]). */
+data class PhoneStatus(
+    val deviceName: String,
+    val connected: Boolean,
+    /** 0..100 from the phone's Battery Service, when it shares it. */
+    val batteryPercent: Int? = null,
+    val charging: Boolean? = null,
+)
+
+/** A crash or a hang, recorded by `:app`'s watchdog (no secrets, no personal data in [stack]). */
+data class CrashEntry(val atMillis: Long, val kind: Kind, val thread: String, val summary: String, val stack: String) {
+    enum class Kind { CRASH, HANG }
+}
+
+interface CrashLog {
+    /** Newest last, at most ~20. */
+    val entries: StateFlow<List<CrashEntry>>
+    fun clear()
+}
+
+object EmptyCrashLog : CrashLog {
+    override val entries: StateFlow<List<CrashEntry>> = MutableStateFlow(emptyList<CrashEntry>()).asStateFlow()
+    override fun clear() {}
 }
 
 class DefaultNotificationFeed : NotificationFeed {
     private val _banners = MutableStateFlow<List<Banner>>(emptyList())
     override val banners: StateFlow<List<Banner>> = _banners.asStateFlow()
-    override fun post(banner: Banner) = _banners.update { l -> l.filterNot { it.id == banner.id } + banner }
+    private val _recent = MutableStateFlow<List<Banner>>(emptyList())
+    override val recent: StateFlow<List<Banner>> = _recent.asStateFlow()
+    override fun post(banner: Banner) {
+        _banners.update { l -> l.filterNot { it.id == banner.id } + banner }
+        _recent.update { l -> (l.filterNot { it.id == banner.id } + banner).takeLast(NotificationFeed.RECENT_MAX) }
+    }
     private val _userDismissals = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 16)
     override val userDismissals: kotlinx.coroutines.flow.SharedFlow<String> = _userDismissals
     override fun dismiss(id: String, byUser: Boolean) {

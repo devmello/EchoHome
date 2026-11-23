@@ -22,7 +22,57 @@ data class Weather(
     val tomorrowSummary: String? = null,
     val location: String = "",
     val updatedAtMillis: Long = System.currentTimeMillis(),
+    /** Air quality, UV and pollen (Open-Meteo air-quality API); null until loaded. */
+    val air: AirQuality? = null,
+    /** Precipitation over the next ~2 h in 15-minute steps (Open-Meteo `minutely_15`); null until loaded. */
+    val nowcast: Nowcast? = null,
 )
+
+/**
+ * Open-Meteo air quality. Every field is optional: pollen only exists where CAMS Europe covers
+ * (it's empty in the US), and any request can fail on its own.
+ */
+data class AirQuality(
+    /** US AQI, 0..500. */
+    val usAqi: Int? = null,
+    /** Current UV index. */
+    val uvIndex: Float? = null,
+    /** Today's maximum UV index. */
+    val uvIndexMax: Float? = null,
+    /** grains/m³ by kind ("grass", "birch", "alder", "olive", "mugwort", "ragweed"); empty when unavailable. */
+    val pollen: Map<String, Float> = emptyMap(),
+    val updatedAtMillis: Long = System.currentTimeMillis(),
+) {
+    val aqiCategory: String? get() = usAqi?.let {
+        when { it <= 50 -> "Good"; it <= 100 -> "Moderate"; it <= 150 -> "Unhealthy for some"; it <= 200 -> "Unhealthy"; it <= 300 -> "Very unhealthy"; else -> "Hazardous" }
+    }
+}
+
+/** Precipitation in mm per [stepMinutes] step, starting at [startMillis]. */
+data class Nowcast(val startMillis: Long, val precipMm: List<Float>, val stepMinutes: Int = 15) {
+    /** Minutes from [now] until the first step at or above [thresholdMm] (0 = raining now), or null. */
+    fun minutesUntilRain(now: Long = System.currentTimeMillis(), thresholdMm: Float = 0.1f): Int? {
+        for ((i, mm) in precipMm.withIndex()) {
+            val stepEnd = startMillis + (i + 1) * stepMinutes * 60_000L
+            if (stepEnd <= now) continue
+            if (mm >= thresholdMm) return (((startMillis + i * stepMinutes * 60_000L) - now) / 60_000L).toInt().coerceAtLeast(0)
+        }
+        return null
+    }
+}
+
+/**
+ * Door-to-door travel time from home. `:feature:home` binds it (its commute routing); others
+ * (leave-by alarms, leave-now reminders, the morning brief) read [VesperServices.travel].
+ */
+interface TravelEstimator {
+    /** Minutes from home to [destination] (an address or place name, e.g. an event's location) when leaving around [departAtMillis]; null = unknown. */
+    suspend fun minutesTo(destination: String, departAtMillis: Long): Int?
+}
+
+object NoTravelEstimator : TravelEstimator {
+    override suspend fun minutesTo(destination: String, departAtMillis: Long): Int? = null
+}
 
 /**
  * Where the Echo is: weather, sunrise/sunset, the World face's "you are here", commute's start.
@@ -80,6 +130,8 @@ data class CalendarEvent(
     /** ARGB. */
     val color: Int,
     val location: String? = null,
+    /** Whose calendar it came from ([Profile.id]); null = a shared calendar. */
+    val profileId: String? = null,
 )
 
 interface CalendarProvider {
