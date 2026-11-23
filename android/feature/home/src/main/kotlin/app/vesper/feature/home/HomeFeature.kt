@@ -26,6 +26,7 @@ import app.vesper.feature.home.ha.DemoHomeAssistant
 import app.vesper.feature.home.home.HomeScreenView
 import app.vesper.feature.home.lamp.LampScreenView
 import app.vesper.feature.home.stocks.StocksView
+import app.vesper.feature.home.radar.RadarScreen
 
 /**
  * `:feature:home` (agent F — glances + optional smart home). Works with no Home Assistant (NOTES §4.1):
@@ -82,6 +83,8 @@ object HomeFeature : VesperFeature {
 
         host.registerScreen(ScreenSpec("commute", order = 40) { ctx -> CommuteView(ctx, host.services) })
         host.registerScreen(ScreenSpec("stocks", order = 50) { ctx -> StocksView(ctx, host.services) })
+        // Weather radar (RainViewer over a drawn Natural Earth map), opened from the Weather face / widget.
+        host.registerScreen(ScreenSpec(RadarScreen.SCREEN_ID, order = 55, inPager = false) { ctx -> RadarScreen(ctx, host.services) })
 
         val haConfigured = s.config.secrets.haConfigured
         if (haConfigured) {

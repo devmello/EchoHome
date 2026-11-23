@@ -71,6 +71,8 @@ class VesperServices(
     var sleep: SleepSounds = NoSleepSounds
     /** Home location (see [HomeLocation]); `:feature:home` binds manual > auto > San Francisco. */
     var location: StateFlow<HomeLocation> = MutableStateFlow(HomeLocation.default(config.demoData))
+    /** Internet radio (`:feature:radio` binds it; the assistant's play_radio / stop_radio use it). */
+    var radio: RadioControl = NoRadio
 
     /**
      * Every launch / new intent of the HOME activity (replays the latest), so overlays can read

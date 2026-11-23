@@ -229,6 +229,8 @@ class ClockWidget(context: Context, services: VesperServices) : StackWidget(cont
 
 class WeatherWidget(context: Context, services: VesperServices) : StackWidget(context, services) {
     override val kind = WidgetKind.WEATHER
+    /** Tap: the weather radar (`:feature:home`). */
+    override fun onTap(x: Float, y: Float) = navigate("radar")
     private val placeText = SpecText(17f, 600)
     private val tempText = SpecText(104f, 300, -0.04f)
     private val condText = SpecText(22f, 700, -0.01f)

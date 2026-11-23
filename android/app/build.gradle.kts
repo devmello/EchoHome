@@ -48,6 +48,6 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:design"))
     implementation(project(":core:data"))
-    listOf("clock", "system", "phone", "airplay", "spotify", "media", "alarm", "home", "assistant", "camera", "photos", "settings", "lists", "sleep")
+    listOf("clock", "system", "phone", "airplay", "spotify", "media", "alarm", "home", "assistant", "camera", "photos", "settings", "lists", "sleep", "radio")
         .forEach { implementation(project(":feature:$it")) }
 }

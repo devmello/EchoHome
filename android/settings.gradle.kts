@@ -18,5 +18,5 @@ include(":app")
 include(":core:design", ":core:model", ":core:data")
 
 /** One module per feature agent (see PARALLEL_BUILD_PROMPT.md). */
-val features = listOf("clock", "system", "phone", "airplay", "spotify", "media", "alarm", "home", "assistant", "camera", "photos", "settings", "lists", "sleep")
+val features = listOf("clock", "system", "phone", "airplay", "spotify", "media", "alarm", "home", "assistant", "camera", "photos", "settings", "lists", "sleep", "radio")
 features.forEach { include(":feature:$it") }
