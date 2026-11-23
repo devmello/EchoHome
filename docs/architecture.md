@@ -16,6 +16,7 @@ Read this after `CLAUDE.md` and `NOTES.md`. The Android project is in `android/`
 | `:feature:system` | B | volume/mic/shutter, HUDs, Control Center, banners, island renderer |
 | `:feature:phone` | J | iPhone over Bluetooth: ANCS notifications + calls (answered on the phone), Bluetooth speaker (A2DP sink/AVRCP) Now Playing |
 | `:feature:airplay` | C | AirPlay audio receiver |
+| `:feature:spotify` | S | Spotify Connect receiver (librespot 0.8.0 over JNI) |
 | `:feature:media` | D | Now Playing, media island states, other apps' sessions |
 | `:feature:alarm` | E | alarms, timers |
 | `:feature:home` | F | weather (Open-Meteo) + calendar (iCal) providers, commute, stocks (free keyless API), optional HA Home screen + doorbell |
@@ -37,7 +38,7 @@ Feature modules depend on `:core:model` and `:core:design` only (add `:core:data
 
 ## How a feature plugs in (no `:app` edits)
 
-Each module has `object XxxFeature : VesperFeature`. `:app` calls `install(host)` once per process, in order system, phone, airplay, media, alarm, home, assistant, camera, photos, clock. In `install`:
+Each module has `object XxxFeature : VesperFeature`. `:app` calls `install(host)` once per process, in order system, phone, airplay, spotify, media, alarm, home, assistant, camera, photos, clock. In `install`:
 
 - `host.registerScreen(ScreenSpec(id, order, inPager) { ctx -> MyScreenView(ctx, host.services) })`. Pager order: StandBy is 0; pick 10, 20, … for yours. `inPager = false` = only opened by `services.navigator.show(id)` (e.g. alarm ringing, Control Center-style full screens).
 - `host.registerOverlay(OverlaySpec(id, z) { ... })` for layers above every screen (island 300, banners 400, HUDs 500, Control Center 600). **Overlays are full-screen views: empty areas must not consume touches** (return false), so the screens below still get them.

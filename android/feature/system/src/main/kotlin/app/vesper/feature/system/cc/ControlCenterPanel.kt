@@ -58,6 +58,8 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
     private var state = SystemState()
     private var radios = RadioState()
     private var btDevice: String? = null
+    /** Spotify Connect has something loaded: null = no, else true while it plays. */
+    private var spotifyActive: Boolean? = null
     private var media: MediaSession? = null
     private var timers: List<VesperTimer> = emptyList()
     private var profiles: List<Profile> = emptyList()
@@ -125,6 +127,11 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         observeWhileAttached(s.island.activities) { list ->
             val d = list.firstNotNullOfOrNull { (it.content as? app.vesper.core.model.LiveContent.BluetoothConnected)?.deviceName }
             if (d != btDevice) { btDevice = d; if (shown) invalidate() }
+        }
+        // `:feature:spotify` publishes its Connect session into the hub (source SPOTIFY).
+        observeWhileAttached(s.media.sessions) { list ->
+            val st = spotifyTile(list)
+            if (st != spotifyActive) { spotifyActive = st; if (shown) invalidate() }
         }
         buildHits()
         contentDescription = "Control Center"
@@ -313,14 +320,16 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
         glassTile(c, "radios-glass", 24f, 76f, 324f, 256f, 32f)
         val wifiLabel = when { !radios.wifiOn -> "Wi-Fi"; radios.wifiName != null -> radios.wifiName!!; radios.wifiConnected -> "Connected"; else -> "Wi-Fi" }
         val airplayOn = s.settings.getBoolean(KEY_AIRPLAY, true)
-        val spotifyOn = s.settings.getBoolean(KEY_SPOTIFY, false)
+        val spotifyOn = s.settings.getBoolean(KEY_SPOTIFY, true)
+        val sp = spotifyActive
         val pr = pressedIn(Hit.WIFI, Hit.BT, Hit.AIRPLAY, Hit.SPOTIFY)
-        rec(c, "radios", listOf(night, radios, btDevice, wifiLabel, airplayOn, spotifyOn, pr)) { rc ->
+        rec(c, "radios", listOf(night, radios, btDevice, wifiLabel, airplayOn, spotifyOn, sp, pr)) { rc ->
             radio(rc, Hit.WIFI, wifiLabel, Icons.wifi, radios.wifiOn, BLUE)
             // a connected phone (`:feature:phone` publishes BLUETOOTH_CONNECTED) names the cell
             radio(rc, Hit.BT, btDevice ?: "Bluetooth", Icons.bluetooth, radios.bluetoothOn || btDevice != null, BLUE, enabled = radios.bluetoothAvailable || btDevice != null)
             radio(rc, Hit.AIRPLAY, "AirPlay", Icons.airplay, airplayOn, GREEN)
-            radio(rc, Hit.SPOTIFY, "Spotify", Icons.spotify, spotifyOn, GREEN)
+            // Active (a Connect session loaded): "Playing" / "Paused", and a tap opens Now Playing.
+            radio(rc, Hit.SPOTIFY, spotifyLabel(sp), Icons.spotify, spotifyOn || sp != null, GREEN)
         }
     }
 
@@ -600,7 +609,8 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
             Hit.WIFI -> if (!c.setWifiEnabled(!radios.wifiOn)) { requestClose(); c.openWifiPanel() }
             Hit.BT -> c.setBluetoothEnabled(!radios.bluetoothOn)
             Hit.AIRPLAY -> s.settings.putBoolean(KEY_AIRPLAY, !s.settings.getBoolean(KEY_AIRPLAY, true))
-            Hit.SPOTIFY -> s.settings.putBoolean(KEY_SPOTIFY, !s.settings.getBoolean(KEY_SPOTIFY, false))
+            Hit.SPOTIFY -> if (spotifyActive != null) { requestClose(); s.navigator.show("nowplaying") }
+                else s.settings.putBoolean(KEY_SPOTIFY, !s.settings.getBoolean(KEY_SPOTIFY, true))
             Hit.PREV -> media?.controls?.previous()
             Hit.PLAY -> media?.let { if (it.state.playing) it.controls.pause() else it.controls.play() }
             Hit.NEXT -> media?.controls?.next()
@@ -644,7 +654,18 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
 
     companion object {
         const val KEY_AIRPLAY = "system.cc.airplay"
+        /** Read by `:feature:spotify` (with its own "spotify.enabled"): off stops the receiver. */
         const val KEY_SPOTIFY = "system.cc.spotify"
+
+        /** The Spotify tile's state from the hub: null = nothing loaded, else whether it plays. */
+        fun spotifyTile(sessions: List<MediaSession>): Boolean? =
+            sessions.lastOrNull { it.state.source == app.vesper.core.model.MediaSourceKind.SPOTIFY }?.state?.playing
+
+        fun spotifyLabel(active: Boolean?): String = when (active) {
+            null -> "Spotify"
+            true -> "Playing"
+            false -> "Paused"
+        }
         const val SETTINGS_SCREEN = "settings-pair"
         /** LineageOS' launcher (scripts/echo-restore-launcher.sh). */
         const val STOCK_LAUNCHER_PKG = "com.android.launcher3"
