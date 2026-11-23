@@ -49,6 +49,11 @@ class Geocoder(
     }
 
     companion object {
+        @Volatile private var shared: Geocoder? = null
+
+        /** One process-wide instance, so the commute screen and the travel estimator share the 1 req/s gap and the cache. */
+        fun shared(settings: SettingsStore): Geocoder = shared ?: synchronized(this) { shared ?: Geocoder(settings).also { shared = it } }
+
         fun parse(arr: JSONArray): LatLon? {
             val o = arr.optJSONObject(0) ?: return null
             val lat = o.optString("lat").toDoubleOrNull() ?: return null

@@ -1,6 +1,7 @@
 package app.vesper.feature.home.glance
 
 import app.vesper.core.model.HomeLocation
+import app.vesper.core.model.Nowcast
 import app.vesper.core.model.HourForecast
 import app.vesper.core.model.SettingsStore
 import app.vesper.core.model.Weather
@@ -80,6 +81,34 @@ object WeatherSettings {
  */
 object OpenMeteo {
     val BASE: HttpUrl = "https://api.open-meteo.com/v1/forecast".toHttpUrl()
+    const val NOWCAST_STEPS = 9
+
+    /** Just the precipitation nowcast (small: ~300 bytes). */
+    fun nowcastUrl(place: Place, base: HttpUrl = BASE): HttpUrl = base.newBuilder()
+        .addQueryParameter("latitude", "%.3f".format(Locale.US, place.lat))
+        .addQueryParameter("longitude", "%.3f".format(Locale.US, place.lon))
+        .addQueryParameter("minutely_15", "precipitation")
+        .addQueryParameter("forecast_minutely_15", NOWCAST_STEPS.toString())
+        .addQueryParameter("timeformat", "unixtime")
+        .build()
+
+    /**
+     * `minutely_15.precipitation` → [Nowcast]; null when the response has none. Open-Meteo's value at a
+     * timestamp is the sum over the 15 minutes *before* it, so step i covers (time[i] − 15 min, time[i]]
+     * and [Nowcast.startMillis] is the first timestamp minus one step (the contract's step i covers
+     * start + i·step … start + (i+1)·step). Steps already over are skipped by `minutesUntilRain`.
+     */
+    fun parseNowcast(body: JSONObject): Nowcast? {
+        val m = body.optJSONObject("minutely_15") ?: return null
+        val time = m.optJSONArray("time") ?: return null
+        val mm = m.optJSONArray("precipitation") ?: return null
+        if (time.length() == 0 || mm.length() == 0) return null
+        val n = minOf(time.length(), mm.length())
+        val step = if (n > 1) ((time.getLong(1) - time.getLong(0)) / 60).toInt().takeIf { it > 0 } ?: 15 else 15
+        // null values (no data) count as dry.
+        val values = (0 until n).map { i -> mm.optDouble(i).takeUnless { it.isNaN() }?.toFloat() ?: 0f }
+        return Nowcast(startMillis = time.getLong(0) * 1000 - step * 60_000L, precipMm = values, stepMinutes = step)
+    }
 
     fun url(place: Place, fahrenheit: Boolean, base: HttpUrl = BASE): HttpUrl = base.newBuilder()
         // 3 decimals ≈ 100 m: plenty for a forecast, and no more precise than needed.
@@ -88,6 +117,9 @@ object OpenMeteo {
         .addQueryParameter("current", "temperature_2m,weather_code,is_day")
         .addQueryParameter("hourly", "temperature_2m,weather_code,precipitation_probability")
         .addQueryParameter("daily", "weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max")
+        // Rain nowcast: the next 9 quarter-hours (~2 h). The nowcast loop re-asks for just this every ~12 min.
+        .addQueryParameter("minutely_15", "precipitation")
+        .addQueryParameter("forecast_minutely_15", NOWCAST_STEPS.toString())
         .addQueryParameter("temperature_unit", if (fahrenheit) "fahrenheit" else "celsius")
         .addQueryParameter("timezone", "auto")
         .addQueryParameter("timeformat", "unixtime")
@@ -144,6 +176,7 @@ object OpenMeteo {
             tomorrowSummary = tomorrowSummary(hours, d, now, zone),
             location = place.name,
             updatedAtMillis = now,
+            nowcast = parseNowcast(body),
         )
     }
 
@@ -173,59 +206,3 @@ object OpenMeteo {
     }
 }
 
-/**
- * [WeatherProvider] on Open-Meteo for `VesperServices.location` ([LocationResolver]: manual > auto >
- * Livermore), so it works out of the box with no settings. While the location is the DEMO one
- * (demo data, nothing manual) it mirrors [fallback], the design's sample weather. Refreshes every
- * 30 min and when the location or `weather.unit` changes; after a failure it retries in 5 min and
- * keeps the last good forecast.
- */
-class OpenMeteoWeatherProvider(
-    private val settings: SettingsStore,
-    private val scope: CoroutineScope,
-    private val fallback: WeatherProvider,
-    private val location: StateFlow<HomeLocation>,
-    private val client: OkHttpClient = Net.http,
-    private val base: HttpUrl = OpenMeteo.BASE,
-    private val periodMs: Long = 30 * 60_000L,
-    private val retryMs: Long = 5 * 60_000L,
-) : WeatherProvider {
-    private val _weather = MutableStateFlow(if (location.value.source == HomeLocation.Source.DEMO) fallback.weather.value else null)
-    override val weather: StateFlow<Weather?> = _weather.asStateFlow()
-    private var loop: Job? = null
-    private var mirror: Job? = null
-    /** What's running: (location, °F). */
-    private var active: Pair<HomeLocation, Boolean>? = null
-
-    fun start() {
-        scope.launch { location.collect { restart(force = false) } }
-        scope.launch { settings.changes.filter { it == WeatherSettings.UNIT }.collect { restart(force = false) } }
-    }
-
-    override fun refresh() = restart(force = true)
-
-    private fun restart(force: Boolean) {
-        val loc = location.value
-        val key = loc to WeatherSettings.fahrenheit(settings)
-        if (!force && key == active) return
-        loop?.cancel(); mirror?.cancel(); loop = null; mirror = null
-        active = key
-        if (loc.source == HomeLocation.Source.DEMO) {
-            mirror = scope.launch { fallback.weather.collect { _weather.value = it } }
-            return
-        }
-        loop = scope.launch {
-            while (true) {
-                val ok = fetch(loc.toPlace())
-                delay(if (ok) periodMs else retryMs)
-            }
-        }
-    }
-
-    private suspend fun fetch(place: Place): Boolean = try {
-        val f = WeatherSettings.fahrenheit(settings)
-        val body = JSONObject(Net.getText(client, OpenMeteo.url(place, f, base).toString()))
-        _weather.value = OpenMeteo.parse(body, place, f)
-        true
-    } catch (_: IOException) { false } catch (_: JSONException) { false }
-}

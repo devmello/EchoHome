@@ -3,6 +3,7 @@ package app.vesper.feature.home
 import app.vesper.core.model.SettingSpec
 import app.vesper.core.model.SettingType
 import app.vesper.core.model.SettingsSection
+import app.vesper.feature.home.alerts.AlertSettings
 import app.vesper.feature.home.commute.CommuteSettings
 import app.vesper.feature.home.glance.WeatherSettings
 import app.vesper.feature.home.stocks.StockSettings
@@ -39,6 +40,17 @@ object HomeSettingsSchema {
             help = "Empty: the weather location."),
     ), help = "Drive times from OpenStreetMap (OSRM); no live traffic.")
 
+    val alerts = SettingsSection("alerts", "Alerts & morning brief", 38, listOf(
+        SettingSpec(AlertSettings.RAIN, "Rain alert", SettingType.BOOLEAN, default = "true",
+            help = "Shows \"Rain in 20 min\" at the top when rain is about to start (from the 2-hour rain forecast). At most once every 2 hours."),
+        SettingSpec(AlertSettings.LEAVE, "Leave-now reminder", SettingType.BOOLEAN, default = "true",
+            help = "For today's calendar events with a place: drive time (Commute) plus the \"arrive early by\" time tells you when to leave."),
+        SettingSpec(AlertSettings.LEAVE_LEAD, "Remind me this early (min)", SettingType.INT, default = "15", min = 5f, max = 60f, step = 5f,
+            help = "Before the time you should leave."),
+        SettingSpec(AlertSettings.BRIEF, "Morning brief", SettingType.BOOLEAN, default = "true",
+            help = "Once each morning (5-11 AM, the first time someone is seen after the night, or after the alarm's Good morning): weather, the first event, overnight notifications. A tap closes it."),
+    ))
+
     val stocks = SettingsSection("stocks", "Stocks", 50, listOf(
         SettingSpec(StockSettings.SYMBOLS, "Watchlist", SettingType.TEXT_LIST, default = "AAPL,NVDA,TSLA,MSFT,AMZN",
             help = "Up to 5 ticker symbols. Quotes from Yahoo Finance, may be delayed."),
@@ -53,5 +65,5 @@ object HomeSettingsSchema {
         SettingSpec(HomeSettings.DOORBELL_TALK, "Talk script", SettingType.TEXT, help = "A script.* that starts two-way audio. Empty: no Talk button.", advanced = true),
     ), help = "Optional. Set ha.url and ha.token under Secrets for the Home screen and the doorbell.")
 
-    val all = listOf(weather, calendar, commute, stocks, homeAssistant)
+    val all = listOf(weather, calendar, alerts, commute, stocks, homeAssistant)
 }

@@ -4,7 +4,17 @@ import android.os.Bundle
 import app.vesper.core.model.VesperFeature
 import app.vesper.core.model.FeatureHost
 import app.vesper.core.model.ScreenSpec
+import app.vesper.feature.home.alerts.LeaveNowWatcher
+import app.vesper.feature.home.alerts.RainAlertWatcher
+import app.vesper.feature.home.brief.BriefView
+import app.vesper.feature.home.brief.BriefWatcher
 import app.vesper.feature.home.commute.CommuteView
+import app.vesper.feature.home.commute.HomeTravelEstimator
+import app.vesper.feature.home.glance.PersonalCalendars
+import app.vesper.core.model.CalendarEvent
+import app.vesper.core.model.Nowcast
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import app.vesper.feature.home.doorbell.DemoSnapshot
 import app.vesper.feature.home.doorbell.DoorbellWatcher
 import app.vesper.feature.home.glance.AutoLocation
@@ -15,7 +25,6 @@ import app.vesper.feature.home.glance.OpenMeteoWeatherProvider
 import app.vesper.feature.home.ha.DemoHomeAssistant
 import app.vesper.feature.home.home.HomeScreenView
 import app.vesper.feature.home.stocks.StocksView
-import kotlinx.coroutines.flow.map
 
 /**
  * `:feature:home` (agent F — glances + optional smart home). Works with no Home Assistant (NOTES §4.1):
@@ -48,11 +57,24 @@ object HomeFeature : VesperFeature {
 
         // Always bound: the iCal URLs are a secret that can be set or changed live (configFlow).
         // With none it mirrors the fake (sample calendar in demo mode, empty otherwise).
-        val cal = IcsCalendarProvider(s.configFlow.map { it.secrets.calendarIcsUrls }, host.context.cacheDir, s.settings, s.scope, fallback = s.calendar)
+        // Plus each profile's own calendars (SecretStore `calendar.icsUrls.<profileId>`): their events carry profileId.
+        val personal = PersonalCalendars.flow({ s.profiles.profiles }, { s.secrets })
+        val cal = IcsCalendarProvider(s.configFlow.map { it.secrets.calendarIcsUrls }, host.context.cacheDir, s.settings, s.scope, fallback = s.calendar, personal = personal)
         s.calendar = cal
         cal.start()
 
+        // Travel time from home (the commute's Nominatim + OSRM); the leave-by alarm, leave-now and the brief read it.
+        s.travel = HomeTravelEstimator(s.settings, location.location)
+
         HomeSettingsSchema.all.forEach(host::registerSettings)
+
+        // Island alerts and the morning brief. Everything they read from other features is looked up lazily.
+        val rain = RainAlertWatcher(s.settings, weather.weather, s.island, s.scope).also { it.start() }
+        val leave = LeaveNowWatcher(s.settings, { s.calendar }, { s.travel }, { s.profiles.active.value }, s.island, s.scope,
+            changes = { s.profiles.active.map { } }).also { it.start() }
+        BriefWatcher(s.settings, { s.system }, { s.alarms }, { s.navigator }, s.scope).start()
+        host.registerScreen(ScreenSpec(BriefWatcher.SCREEN_ID, order = 90, inPager = false) { ctx -> BriefView(ctx, host.services) })
+        if (s.config.debug) debugIntents(s, rain, leave)
 
         host.registerScreen(ScreenSpec("commute", order = 40) { ctx -> CommuteView(ctx, host.services) })
         host.registerScreen(ScreenSpec("stocks", order = 50) { ctx -> StocksView(ctx, host.services) })
@@ -73,6 +95,25 @@ object HomeFeature : VesperFeature {
                     }
                 }
             })
+        }
+    }
+
+    /**
+     * Debug launch extras (nobody can wait for real rain at the Echo): `--es rain_demo 15` shows "Rain in
+     * 15 min" (`off` removes it), `--es leave_demo 30` a Dentist 30 min from now with a 20 min drive.
+     */
+    private fun debugIntents(s: app.vesper.core.model.VesperServices, rain: RainAlertWatcher, leave: LeaveNowWatcher) {
+        s.scope.launch {
+            s.intents.collect { i ->
+                i.getStringExtra("rain_demo")?.let { v ->
+                    val m = v.toIntOrNull()
+                    rain.demoNowcast = if (m == null) null else Nowcast(System.currentTimeMillis() + m * 60_000L, listOf(if (m >= 60) 3f else 1f, 1f))
+                }
+                i.getStringExtra("leave_demo")?.toIntOrNull()?.let { m ->
+                    val start = System.currentTimeMillis() + m * 60_000L
+                    leave.demo(CalendarEvent("demo-leave", "Dentist", "Downtown", start, start + 3_600_000L, color = 0xFFFF9F0A.toInt(), location = "Downtown, 120 Pacific Ave"), 20)
+                }
+            }
         }
     }
 

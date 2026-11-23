@@ -35,7 +35,7 @@ object HomeSettings {
     /** script.* to run for Talk (e.g. starts two-way audio); without it Talk isn't shown. */
     const val DOORBELL_TALK = "home.doorbell.talk"
 
-    private val SETTABLE = listOf("home.", "weather.", "calendar.color.", "commute.", "stocks.")
+    private val SETTABLE = listOf("home.", "weather.", "calendar.color.", "commute.", "stocks.", "leave.", "brief.")
 
     fun list(settings: SettingsStore, key: String): List<String>? =
         settings.getString(key, "\u0000").takeIf { it != "\u0000" }?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
