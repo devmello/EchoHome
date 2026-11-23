@@ -107,6 +107,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
     private val tCallSub = SpecText(14f, 700)
     private val tCallName = SpecText(30f, 800, -0.02f)
     private val tInitial = SpecText(32f, 800)
+    private val tLeaveTitle = SpecText(26f, 800, -0.02f)
 
     private class Btn(val rect: RectF, val run: () -> Unit)
     private val buttons = ArrayList<Btn>()
@@ -115,7 +116,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
     private var downExpanded = false
     private var demoMusicPlaying = true
     /** ms until the next visible change of a countdown (so digits flip on time without 60 fps). */
-    private var tickIn = 1000L
+    private var tickIn = Long.MAX_VALUE
 
     private val recompute = Runnable { recompute() }
     private val back: () -> Boolean = { if (layout.mode == IslandMode.EXPANDED) { setLayout(model.collapse()); true } else false }
@@ -148,6 +149,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
                 demo.play(scene)
                 if (scene == "nowplaying" || scene == "music") post { setLayout(model.tapMain()) }
             }
+            b?.getString("night")?.let { v -> s.system.update { it.copy(nightActive = v == "on") } } // debug only, in memory
             b?.getString("look")?.let { s.settings.putString(LOOK_KEY, it) }
         }
         readLook()
@@ -260,7 +262,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
         buttons.clear()
         var ambient = false
         var ticking = false
-        tickIn = 1000L
+        tickIn = Long.MAX_VALUE
         eqShown = false
 
         if (scrim.value > 0.004f) canvas.drawColor(withAlpha(Color.BLACK, 0.25f * scrim.value * bannerFade.value))
@@ -306,7 +308,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
         when {
             running -> postInvalidateOnAnimation()
             ambient -> postInvalidateDelayed(AMBIENT_FRAME_MS)
-            ticking -> postInvalidateDelayed(tickIn)
+            ticking -> postInvalidateDelayed(if (tickIn == Long.MAX_VALUE) 1000L else tickIn)
         }
     }
 
@@ -381,8 +383,24 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
                 Icons.bluetooth.drawCentered(c, 23f, cy, 22f, ink(BLUE, alpha), paint)
                 tLabel.drawRight(c, tLabel.ellipsize(ct.deviceName, bw - 60f), right, tLabel.baselineCentered(cy), ink(withAlpha(Color.WHITE, 0.85f), alpha))
             }
-            // Placeholder until :feature:system renders these (lead, contracts of Nov 22 evening).
-            is LiveContent.LeaveNow, is LiveContent.RainSoon, is LiveContent.PhoneBattery -> return false to false
+            is LiveContent.LeaveNow -> {
+                val rem = ct.leaveAtMillis - System.currentTimeMillis()
+                Icons.car.drawCentered(c, 23f, cy, 24f, ink(ORANGE, alpha), paint)
+                tLabel.drawRight(c, tLabel.ellipsize(leaveText(rem), bw - 60f), right, tLabel.baselineCentered(cy), ink(ORANGE, alpha))
+                // a minute countdown: wake at the next minute boundary, not every second
+                if (rem > 0) { tickIn = minOf(tickIn, rem % 60_000L + 8L); return false to true }
+            }
+            is LiveContent.RainSoon -> {
+                Icons.rain.drawCentered(c, 23f, cy, 24f, ink(RAIN, alpha), paint)
+                tLabel.drawRight(c, tLabel.ellipsize(rainText(ct), bw - 60f), right, tLabel.baselineCentered(cy), ink(RAIN, alpha))
+            }
+            is LiveContent.PhoneBattery -> {
+                val pct = ct.percent.coerceIn(0, 100)
+                val col = batteryColor(pct, ct.charging == true)
+                Icons.handset.drawCentered(c, 23f, cy, 24f, ink(Color.WHITE, alpha), paint)
+                batteryGlyph(c, 48f, cy, pct, ct.charging == true, col, alpha)
+                tLabel.drawRight(c, "$pct%", right, tLabel.baselineCentered(cy), ink(if (pct <= LOW_BATTERY && ct.charging != true) col else Color.WHITE, alpha))
+            }
         }
         return false to false
     }
@@ -405,9 +423,46 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
             is LiveContent.Call -> Icons.phone.drawCentered(c, cx, cy, 22f, ink(GREEN, alpha), paint)
             is LiveContent.AirPlayConnected -> Icons.airplay.drawCentered(c, cx, cy, 22f, ink(Color.WHITE, alpha), paint)
             is LiveContent.BluetoothConnected -> Icons.bluetooth.drawCentered(c, cx, cy, 22f, ink(BLUE, alpha), paint)
-            is LiveContent.LeaveNow, is LiveContent.RainSoon, is LiveContent.PhoneBattery -> {}
+            is LiveContent.LeaveNow -> Icons.car.drawCentered(c, cx, cy, 22f, ink(ORANGE, alpha), paint)
+            is LiveContent.RainSoon -> Icons.rain.drawCentered(c, cx, cy, 22f, ink(RAIN, alpha), paint)
+            is LiveContent.PhoneBattery -> Icons.handset.drawCentered(c, cx, cy, 22f, ink(batteryColor(ct.percent, ct.charging == true), alpha), paint)
         }
         return false
+    }
+
+    private fun leaveText(remMs: Long): String {
+        if (remMs <= 0) return "Leave now"
+        val min = ceil(remMs / 60_000.0).toInt()
+        return if (min >= 60) "Leave in ${min / 60} h ${min % 60} min".replace(" 0 min", "") else "Leave in $min min"
+    }
+
+    private fun rainText(ct: LiveContent.RainSoon): String {
+        val what = if (ct.heavy) "Heavy rain" else "Rain"
+        return when {
+            ct.minutes <= 0 -> "$what now"
+            ct.minutes >= 60 -> "$what soon"
+            else -> "$what in ${ct.minutes} min"
+        }
+    }
+
+    private fun batteryColor(pct: Int, charging: Boolean) = when {
+        charging -> GREEN
+        pct <= LOW_BATTERY -> RED
+        else -> Color.WHITE
+    }
+
+    /** iOS-style battery: 28x14 outline + tip, level fill, a bolt on it while charging. Left edge [x], centred on [cy]. */
+    private fun batteryGlyph(c: Canvas, x: Float, cy: Float, pct: Int, charging: Boolean, col: Int, alpha: Float) {
+        paint.shader = null
+        paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.6f
+        paint.color = ink(withAlpha(Color.WHITE, 0.5f), alpha)
+        rect.set(x, cy - 7f, x + 28f, cy + 7f); c.drawRoundRect(rect, 4.2f, 4.2f, paint)
+        paint.style = Paint.Style.FILL
+        rect.set(x + 29.5f, cy - 2.6f, x + 31.5f, cy + 2.6f); c.drawRoundRect(rect, 1f, 1f, paint)
+        paint.color = ink(col, alpha)
+        val fw = 21f * (pct.coerceIn(0, 100) / 100f)
+        if (fw > 0.5f) { rect.set(x + 3.5f, cy - 3.5f, x + 3.5f + maxOf(fw, 3f), cy + 3.5f); c.drawRoundRect(rect, 2f, 2f, paint) }
+        if (charging) Icons.bolt.drawCentered(c, x + 14f, cy, 11f, if (night) withAlpha(Color.BLACK, alpha) else withAlpha(0xFF08140C.toInt(), alpha), paint)
     }
 
     /** Expanded layouts, re-flowed at the current (animating) size like the CSS flex boxes. Returns needs-1s-ticks. */
@@ -535,11 +590,48 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
                     button(ox + acc, oy + cy - 34f, 68f, 68f) { invoke(accept, true) }
                 }
             }
+            is LiveContent.LeaveNow -> {
+                // padding 24, gap 16: orange disc 64 + car, title 26/800 over "Leave by 8:35 . 25 min drive", [extra] + Dismiss pills
+                circleButton(c, 24f, cy - 32f, 64f, ORANGE, alpha)
+                Icons.car.drawCentered(c, 24f + 32f, cy, 34f, if (night) withAlpha(Color.BLACK, alpha) else withAlpha(0xFF2A1200.toInt(), alpha), paint)
+                val extra = a.actions.firstOrNull { it.id != "dismiss" }
+                val pills = ArrayList<Pair<String, IslandAction?>>()
+                if (extra != null) pills += extra.label to extra
+                pills += "Dismiss" to null
+                var x = bw - 24f + 10f
+                for ((label, act) in pills.reversed()) {
+                    val pw = 22f * 2 + tButton.width(label)
+                    x -= 10f + pw
+                    rect.set(x, cy - 24f, x + pw, cy + 24f)
+                    paint.shader = null; paint.style = Paint.Style.FILL
+                    paint.color = ink(if (act != null) ORANGE else withAlpha(Color.WHITE, 0.18f), alpha)
+                    c.drawRoundRect(rect, 24f, 24f, paint)
+                    val fg = if (act != null) (if (night) Color.BLACK else 0xFF2A1200.toInt()) else Color.WHITE
+                    tButton.draw(c, label, x + 22f, tButton.baselineCentered(cy), if (night && act != null) withAlpha(fg, alpha) else ink(fg, alpha))
+                    button(ox + x, oy + cy - 24f, pw, 48f) { if (act != null) invoke(act, true) else dismissLeave(a) }
+                }
+                val textL = 24f + 64f + 16f
+                val textW = (x - 16f - textL).coerceAtLeast(0f)
+                val lh1 = tLeaveTitle.normalLineHeight; val lh2 = tTimerLabel.normalLineHeight
+                val top = cy - (lh1 + lh2 + 2f) / 2f
+                tLeaveTitle.draw(c, tLeaveTitle.ellipsize(ct.title, textW), textL, tLeaveTitle.baselineIn(top, lh1), ink(Color.WHITE, alpha))
+                val sub = "Leave by ${clockText(ct.leaveAtMillis)} · ${ct.travelMinutes} min drive"
+                tTimerLabel.draw(c, tTimerLabel.ellipsize(sub, textW), textL, tTimerLabel.baselineIn(top + lh1 + 2f, lh2), ink(0xFFFFB340.toInt(), alpha))
+            }
             is LiveContent.Assistant, is LiveContent.AirPlayConnected, is LiveContent.BluetoothConnected,
-            is LiveContent.LeaveNow, is LiveContent.RainSoon, is LiveContent.PhoneBattery -> {}
+            is LiveContent.RainSoon, is LiveContent.PhoneBattery -> {}
         }
         return false
     }
+
+    private fun dismissLeave(a: LiveActivity) {
+        a.actions.firstOrNull { it.id == "dismiss" }?.let { try { it.onInvoke() } catch (e: Exception) { android.util.Log.w("VesperSystem", "leave dismiss", e) } }
+        s.island.end(a.id) // ends it even when the producer gave no dismiss action
+        if (layout.mode == IslandMode.EXPANDED) setLayout(model.collapse())
+    }
+
+    private fun clockText(ms: Long): String =
+        java.text.SimpleDateFormat(if (android.text.format.DateFormat.is24HourFormat(context)) "H:mm" else "h:mm", java.util.Locale.getDefault()).format(java.util.Date(ms))
 
     private fun circleButton(c: Canvas, x: Float, y: Float, size: Float, color: Int, alpha: Float) {
         paint.shader = null; paint.style = Paint.Style.FILL
@@ -650,6 +742,9 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
         val ORANGE = 0xFFFF9F0A.toInt()
         val GREEN = 0xFF30D158.toInt()
         val BLUE = 0xFF0A84FF.toInt()
+        val RAIN = 0xFF5EB0FF.toInt()
+        val RED = 0xFFFF453A.toInt()
+        const val LOW_BATTERY = 20
         val PEACH = 0xFFF4B98A.toInt()
         val ASSIST_BARS = intArrayOf(0xFF64D2FF.toInt(), 0xFFBF5AF2.toInt(), 0xFFFF375F.toInt(), 0xFFFF9F0A.toInt(), 0xFF64D2FF.toInt(), 0xFFBF5AF2.toInt())
     }

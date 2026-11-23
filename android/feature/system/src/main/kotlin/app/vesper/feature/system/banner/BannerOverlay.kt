@@ -84,7 +84,7 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
     private var downY = 0f
     private var downX = 0f
     private var downTarget = 0 // 0 none, 1 compact, 2 expanded
-    private val primaryRect = RectF()
+    private val actionRects = ArrayList<Pair<RectF, IslandAction>>()
     private val dismissRect = RectF()
 
     private val tick = Runnable { if (q.tick(SystemClock.uptimeMillis())) apply(); schedule() }
@@ -362,21 +362,27 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
         for (line in bodyLines) { tBigBody.draw(c, line, 64f, tBigBody.baselineIn(top, 30f * 1.25f), ink(withAlpha(Color.WHITE, 0.88f), a)); top += 30f * 1.25f }
         // buttons: bottom 34, left/right 64, gap 14, 72 tall r36 — the one tinted primary + Dismiss
         val bt = 480f - 34f - 72f
-        val primary = b.primaryAction
-        if (primary != null) {
-            val w = (maxW - 14f) / 2f
-            primaryRect.set(64f, bt, 64f + w, bt + 72f)
-            dismissRect.set(64f + w + 14f, bt, 896f, bt + 72f)
-            primaryGlass.alpha = a
-            primaryGlass.draw(c, primaryRect.left, primaryRect.top, primaryRect.right, primaryRect.bottom, 36f)
-            tButton.drawCentered(c, tButton.ellipsize(primary.label, w - 40f), primaryRect.centerX(), tButton.baselineCentered(primaryRect.centerY()), ink(Color.WHITE, a))
-        } else {
-            primaryRect.setEmpty()
-            dismissRect.set(64f, bt, 896f, bt + 72f)
+        // buttons: the one tinted primary, then Banner.actions, then Dismiss, all in one row
+        val items = ArrayList<IslandAction?>()
+        b.primaryAction?.let { items += it }
+        items += b.actions.take(3)
+        items += null // Dismiss
+        val n = items.size
+        val w = (maxW - 14f * (n - 1)) / n
+        actionRects.clear()
+        dismissRect.setEmpty()
+        for ((i, act) in items.withIndex()) {
+            val l = 64f + i * (w + 14f)
+            val rc = RectF(l, bt, l + w, bt + 72f)
+            val primary = act != null && i == 0 && b.primaryAction != null
+            val gp = if (primary) primaryGlass else btnGlass
+            gp.alpha = a
+            gp.draw(c, rc.left, rc.top, rc.right, rc.bottom, 36f)
+            val label = act?.label ?: "Dismiss"
+            val col = if (act?.style == IslandAction.Style.DESTRUCTIVE && !night) 0xFFFF6B63.toInt() else Color.WHITE
+            tButton.drawCentered(c, tButton.ellipsize(label, w - 32f), rc.centerX(), tButton.baselineCentered(rc.centerY()), ink(col, a))
+            if (act == null) dismissRect.set(rc) else actionRects += rc to act
         }
-        btnGlass.alpha = a
-        btnGlass.draw(c, dismissRect.left, dismissRect.top, dismissRect.right, dismissRect.bottom, 36f)
-        tButton.drawCentered(c, "Dismiss", dismissRect.centerX(), tButton.baselineCentered(dismissRect.centerY()), ink(Color.WHITE, a))
     }
 
     private fun wrap(t: SpecText, text: String, maxW: Float, maxLines: Int): List<String> {
@@ -422,9 +428,9 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
                 when (downTarget) {
                     1 -> if (dy < -24f) { q.close(SystemClock.uptimeMillis()); apply(); schedule() } else if (kotlin.math.abs(dy) < 16f) expand()
                     2 -> when {
-                        primaryRect.contains(e.x, e.y) -> {
-                            val act: IslandAction? = (expandedBanner ?: q.current)?.primaryAction
-                            try { act?.onInvoke?.invoke() } catch (ex: Exception) { android.util.Log.w("VesperSystem", "banner action", ex) }
+                        actionRects.any { it.first.contains(e.x, e.y) } -> {
+                            val act = actionRects.first { it.first.contains(e.x, e.y) }.second
+                            try { act.onInvoke() } catch (ex: Exception) { android.util.Log.w("VesperSystem", "banner action ${act.id}", ex) }
                             close(dismiss = true)
                         }
                         dismissRect.contains(e.x, e.y) -> close(dismiss = true, byUser = true)
@@ -454,7 +460,15 @@ internal class BannerOverlay(context: Context, private val ui: SystemUi) : View(
             // 4: as `:feature:phone` posts an iPhone (ANCS) notification: iOS bundle id, no Android icon, no reply
             Banner("demo:ios", "Messages", 0xFF30D158.toInt(), "message", "Maya", "Running 10 min late, save me a seat!",
                 sourcePackage = "com.apple.MobileSMS", sourceDevice = "Maya’s iPhone"),
-            // 5: an iPhone call banner (answered on the phone)
+            // 5 (was the call, now 6): two extra actions after the primary (ANCS positive / negative)
+            Banner("demo:actions", "Reminders", 0xFFFF9F0A.toInt(), "bell", "Take out the recycling", "Reminder for tonight · Maya’s iPhone",
+                sourcePackage = "com.apple.reminders", sourceDevice = "Maya’s iPhone",
+                primaryAction = IslandAction("done", "Mark done", IslandAction.Style.PRIMARY) { android.util.Log.i("VesperSystem", "demo: banner done") },
+                actions = listOf(
+                    IslandAction("later", "Remind later") { android.util.Log.i("VesperSystem", "demo: banner later") },
+                    IslandAction("clear", "Clear", IslandAction.Style.DESTRUCTIVE) { android.util.Log.i("VesperSystem", "demo: banner clear") },
+                )),
+            // 6: an iPhone call banner (answered on the phone)
             Banner("demo:ioscall", "Phone", 0xFF30D158.toInt(), "call", "Maya", "Incoming call · Answer on iPhone", critical = true,
                 sourcePackage = "com.apple.mobilephone", sourceDevice = "Maya’s iPhone"),
         )

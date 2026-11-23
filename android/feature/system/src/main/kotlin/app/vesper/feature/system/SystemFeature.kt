@@ -14,6 +14,7 @@ import app.vesper.feature.system.banner.BannerOverlay
 import app.vesper.feature.system.cc.ControlCenterOverlay
 import app.vesper.feature.system.hud.HudOverlay
 import app.vesper.feature.system.island.IslandOverlay
+import app.vesper.feature.system.screenoff.ScreenOffOverlay
 
 /**
  * `:feature:system` (agent B — System layer): volume keys in-app (no system panel), the mic/camera
@@ -37,11 +38,12 @@ object SystemFeature : VesperFeature {
         host.services.systemControls = ui.controls
         applyNightSetting(host.services)
         SystemSettings.sections.forEach { host.registerSettings(it) }
-        host.registerKeyHandler { ui.keys.onKey(it) }
+        host.registerKeyHandler { ui.screenOff?.onKey(); ui.keys.onKey(it) }
         host.registerOverlay(OverlaySpec("island", 300) { IslandOverlay(it, ui) })
         host.registerOverlay(OverlaySpec("banners", 400) { BannerOverlay(it, ui) })
         host.registerOverlay(OverlaySpec("huds", 500) { HudOverlay(it, ui) })
         host.registerOverlay(OverlaySpec("controlcenter", 600) { ControlCenterOverlay(it, ui) })
+        host.registerOverlay(OverlaySpec("screenoff", 900) { ScreenOffOverlay(it, ui) })
         if (host.services.config.debug) registerDebug(host.context, ui)
     }
 
