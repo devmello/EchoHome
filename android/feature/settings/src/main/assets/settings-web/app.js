@@ -70,6 +70,7 @@ let pairId = null;
 
 function showPair() {
   closeEvents();
+  stopRemote();
   $('#app').hidden = true;
   $('#pair').hidden = false;
   $('#pair-start').hidden = false;
@@ -128,11 +129,14 @@ let advanced = store.get('advanced', '0') === '1';
 async function loadApp() {
   schema = await api('GET', '/api/schema');
   try { alarmsData = await api('GET', '/api/alarms'); } catch (e) { alarmsData = null; }
+  try { peopleData = await api('GET', '/api/people'); } catch (e) { peopleData = null; }
+  try { diagData = await api('GET', '/api/diagnostics'); } catch (e) { diagData = null; }
   $('#pair').hidden = true;
   $('#app').hidden = false;
   render();
   loadPairs();
   openEvents();
+  setTab(tab);
 }
 
 function render() {
@@ -151,7 +155,17 @@ function render() {
       h('h2', { id: 'h-alarms', text: 'Alarms' }), h('div', { class: 'group glass', id: 'alarm-list' })));
     chips.append(chip('alarms', 'Alarms'));
   };
+  let peoplePlaced = false;
+  const placePeople = () => {
+    if (peoplePlaced || !peopleData) return;
+    peoplePlaced = true;
+    main.append(h('section', { class: 'section', id: 's-people', 'aria-labelledby': 'h-people' },
+      h('h2', { id: 'h-people', text: 'People' }), h('div', { class: 'group glass', id: 'people-list' }),
+      h('p', { class: 'section-help', text: 'Each person’s own calendars, shown when the Echo recognises them. Links are never shown again once saved.' })));
+    chips.append(chip('people', 'People'));
+  };
   for (const s of schema.sections) {
+    if (s.order >= 90 && s.id !== 'general') placePeople();
     if (s.id === 'alarm' || (s.order >= 40 && s.id !== 'general')) placeAlarms();
     const specs = s.settings.filter((x) => advanced || !x.advanced);
     if (!specs.length && s.id !== 'general') continue;
@@ -164,8 +178,17 @@ function render() {
     chips.append(chip(s.id, s.title));
   }
   placeAlarms();
+  placePeople();
+  if (diagData) {
+    main.append(h('section', { class: 'section', id: 's-diag', 'aria-labelledby': 'h-diag' },
+      h('h2', { id: 'h-diag', text: 'Diagnostics' }), h('div', { class: 'group glass', id: 'diag-list' }),
+      h('p', { class: 'section-help', text: 'Crashes and hangs of the Echo app since the log was last cleared.' })));
+    chips.append(chip('diag', 'Diagnostics'));
+  }
   if (lastPairs) renderPairs(lastPairs);
   renderAlarms();
+  renderPeople();
+  renderDiag();
   window.scrollTo(0, keep);
 }
 
@@ -498,7 +521,8 @@ function renderAlarms() {
   if (!box || !alarmsData) return;
   box.textContent = '';
   box.append(h('div', { class: 'row alarm-head' }, h('div', { class: 'row-main' },
-    h('span', { class: 'row-title alarm-next', text: nextText(alarmsData.next) }),
+    h('span', { class: 'row-title alarm-next' }, h('span', {},
+      nextText(alarmsData.next), alarmsData.next && alarmsData.next.reason && h('small', { class: 'next-reason', style: 'display:block', text: alarmsData.next.reason }))),
     h('button', { type: 'button', class: 'add-alarm', 'aria-label': 'Add alarm', onclick: () => { openAlarm = 'new'; renderAlarms(); } }, '+'))));
   if (openAlarm === 'new') box.append(alarmEditor(null));
   if (!alarmsData.alarms.length && openAlarm !== 'new') box.append(h('div', { class: 'row empty', text: 'No alarms yet. Tap + to add one.' }));
@@ -528,7 +552,7 @@ function alarmEditor(a) {
   const isNew = !a;
   const draft = a ? { ...a, days: [...a.days] } : (() => {
     const d = new Date(Date.now() + 3600e3);
-    return { time: `${String(d.getHours()).padStart(2, '0')}:00`, days: [], label: 'Alarm', enabled: true, sunrise: true };
+    return { time: `${String(d.getHours()).padStart(2, '0')}:00`, days: [], label: 'Alarm', enabled: true, sunrise: true, leaveBy: false, readyMinutes: 45, skipHolidays: false };
   })();
   const ok = h('span', { class: 'saved', 'aria-hidden': 'true' }, svg(CHECK), 'Saved');
   let okTimer;
@@ -556,6 +580,19 @@ function alarmEditor(a) {
     onkeydown: (e) => { if (e.key === 'Enter') label.blur(); }, onchange: () => patch({ label: label.value }) });
   const sunrise = h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': 'Sunrise light', onchange: () => patch({ sunrise: sunrise.checked }) });
   sunrise.checked = draft.sunrise;
+  const leave = h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': 'Leave on time',
+    onchange: () => { ready.hidden = !leave.checked; patch({ leaveBy: leave.checked }); } });
+  leave.checked = !!draft.leaveBy;
+  const readyMin = h('input', { class: 'field inline-field', type: 'text', inputmode: 'numeric', value: draft.readyMinutes ?? 45, 'aria-label': 'Minutes to get ready',
+    style: 'width:84px;text-align:center', onchange: () => {
+      const n = Math.round(Number(readyMin.value));
+      if (!(n >= 0 && n <= 180)) { readyMin.value = draft.readyMinutes ?? 45; return toast('Getting ready: 0 to 180 minutes', true); }
+      patch({ readyMinutes: n });
+    } });
+  const ready = h('div', { class: 'ed-row' }, h('span', { class: 'ed-label' }, 'Getting ready', h('small', { text: 'Minutes between the alarm and walking out' })), readyMin);
+  ready.hidden = !draft.leaveBy;
+  const holidays = h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': 'Skip holidays', onchange: () => patch({ skipHolidays: holidays.checked }) });
+  holidays.checked = !!draft.skipHolidays;
 
   // The sound is one setting for every alarm (alarm.sound on the schema), so it's edited here too.
   const soundSpec = currentSpec('alarm.sound');
@@ -581,7 +618,7 @@ function alarmEditor(a) {
     ? h('div', { class: 'ed-actions' },
         h('button', { type: 'button', class: 'text-btn', onclick: () => { openAlarm = null; renderAlarms(); } }, 'Cancel'),
         h('button', { type: 'button', class: 'btn-primary small', onclick: async () => {
-          const r = await alarmCall('POST', '/api/alarms', { time: time.value || draft.time, days: draft.days, label: label.value, sunrise: sunrise.checked, enabled: true });
+          const r = await alarmCall('POST', '/api/alarms', { time: time.value || draft.time, days: draft.days, label: label.value, sunrise: sunrise.checked, leaveBy: leave.checked, readyMinutes: Number(readyMin.value) || 45, skipHolidays: holidays.checked, enabled: true });
           if (!r) return;
           openAlarm = null;
           alarmsData = (await alarmCall('GET', '/api/alarms')) || alarmsData;
@@ -604,10 +641,277 @@ function alarmEditor(a) {
     h('div', { class: 'ed-col' }, h('span', { class: 'ed-label', text: 'Repeat' }), days),
     h('div', { class: 'ed-col' }, h('span', { class: 'ed-label', text: 'Label' }), label),
     h('div', { class: 'ed-row' }, h('span', { class: 'ed-label' }, 'Sunrise light', h('small', { text: 'The screen brightens before it rings' })), sunrise),
+    h('div', { class: 'ed-row' }, h('span', { class: 'ed-label' }, 'Leave on time', h('small', { text: 'Rings earlier when your first event needs it (travel time included). Never later than set.' })), leave),
+    ready,
+    h('div', { class: 'ed-row' }, h('span', { class: 'ed-label' }, 'Skip holidays', h('small', { text: 'Stays quiet on public holidays and day-off events' })), holidays),
     sound,
     actions);
 }
 
+
+// ---------- remote (live state + controls) ----------
+const ICON = {
+  play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6a1 1 0 0 0 1.5.86l11-6.8a1 1 0 0 0 0-1.72l-11-6.8A1 1 0 0 0 8 5.2z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4.5" width="4.2" height="15" rx="1.2"/><rect x="13.8" y="4.5" width="4.2" height="15" rx="1.2"/></svg>',
+  next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.6v12.8a.9.9 0 0 0 1.4.75l9-6.4a.9.9 0 0 0 0-1.5l-9-6.4A.9.9 0 0 0 4 5.6z"/><rect x="16.5" y="5" width="3.2" height="14" rx="1.1"/></svg>',
+  prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 5.6v12.8a.9.9 0 0 1-1.4.75l-9-6.4a.9.9 0 0 1 0-1.5l9-6.4A.9.9 0 0 1 20 5.6z"/><rect x="4.3" y="5" width="3.2" height="14" rx="1.1"/></svg>',
+};
+const POLL_MS = 2000;
+let remote = null;          // last /api/remote reply
+let remoteAt = 0;           // Date.now() when it arrived (timers count down from here)
+let remoteUi = null;        // element refs, built once
+let pollTimer = null, tickTimer = null;
+let tab = store.get('tab', 'remote');
+const touched = { volume: 0, brightness: 0, night: 0, dnd: 0 }; // last local change: don't let a poll fight the finger
+
+function fmtDur(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  const hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = s % 60;
+  return hh ? `${hh}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}` : `${mm}:${String(ss).padStart(2, '0')}`;
+}
+
+async function remoteCall(method, path, body) {
+  try { return await api(method, path, body); } catch (e) {
+    if (e.status === 401) showPair(); else toast(e.message, true);
+    return null;
+  }
+}
+
+function slider(label, key, onSend) {
+  const range = h('input', { type: 'range', min: 0, max: 100, step: 1, 'aria-label': label });
+  const out = h('output');
+  let last = 0, pending = null;
+  const paint = () => { range.style.setProperty('--p', `${range.value}%`); out.textContent = `${range.value}%`; };
+  const send = () => { last = Date.now(); touched[key] = last; onSend(range.value / 100); pending = null; };
+  range.addEventListener('input', () => {
+    paint(); touched[key] = Date.now();
+    if (Date.now() - last > 140) send(); else if (!pending) pending = setTimeout(send, 140);
+  });
+  range.addEventListener('change', () => { clearTimeout(pending); send(); });
+  const set = (v) => { if (Date.now() - touched[key] < 2500) return; range.value = Math.round(v * 100); paint(); };
+  return { el: h('div', {}, h('div', { class: 'row-main' }, h('span', { class: 'slider-label', text: label })),
+    h('div', { class: 'slider-row' }, range, out)), set };
+}
+
+function buildRemote() {
+  const u = {};
+  const box = $('#remote');
+  box.textContent = '';
+  const card = (title, ...kids) => h('section', { class: 'section' }, title && h('h2', { text: title }), h('div', { class: 'group glass' }, ...kids));
+
+  // Now playing
+  u.npTitle = h('div', { class: 'np-title' });
+  u.npSub = h('div', { class: 'np-sub' });
+  u.npBar = h('i');
+  const tbtn = (cls, icon, label, fn) => h('button', { type: 'button', class: cls, 'aria-label': label, onclick: fn }, svg(icon));
+  const media = async (action) => { if (await remoteCall('POST', '/api/remote/media', { action })) setTimeout(poll, 350); };
+  u.prev = tbtn('', ICON.prev, 'Previous', () => media('previous'));
+  u.pp = tbtn('big', ICON.play, 'Play', () => media(remote && remote.media && remote.media.playing ? 'pause' : 'play'));
+  u.next = tbtn('', ICON.next, 'Next', () => media('next'));
+  u.np = h('div', { class: 'row' }, u.npTitle, u.npSub, h('div', { class: 'np-bar' }, u.npBar), h('div', { class: 'transport' }, u.prev, u.pp, u.next));
+  box.append(card('Now playing', u.np));
+
+  // Volume, brightness, DND, night
+  u.vol = slider('Volume', 'volume', (v) => remoteCall('POST', '/api/remote/system', { volume: v }));
+  u.bri = slider('Brightness', 'brightness', (v) => remoteCall('POST', '/api/remote/system', { brightness: v }));
+  u.dnd = h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': 'Do Not Disturb',
+    onchange: () => { touched.dnd = Date.now(); remoteCall('POST', '/api/remote/system', { dnd: u.dnd.checked }); } });
+  const nightOpts = [['auto', 'Auto'], ['on', 'On'], ['off', 'Off']];
+  const setNight = (v) => { for (const b of u.night.children) b.setAttribute('aria-checked', b.dataset.v === v); };
+  u.night = h('div', { class: 'seg wide', role: 'radiogroup', 'aria-label': 'Night mode' },
+    nightOpts.map(([v, l]) => h('button', { type: 'button', role: 'radio', 'data-v': v, text: l, onclick: () => {
+      touched.night = Date.now(); setNight(v); remoteCall('POST', '/api/remote/system', { night: v });
+    } })));
+  u.setNight = setNight;
+  box.append(card('Controls',
+    h('div', { class: 'row' }, u.vol.el), h('div', { class: 'row' }, u.bri.el),
+    h('div', { class: 'row' }, h('div', { class: 'row-main' }, h('span', { class: 'row-title', text: 'Do Not Disturb' }), u.dnd)),
+    h('div', { class: 'row' }, h('div', { class: 'row-main' }, h('span', { class: 'row-title', text: 'Night mode' })), h('div', { class: 'stack' }, u.night))));
+
+  // Timers
+  u.timers = h('div');
+  const start = async (seconds) => { if (await remoteCall('POST', '/api/remote/timers', { seconds })) poll(); };
+  const presets = h('div', { class: 'presets' }, [1, 5, 10, 15].map((m) => h('button', { type: 'button', class: 'mini', text: `${m} min`, onclick: () => start(m * 60) })));
+  u.cMin = h('input', { class: 'field mins', inputmode: 'numeric', placeholder: 'min', 'aria-label': 'Minutes', maxlength: 4 });
+  u.cLabel = h('input', { class: 'field', type: 'text', placeholder: 'Label (optional)', maxlength: 40, 'aria-label': 'Timer label', autocomplete: 'off' });
+  const go = h('button', { type: 'button', class: 'mini', text: 'Start', onclick: async () => {
+    const m = Number(u.cMin.value);
+    if (!(m >= 1 && m <= 1440)) return toast('Enter 1 to 1440 minutes', true);
+    if (await remoteCall('POST', '/api/remote/timers', { seconds: Math.round(m * 60), label: u.cLabel.value.trim() })) { u.cMin.value = ''; u.cLabel.value = ''; poll(); }
+  } });
+  box.append(card('Timers', u.timers,
+    h('div', { class: 'row' }, presets, h('div', { class: 'custom-timer' }, u.cMin, u.cLabel, go))));
+
+  // Next alarm
+  u.alarm = h('div', { class: 'row' });
+  box.append(card('Next alarm', u.alarm));
+
+  // Note
+  u.note = h('textarea', { class: 'field', rows: 2, maxlength: 280, placeholder: 'Dinner is ready', 'aria-label': 'Note for the Echo' });
+  u.noteCount = h('div', { class: 'note-count', text: '0 / 280' });
+  u.noteBtn = h('button', { type: 'button', class: 'btn-primary small', text: 'Send', onclick: async () => {
+    const text = u.note.value.trim();
+    if (!text) return;
+    u.noteBtn.disabled = true;
+    try { if (await remoteCall('POST', '/api/remote/note', { text })) { u.note.value = ''; u.noteCount.textContent = '0 / 280'; toast('Sent to the Echo'); } }
+    finally { u.noteBtn.disabled = false; }
+  } });
+  u.note.addEventListener('input', () => { u.noteCount.textContent = `${u.note.value.length} / 280`; });
+  box.append(card('Send a note to the Echo', h('div', { class: 'row' }, h('div', { class: 'send-row' }, u.note, u.noteBtn), u.noteCount)));
+  remoteUi = u;
+  timersSig = null;
+}
+
+let timersSig = '';
+function renderRemote() {
+  if (!remoteUi || !remote) return;
+  const u = remoteUi, m = remote.media, s = remote.system;
+  if (m) {
+    u.npTitle.textContent = m.title || 'Playing';
+    u.npSub.textContent = [m.artist, m.source].filter(Boolean).join(' · ');
+    u.prev.disabled = u.next.disabled = !m.canSkip;
+    u.pp.disabled = !m.canPause && m.playing;
+    u.pp.replaceChildren(svg(m.playing ? ICON.pause : ICON.play));
+    u.pp.setAttribute('aria-label', m.playing ? 'Pause' : 'Play');
+  } else {
+    u.npTitle.textContent = 'Nothing playing';
+    u.npSub.textContent = 'Play something from your phone with AirPlay or Bluetooth.';
+    u.prev.disabled = u.next.disabled = u.pp.disabled = true;
+    u.pp.replaceChildren(svg(ICON.play));
+  }
+  u.npBar.parentElement.hidden = !m || !m.durationMs;
+  u.vol.set(s.volume); u.bri.set(s.brightness);
+  if (Date.now() - touched.dnd > 2500) u.dnd.checked = s.dnd;
+  if (Date.now() - touched.night > 2500) u.setNight(s.night);
+
+  const sig = JSON.stringify(remote.timers.map((t) => [t.id, t.label, t.state]));
+  if (sig !== timersSig) {
+    timersSig = sig;
+    u.timers.textContent = '';
+    if (!remote.timers.length) u.timers.append(h('div', { class: 'empty-note', text: 'No timers running.' }));
+    for (const t of remote.timers) {
+      const big = h('div', { class: 'big', 'data-timer': t.id });
+      const acts = [];
+      const act = (action, extra) => async () => { if (await remoteCall('POST', `/api/remote/timers/${encodeURIComponent(t.id)}`, { action, ...extra })) poll(); };
+      if (t.state === 'running') acts.push(h('button', { type: 'button', class: 'mini', text: 'Pause', onclick: act('pause') }));
+      if (t.state === 'paused') acts.push(h('button', { type: 'button', class: 'mini', text: 'Resume', onclick: act('resume') }));
+      if (t.state !== 'done') acts.push(h('button', { type: 'button', class: 'mini', text: '+1 min', onclick: act('add', { seconds: 60 }) }));
+      acts.push(h('button', { type: 'button', class: 'mini danger', text: t.state === 'done' ? 'Dismiss' : 'Cancel', onclick: act(t.state === 'done' ? 'dismiss' : 'cancel') }));
+      u.timers.append(h('div', { class: `row timer${t.state === 'done' ? ' done' : ''}` },
+        h('div', { class: 'tleft' }, big, h('small', { text: t.state === 'done' ? `${t.label || 'Timer'} · done` : [t.label, t.state === 'paused' ? 'Paused' : ''].filter(Boolean).join(' · ') })),
+        h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end' }, acts)));
+    }
+  }
+  tickRemote();
+
+  const a = remote.nextAlarm;
+  u.alarm.textContent = '';
+  if (a) {
+    const [tm, ap] = timeParts(a.time);
+    u.alarm.append(h('div', { class: 'np-title', text: `${tm}${ap ? ' ' + ap : ''}${a.label && a.label !== 'Alarm' ? ' · ' + a.label : ''}` }),
+      h('div', { class: 'np-sub', text: nextText({ at: a.at }) }));
+    if (a.reason) u.alarm.append(h('div', { class: 'next-reason', text: a.reason }));
+  } else u.alarm.append(h('div', { class: 'np-sub', text: 'No alarms on' }));
+}
+
+/** Once a second: timers count down from the last poll, the progress bar moves. */
+function tickRemote() {
+  if (!remote || !remoteUi) return;
+  const el = Date.now() - remoteAt;
+  for (const t of remote.timers) {
+    const n = remoteUi.timers.querySelector(`[data-timer="${CSS.escape(t.id)}"]`);
+    if (n) n.textContent = t.state === 'done' ? '0:00' : fmtDur(t.state === 'running' ? t.remainingMs - el : t.remainingMs);
+  }
+  const m = remote.media;
+  if (m && m.durationMs) remoteUi.npBar.style.width = `${Math.min(100, ((m.positionMs + (m.playing ? el : 0)) / m.durationMs) * 100)}%`;
+}
+
+async function poll() {
+  if (document.visibilityState !== 'visible' || tab !== 'remote' || $('#app').hidden) return;
+  try {
+    const r = await api('GET', '/api/remote');
+    remote = r; remoteAt = Date.now();
+    renderRemote();
+  } catch (e) { if (e.status === 401) showPair(); }
+}
+
+function startRemote() {
+  stopRemote();
+  if (tab !== 'remote' || $('#app').hidden || document.visibilityState !== 'visible') return;
+  if (!remoteUi) buildRemote();
+  poll();
+  pollTimer = setInterval(poll, POLL_MS);
+  tickTimer = setInterval(tickRemote, 1000);
+}
+function stopRemote() { clearInterval(pollTimer); clearInterval(tickTimer); pollTimer = tickTimer = null; }
+
+function setTab(t) {
+  tab = t;
+  store.set('tab', t);
+  for (const b of document.querySelectorAll('[data-tab]')) b.setAttribute('aria-checked', b.dataset.tab === t);
+  $('#remote').hidden = t !== 'remote';
+  $('#sections').hidden = t !== 'settings';
+  $('#chips').hidden = t !== 'settings';
+  window.scrollTo(0, 0);
+  if (t === 'remote') startRemote(); else stopRemote();
+}
+
+// ---------- people: each person's calendars (write-only) ----------
+let peopleData = null;   // {people: [{id, name, color, calendar: 'set'|'unset'}]}
+let diagData = null;     // {entries: [...]}
+
+function renderPeople() {
+  const box = document.getElementById('people-list');
+  if (!box || !peopleData) return;
+  box.textContent = '';
+  if (!peopleData.people.length) box.append(h('div', { class: 'empty-note', text: 'No people yet. Add one on the Echo.' }));
+  for (const p of peopleData.people) {
+    const pill = h('span', { class: 'pill' });
+    const f = h('textarea', { class: 'field masked', rows: 3, autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', 'aria-label': `${p.name}’s calendar links` });
+    const clear = h('button', { type: 'button', class: 'text-btn danger', text: 'Clear', onclick: async () => {
+      if (!confirm(`Remove ${p.name}’s calendar links from the Echo?`)) return;
+      const r = await remoteCall('PUT', `/api/people/${encodeURIComponent(p.id)}/calendar`, { urls: null });
+      if (r) { p.calendar = r.calendar; renderPeople(); }
+    } });
+    const show = h('button', { type: 'button', class: 'text-btn', text: 'Show', hidden: true, onclick: () => {
+      const hidden = f.classList.toggle('masked'); show.textContent = hidden ? 'Show' : 'Hide';
+    } });
+    const save = h('button', { type: 'button', class: 'text-btn', text: 'Save links', hidden: true, onclick: async () => {
+      const r = await remoteCall('PUT', `/api/people/${encodeURIComponent(p.id)}/calendar`, { urls: f.value });
+      if (r) { p.calendar = r.calendar; toast(`${p.name}’s calendars saved`); renderPeople(); }
+    } });
+    f.addEventListener('input', () => { show.hidden = save.hidden = !f.value.trim(); });
+    const isSet = p.calendar === 'set';
+    pill.textContent = isSet ? 'Set' : 'Not set';
+    pill.classList.toggle('set', isSet);
+    clear.hidden = !isSet;
+    f.placeholder = isSet ? 'Paste new links to replace them' : 'One iCal link per line (https:// or webcal://)';
+    box.append(h('div', { class: 'row person' },
+      h('div', { class: 'row-main' }, h('span', { class: 'dot-c', style: `background:${p.color}` }), h('span', { class: 'row-title' }, h('span', { class: 't', text: p.name })), pill),
+      h('div', { class: 'stack' }, f, h('div', { class: 'secret-actions' }, save, show, clear))));
+  }
+}
+
+// ---------- diagnostics ----------
+function renderDiag() {
+  const box = document.getElementById('diag-list');
+  if (!box || !diagData) return;
+  box.textContent = '';
+  const list = diagData.entries;
+  if (!list.length) { box.append(h('div', { class: 'empty-note', text: 'No crashes or hangs recorded.' })); return; }
+  for (const e of list) {
+    const when = new Date(e.at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    box.append(h('details', { class: 'crash' },
+      h('summary', {}, h('span', { class: `kind ${e.kind}`, text: e.kind === 'hang' ? 'Hang' : 'Crash' }), h('span', { class: 'when', text: `${when} · ${e.thread}` })),
+      h('div', { class: 'sum', text: e.summary }),
+      e.stack && h('pre', { text: e.stack })));
+  }
+  box.append(h('div', { class: 'row' }, h('button', { type: 'button', class: 'text-btn danger', text: 'Clear', onclick: async () => {
+    if (!confirm('Clear the crash log on the Echo?')) return;
+    const r = await remoteCall('POST', '/api/diagnostics/clear', {});
+    if (r) { diagData = r; renderDiag(); }
+  } })));
+}
 
 // ---------- paired browsers ----------
 let lastPairs = null;
@@ -654,6 +958,11 @@ function openEvents() {
   es.addEventListener('change', (e) => { try { applyChange(JSON.parse(e.data)); } catch (x) { /* ignore */ } });
   es.addEventListener('schema', async () => { schema = await api('GET', '/api/schema'); render(); });
   es.addEventListener('pairs', () => loadPairs());
+  es.addEventListener('people', (e) => {
+    try { peopleData = JSON.parse(e.data); } catch (x) { return; }
+    const box = document.getElementById('people-list');
+    if (box && !box.contains(document.activeElement)) renderPeople();
+  });
   es.addEventListener('alarms', (e) => {
     try { alarmsData = JSON.parse(e.data); } catch (x) { return; }
     const box = document.getElementById('alarm-list');
@@ -677,8 +986,10 @@ function closeEvents() { if (es) { es.close(); es = null; } clearTimeout(retryTi
 
 // Coming back to a backgrounded tab / home-screen app: resync everything.
 document.addEventListener('visibilitychange', async () => {
-  if (document.visibilityState !== 'visible' || $('#app').hidden) return;
-  try { schema = await api('GET', '/api/schema'); alarmsData = await api('GET', '/api/alarms').catch(() => alarmsData); render(); loadPairs(); if (!es || es.readyState === EventSource.CLOSED) openEvents(); }
+  if (document.visibilityState !== 'visible') { stopRemote(); return; }
+  if ($('#app').hidden) return;
+  startRemote();
+  try { schema = await api('GET', '/api/schema'); alarmsData = await api('GET', '/api/alarms').catch(() => alarmsData); peopleData = await api('GET', '/api/people').catch(() => peopleData); diagData = await api('GET', '/api/diagnostics').catch(() => diagData); render(); loadPairs(); if (!es || es.readyState === EventSource.CLOSED) openEvents(); }
   catch (e) { if (e.status === 401) showPair(); }
 });
 
@@ -691,6 +1002,7 @@ async function boot() {
   const adv = $('#advanced');
   adv.checked = advanced;
   adv.addEventListener('change', () => { advanced = adv.checked; store.set('advanced', advanced ? '1' : '0'); render(); });
+  for (const b of document.querySelectorAll('[data-tab]')) b.addEventListener('click', () => setTab(b.dataset.tab));
   $('#pair-btn').addEventListener('click', startPair);
   $('#pair-again').addEventListener('click', () => { $('#pair-code').hidden = true; $('#pair-start').hidden = false; startPair(); });
   $('#code').addEventListener('input', (e) => {

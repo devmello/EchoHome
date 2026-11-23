@@ -1,6 +1,7 @@
 package app.vesper.feature.settings
 
 import app.vesper.core.model.fake.FakeAlarmStore
+import app.vesper.feature.settings.api.AlarmsApi
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -69,5 +70,26 @@ class AlarmsApiTest {
         assertEquals("Alarm", a.getString("label"))
         assertEquals(0, a.getJSONArray("days").length())
         assertTrue(a.getBoolean("sunrise"))
+    }
+
+    @Test fun leaveByAndHolidayFields() {
+        val a = json("POST", "/api/alarms", "{\"time\":\"06:45\",\"leaveBy\":true,\"readyMinutes\":30,\"skipHolidays\":true}").getJSONObject("alarm")
+        assertTrue(a.getBoolean("leaveBy")); assertEquals(30, a.getInt("readyMinutes")); assertTrue(a.getBoolean("skipHolidays"))
+        val stored = store.alarms.value.first { it.id == a.getString("id") }
+        assertTrue(stored.leaveBy); assertEquals(30, stored.readyMinutes); assertTrue(stored.skipHolidays)
+        call("PUT", "/api/alarms/${stored.id}", "{\"leaveBy\":false}")
+        assertFalse(store.alarms.value.first { it.id == stored.id }.leaveBy)
+        val defaults = json("POST", "/api/alarms", "{\"time\":\"08:00\"}").getJSONObject("alarm")
+        assertFalse(defaults.getBoolean("leaveBy")); assertEquals(45, defaults.getInt("readyMinutes")); assertFalse(defaults.getBoolean("skipHolidays"))
+        for (bad in listOf("{\"readyMinutes\":181}", "{\"readyMinutes\":-1}", "{\"leaveBy\":\"yes\"}", "{\"skipHolidays\":1}")) {
+            assertEquals(bad, 422, call("POST", "/api/alarms", bad).status)
+        }
+    }
+
+    @Test fun nextCarriesReason() {
+        val alarm = app.vesper.core.model.Alarm("a", 7, 0)
+        val l = AlarmsApi.listJson(listOf(alarm), app.vesper.core.model.NextAlarm(alarm, 123L, "Earlier for Dentist 9:00 · 25 min drive"))
+        assertEquals("Earlier for Dentist 9:00 · 25 min drive", l.getJSONObject("next").getString("reason"))
+        assertFalse(AlarmsApi.listJson(listOf(alarm), app.vesper.core.model.NextAlarm(alarm, 123L)).getJSONObject("next").has("reason"))
     }
 }

@@ -19,7 +19,8 @@ import java.util.UUID
  *  - `POST /api/alarms` `{time | hour+minute, days: [1..7], label, enabled, sunrise}` → the new alarm
  *  - `PUT /api/alarms/<id>` with any of those fields → the updated alarm
  *  - `DELETE /api/alarms/<id>`
- * The sound is global (setting `alarm.sound`, on the schema), not per alarm. Every store call
+ * Leave-by (`leaveBy`, `readyMinutes`) and `skipHolidays` are edited here too; `next.reason` says why it
+ * rings at a different time than set. The sound is global (setting `alarm.sound`, on the schema), not per alarm. Every store call
  * runs on the main thread ([onMain]), as RealAlarmStore requires.
  */
 class AlarmsApi(
@@ -77,10 +78,11 @@ class AlarmsApi(
 
         /** [AlarmJson] (days are ISO numbers, Monday = 1) plus "time" ("HH:mm") for the page. */
         fun toJson(a: Alarm): JSONObject = AlarmJson.toJson(a).put("time", "%02d:%02d".format(a.hour, a.minute))
+            .put("leaveBy", a.leaveBy).put("readyMinutes", a.readyMinutes).put("skipHolidays", a.skipHolidays)
 
         fun listJson(list: List<Alarm>, next: NextAlarm?): JSONObject = JSONObject()
             .put("alarms", JSONArray().apply { for (a in list.sortedBy { it.hour * 60 + it.minute }) put(toJson(a)) })
-            .put("next", next?.let { JSONObject().put("id", it.alarm.id).put("at", it.triggerAtMillis) } ?: JSONObject.NULL)
+            .put("next", next?.let { JSONObject().put("id", it.alarm.id).put("at", it.triggerAtMillis).putOpt("reason", it.reason) } ?: JSONObject.NULL)
 
         /** Validates [o] onto [base] (null = a new alarm with the model's defaults). */
         fun parse(o: JSONObject, base: Alarm?): Alarm {
@@ -105,6 +107,9 @@ class AlarmsApi(
                     "minute" -> a.copy(minute = int(v, 0..59, "Minute"))
                     "sunriseMinutes" -> a.copy(sunriseMinutes = int(v, 0..120, "Sunrise minutes"))
                     "snoozeMinutes" -> a.copy(snoozeMinutes = int(v, 1..60, "Snooze minutes"))
+                    "readyMinutes" -> a.copy(readyMinutes = int(v, 0..180, "Getting-ready minutes"))
+                    "leaveBy" -> a.copy(leaveBy = v as? Boolean ?: throw ValidationException("Leave by: expected true or false"))
+                    "skipHolidays" -> a.copy(skipHolidays = v as? Boolean ?: throw ValidationException("Skip holidays: expected true or false"))
                     "enabled" -> a.copy(enabled = v as? Boolean ?: throw ValidationException("On/off: expected true or false"))
                     "sunrise" -> a.copy(sunrise = v as? Boolean ?: throw ValidationException("Sunrise: expected true or false"))
                     "id" -> a // ignored: the path / a new UUID decides

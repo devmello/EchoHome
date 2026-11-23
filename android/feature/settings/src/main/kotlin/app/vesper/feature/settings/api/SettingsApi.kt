@@ -28,6 +28,7 @@ import org.json.JSONObject
  *  - `GET /api/events`: SSE, `change` / `schema` / `pairs` events
  *  - `GET /api/pairs`, `DELETE /api/pairs/<id>`: paired browsers
  *  - `/api/alarms`: the alarm list ([AlarmsApi])
+ *  - `/api/remote`, `/api/people`, `/api/diagnostics`: [RemoteApi]
  *
  * Defences: LAN-only sockets (in the server), a local Host header (DNS rebinding), same-origin
  * Origin on writes, JSON-only bodies (forces a CORS preflight we never answer), a
@@ -46,6 +47,8 @@ class SettingsApi(
     private val runAction: (SettingSpec) -> String?,
     /** The alarm list (`/api/alarms`), when an AlarmStore is available. */
     private val alarms: AlarmsApi? = null,
+    /** Phone remote, per-person calendars, diagnostics. */
+    private val remote: RemoteApi? = null,
 ) {
     fun handle(req: HttpRequest): HttpResponse {
         if (!Lan.isLocalHost(req.header("host"))) return HttpResponse.error(403, "Open the Echo by its IP address or .local name")
@@ -79,6 +82,7 @@ class SettingsApi(
             p == "/api/events" && req.method == "GET" -> HttpResponse(200, contentType = "text/event-stream; charset=utf-8",
                 headers = listOf("Cache-Control" to "no-store", "X-Accel-Buffering" to "no"),
                 stream = { out -> events.serve(out, me.tokenHash) })
+            remote != null && remote.handles(p) -> remote.handle(req)
             p == "/api/pairs" && req.method == "GET" -> ok(pairsJson(me))
             (p == "/api/alarms" || p.startsWith("/api/alarms/")) && alarms != null -> alarms.handle(req)
             p.startsWith("/api/pairs/") && req.method == "DELETE" -> forget(p.removePrefix("/api/pairs/"), me)

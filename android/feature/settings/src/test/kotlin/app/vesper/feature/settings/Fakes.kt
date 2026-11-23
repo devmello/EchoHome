@@ -12,6 +12,13 @@ import app.vesper.core.model.fake.FakeAlarmStore
 import app.vesper.feature.settings.api.AlarmsApi
 import app.vesper.feature.settings.api.Assets
 import app.vesper.feature.settings.api.EventHub
+import app.vesper.feature.settings.api.RemoteApi
+import app.vesper.feature.settings.api.RemoteDeps
+import app.vesper.core.model.*
+import app.vesper.core.model.fake.FakeProfileManager
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import app.vesper.feature.settings.api.SettingsApi
 import app.vesper.feature.settings.http.HttpRequest
 import app.vesper.feature.settings.pair.InMemoryPairStore
@@ -79,6 +86,7 @@ fun newApi(
     builtIn: Secrets = Secrets(),
     assetsDir: File? = null,
     alarms: AlarmStore = FakeAlarmStore(demo = true),
+    world: TestWorld = TestWorld(secrets, alarms),
 ): SettingsApi {
     val schema = DefaultSettingsSchema()
     demoSections(actionLog).forEach(schema::register)
@@ -97,6 +105,7 @@ fun newApi(
         }, // read from disk each time, so the dev server shows edits live
         runAction = { spec -> spec.onAction?.invoke() },
         alarms = AlarmsApi({ alarms }, { it() }),
+        remote = world.remote(),
     )
 }
 
@@ -126,4 +135,66 @@ fun pair(api: SettingsApi): String {
     val res = api.handle(req("POST", "/api/pair", "{\"pairId\":\"${start.getString("pairId")}\",\"code\":\"$code\"}"))
     val cookie = res.headers.first { it.first == "Set-Cookie" }.second
     return cookie.substringAfter("=").substringBefore(";")
+}
+
+class FakeControls : MediaControls {
+    val calls = mutableListOf<String>()
+    override fun play() { calls += "play" }
+    override fun pause() { calls += "pause" }
+    override fun next() { calls += "next" }
+    override fun previous() { calls += "previous" }
+    override fun seekTo(positionMs: Long) {}
+    override fun setVolume(volume: Float) {}
+    override val canSkip = true
+}
+
+class FakeTimers(private val now: () -> Long) : TimerStore {
+    private val _t = MutableStateFlow<List<VesperTimer>>(emptyList())
+    override val timers: StateFlow<List<VesperTimer>> = _t.asStateFlow()
+    private var n = 0
+    override fun start(durationMs: Long, label: String): VesperTimer? {
+        if (_t.value.size >= TimerStore.MAX_TIMERS) return null
+        val t = VesperTimer("t${n++}", label, durationMs, now() + durationMs, VesperTimer.State.RUNNING)
+        _t.value = _t.value + t
+        return t
+    }
+    private fun mut(id: String, f: (VesperTimer) -> VesperTimer) { _t.value = _t.value.map { if (it.id == id) f(it) else it } }
+    override fun pause(id: String) = mut(id) { it.copy(state = VesperTimer.State.PAUSED, pausedRemainingMs = it.remainingMs(now())) }
+    override fun resume(id: String) = mut(id) { it.copy(state = VesperTimer.State.RUNNING, endsAtElapsed = now() + it.pausedRemainingMs) }
+    override fun addTime(id: String, ms: Long) = mut(id) { it.copy(endsAtElapsed = it.endsAtElapsed + ms, durationMs = it.durationMs + ms) }
+    override fun cancel(id: String) { _t.value = _t.value.filterNot { it.id == id } }
+    override fun dismiss(id: String) = cancel(id)
+}
+
+class FakeCrashLog(initial: List<CrashEntry> = emptyList()) : CrashLog {
+    private val _e = MutableStateFlow(initial)
+    override val entries: StateFlow<List<CrashEntry>> = _e.asStateFlow()
+    override fun clear() { _e.value = emptyList() }
+}
+
+/** The services behind the phone remote, with fakes the tests can poke. */
+class TestWorld(val secrets: SecretStore, val alarms: AlarmStore) {
+    val elapsed = longArrayOf(10_000L)
+    val wall = longArrayOf(1_795_330_000_000L)
+    val media = DefaultMediaHub()
+    val system = DefaultSystemStateStore()
+    val controls = StateOnlySystemControls(system)
+    val timers = FakeTimers { elapsed[0] }
+    val notifications = DefaultNotificationFeed()
+    val profiles = FakeProfileManager()
+    val crashLog = FakeCrashLog(listOf(
+        CrashEntry(1_795_000_000_000L, CrashEntry.Kind.CRASH, "main", "NullPointerException in ClockView", "at app.vesper.Clock.draw(Clock.kt:12)\nat android.view.View.draw"),
+        CrashEntry(1_795_100_000_000L, CrashEntry.Kind.HANG, "main", "Main thread blocked for 6 s", "at java.lang.Thread.sleep"),
+    ))
+    val mediaControls = FakeControls()
+
+    fun playSomething(playing: Boolean = true) = media.publish("test",
+        MediaState("Song", "Artist", durationMs = 200_000, positionMs = 50_000, positionSampledAt = elapsed[0], playing = playing,
+            source = MediaSourceKind.AIRPLAY, sourceLabel = "Maya's iPhone"), mediaControls)
+
+    fun remote() = RemoteApi(RemoteDeps(
+        media = { media }, system = { system }, controls = { controls }, timers = { timers }, alarms = { alarms },
+        notifications = { notifications }, profiles = { profiles }, secrets = { secrets }, crashLog = { crashLog },
+        elapsed = { elapsed[0] }, wall = { wall[0] },
+    ), { it() })
 }
