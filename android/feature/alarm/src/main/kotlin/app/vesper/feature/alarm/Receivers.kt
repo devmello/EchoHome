@@ -13,6 +13,7 @@ class AlarmTriggerReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             ACTION_ALARM -> AlarmRuntime.alarms?.evaluate("alarm manager") ?: Log.e(AlarmRuntime.TAG, "alarm store missing")
+            ACTION_REFRESH -> AlarmRuntime.alarms?.refreshPlan(true)
             ACTION_TIMER -> AlarmRuntime.timers?.tick() ?: Log.e(AlarmRuntime.TAG, "timer store missing")
             ACTION_SNOOZE -> AlarmRuntime.alarms?.snooze()
             ACTION_STOP -> AlarmRuntime.alarms?.stop()
@@ -21,6 +22,7 @@ class AlarmTriggerReceiver : BroadcastReceiver() {
 
     companion object {
         const val ACTION_ALARM = "app.vesper.alarm.WAKE"
+        const val ACTION_REFRESH = "app.vesper.alarm.REFRESH"
         const val ACTION_TIMER = "app.vesper.alarm.TIMER"
         const val ACTION_SNOOZE = "app.vesper.alarm.SNOOZE"
         const val ACTION_STOP = "app.vesper.alarm.STOP"

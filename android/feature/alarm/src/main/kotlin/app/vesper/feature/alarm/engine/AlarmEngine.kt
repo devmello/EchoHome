@@ -4,9 +4,11 @@ import app.vesper.core.model.Alarm
 import app.vesper.core.model.AlarmPhase
 import app.vesper.core.model.NextAlarm
 import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 
 /**
  * Next occurrence of [alarm] strictly after [afterMillis] (wall clock), in [zone].
@@ -15,13 +17,46 @@ import java.time.ZonedDateTime
  * 2:00 → 3:00) rings at the shifted time (3:30), and a time in the fall-back overlap rings once,
  * at its first (earlier-offset) occurrence. Weekday alarms use the local date's day of week.
  */
-fun nextTriggerAfter(alarm: Alarm, afterMillis: Long, zone: ZoneId): Long {
+fun nextTriggerAfter(alarm: Alarm, afterMillis: Long, zone: ZoneId): Long =
+    nextOccurrenceAfter(alarm, afterMillis, zone, OccurrenceRules.NONE).triggerMillis
+
+/** What moves or removes occurrences: holidays to skip and leave-by shifts. */
+class OccurrenceRules(
+    /** Why a repeating alarm with skipHolidays stays quiet on this date ("Thanksgiving"), or null. */
+    val skipName: (LocalDate) -> String? = { null },
+    /** Leave-by: the earlier trigger for this alarm on this date, if one was planned. */
+    val shift: (Alarm, LocalDate) -> LeaveShift? = { _, _ -> null },
+    val timeText: (Long) -> String = { ms -> DateTimeFormatter.ofPattern("h:mm").format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault())) },
+) {
+    companion object { val NONE = OccurrenceRules() }
+}
+
+/** [reason]: why it isn't simply the set time ("Skipping Thanksgiving", "Earlier for Dentist 9:00 · 25 min drive"). */
+data class Occurrence(val triggerMillis: Long, val reason: String? = null)
+
+/**
+ * Like [nextTriggerAfter], with the alarm's skip-holidays and leave-by rules. A date with a
+ * planned shift rings at the shifted time, and is over once that time has passed (so the set time
+ * doesn't ring again later the same morning). One-shot alarms are never skipped.
+ */
+fun nextOccurrenceAfter(alarm: Alarm, afterMillis: Long, zone: ZoneId, rules: OccurrenceRules): Occurrence {
     val time = LocalTime.of(alarm.hour.coerceIn(0, 23), alarm.minute.coerceIn(0, 59))
     var date = Instant.ofEpochMilli(afterMillis).atZone(zone).toLocalDate().minusDays(1)
-    repeat(10) {
+    var skipped: String? = null
+    // A weekly alarm that skips holidays can lose a few days in a row; a year is far more than enough.
+    repeat(400) {
         if (alarm.days.isEmpty() || date.dayOfWeek in alarm.days) {
-            val t = ZonedDateTime.of(date, time, zone).toInstant().toEpochMilli()
-            if (t > afterMillis) return t
+            val base = ZonedDateTime.of(date, time, zone).toInstant().toEpochMilli()
+            val shift = if (alarm.leaveBy) rules.shift(alarm, date) else null
+            val t = base - (shift?.earlierMin ?: 0).coerceIn(0, LeaveBy.MAX_EARLIER_MIN) * 60_000L
+            if (t > afterMillis) {
+                val holiday = if (alarm.skipHolidays && alarm.days.isNotEmpty()) rules.skipName(date) else null
+                if (holiday == null) {
+                    val why = shift?.let { LeaveBy.reason(it, rules.timeText) }
+                    return Occurrence(t, listOfNotNull(skipped?.let { "Skipping $it" }, why).joinToString(" · ").ifEmpty { null })
+                }
+                if (skipped == null) skipped = holiday
+            }
         }
         date = date.plusDays(1)
     }
@@ -52,6 +87,10 @@ data class AlarmData(
     val handled: Map<String, Long> = emptyMap(),
     /** Screen brightness before a sunrise ramp began, to restore if it's cancelled. */
     val brightnessBefore: Float? = null,
+    /** Leave-by: planned earlier rings, keyed [LeaveBy.key]. Kept after they ring, until the date is past. */
+    val shifts: Map<String, LeaveShift> = emptyMap(),
+    /** Skip holidays: dates (ISO) covered by an all-day "holiday / vacation / day off" event, with its title. */
+    val dayOffs: Map<String, String> = emptyMap(),
 )
 
 data class Evaluation(
@@ -83,11 +122,26 @@ class AlarmEngine(
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
     /** Applies the user's global settings (sunrise on/length, snooze length) to each alarm. */
     private val adjust: (Alarm) -> Alarm = { it },
+    /** How event times read in "Earlier for Dentist 9:00" (the clock's 12/24 h choice). */
+    private val timeText: (Long) -> String = OccurrenceRules.NONE.timeText,
 ) {
     var data: AlarmData = data
         private set
 
     fun replace(d: AlarmData) { data = d }
+
+    private fun rules() = OccurrenceRules(
+        skipName = { date -> Holidays.federalName(date) ?: data.dayOffs[date.toString()] },
+        shift = { a, date -> data.shifts[LeaveBy.key(a.id, date)] },
+        timeText = timeText,
+    )
+
+    private fun occurrenceAfter(a: Alarm, after: Long) = nextOccurrenceAfter(a, after, zone(), rules())
+
+    /** Replaces the leave-by plan and the day-off dates (the store computes them from the calendar and travel time). */
+    fun setPlan(shifts: Map<String, LeaveShift>, dayOffs: Map<String, String>) {
+        data = data.copy(shifts = shifts, dayOffs = dayOffs)
+    }
 
     fun upsert(alarm: Alarm, now: Long) {
         val old = data.alarms.firstOrNull { it.id == alarm.id }
@@ -130,7 +184,7 @@ class AlarmEngine(
             return true
         }
         // Sunrise: skip this occurrence.
-        val sunrise = upcoming(now).firstOrNull { (a, t) -> inSunrise(a, t, now) } ?: return false
+        val sunrise = upcoming(now).firstOrNull { (a, t, _) -> inSunrise(a, t, now) } ?: return false
         data = data.copy(handled = data.handled + (sunrise.first.id to sunrise.second))
         return true
     }
@@ -151,7 +205,7 @@ class AlarmEngine(
         // 1. Due occurrences (rang at/just before now). The latest one wins; all are marked handled.
         val due = data.alarms.filter { it.enabled }.map(adjust).mapNotNull { a ->
             val from = maxOf(now - GRACE_MS, data.handled[a.id] ?: Long.MIN_VALUE)
-            val t = nextTriggerAfter(a, from, zone())
+            val t = occurrenceAfter(a, from).triggerMillis
             if (t <= now) a to t else null
         }
         if (due.isNotEmpty()) {
@@ -195,7 +249,7 @@ class AlarmEngine(
                 ActiveAlarm.State.SNOOZED -> AlarmPhase.Snoozed(activeAlarm, act.untilMillis)
                 ActiveAlarm.State.MORNING -> AlarmPhase.GoodMorning(activeAlarm)
             }
-            else -> upcoming.firstOrNull { (a, t) -> inSunrise(a, t, now) }?.let { (a, t) ->
+            else -> upcoming.firstOrNull { (a, t, _) -> inSunrise(a, t, now) }?.let { (a, t, _) ->
                 val start = t - a.sunriseMinutes * MIN
                 AlarmPhase.Sunrise(a, ((now - start).toFloat() / (t - start)).coerceIn(0f, 1f))
             } ?: AlarmPhase.Idle
@@ -205,11 +259,11 @@ class AlarmEngine(
         val first = upcoming.firstOrNull()
         val next = when {
             snoozeUntil != null && activeAlarm != null && (first == null || snoozeUntil <= first.second) -> NextAlarm(activeAlarm, snoozeUntil)
-            first != null -> NextAlarm(first.first, first.second)
+            first != null -> NextAlarm(first.first, first.second, first.third)
             else -> null
         }
         val wakes = buildList {
-            upcoming.forEach { (a, t) ->
+            upcoming.forEach { (a, t, _) ->
                 add(t)
                 if (a.sunrise && a.sunriseMinutes > 0) (t - a.sunriseMinutes * MIN).takeIf { it > now }?.let(::add)
             }
@@ -224,8 +278,8 @@ class AlarmEngine(
     }
 
     /** Enabled alarms' next future occurrences, soonest first. */
-    private fun upcoming(now: Long): List<Pair<Alarm, Long>> = data.alarms.filter { it.enabled }.map(adjust)
-        .map { a -> a to nextTriggerAfter(a, maxOf(now, data.handled[a.id] ?: Long.MIN_VALUE), zone()) }
+    private fun upcoming(now: Long): List<Triple<Alarm, Long, String?>> = data.alarms.filter { it.enabled }.map(adjust)
+        .map { a -> occurrenceAfter(a, maxOf(now, data.handled[a.id] ?: Long.MIN_VALUE)).let { Triple(a, it.triggerMillis, it.reason) } }
         .sortedBy { it.second }
 
     private fun inSunrise(a: Alarm, t: Long, now: Long) =

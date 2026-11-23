@@ -15,6 +15,8 @@ import java.time.LocalTime
  *     B="am broadcast -a app.vesper.alarm.DEBUG -n app.vesper/app.vesper.feature.alarm.AlarmDebugReceiver"
  *     $B --es cmd add --es at +2 --es label "Wake Up" --ez sunrise true --ei sunriseMin 1
  *     $B --es cmd add --es at 07:00 --es days MON,TUE,WED,THU,FRI
+ *     $B --es cmd add --es at 07:00 --es days MON,TUE,WED,THU,FRI --ez leaveBy true --ei ready 45 --ez skipHolidays true
+ *     $B --es cmd shift --es id <alarm id> --ei earlier 10 --es title Dentist --ei travel 25
  *     $B --es cmd list          # logs alarms + phase (tag VesperAlarm)
  *     $B --es cmd clear         # deletes every alarm
  *     $B --es cmd snooze | stop | dismiss
@@ -39,9 +41,21 @@ class AlarmDebugReceiver : BroadcastReceiver() {
                     sunrise = intent.getBooleanExtra("sunrise", true),
                     sunriseMinutes = intent.getIntExtra("sunriseMin", 30),
                     snoozeMinutes = intent.getIntExtra("snoozeMin", 9),
+                    leaveBy = intent.getBooleanExtra("leaveBy", false),
+                    readyMinutes = intent.getIntExtra("ready", 45),
+                    skipHolidays = intent.getBooleanExtra("skipHolidays", false),
                 )
                 alarms.upsert(a)
                 Log.i(AlarmRuntime.TAG, "debug: added $a; next ${alarms.next.value}")
+            }
+            // Plants a leave-by plan for the alarm's next date: --es id X --ei earlier 10 --es title Dentist --ei travel 25 [--ei startMin 480]
+            "shift" -> {
+                val id = intent.getStringExtra("id") ?: return
+                val a = alarms.alarms.value.firstOrNull { it.id == id } ?: return
+                val date = alarms.next.value?.takeIf { it.alarm.id == id }?.let { java.time.Instant.ofEpochMilli(it.triggerAtMillis + intent.getIntExtra("earlier", 10) * 60_000L).atZone(java.time.ZoneId.systemDefault()).toLocalDate() }
+                    ?: java.time.LocalDate.now()
+                val start = date.atStartOfDay(java.time.ZoneId.systemDefault()).plusMinutes(intent.getIntExtra("startMin", a.hour * 60 + a.minute + 60).toLong()).toInstant().toEpochMilli()
+                alarms.debugShift(id, date, app.vesper.feature.alarm.engine.LeaveShift(intent.getIntExtra("earlier", 10), intent.getStringExtra("title") ?: "Dentist", start, intent.getIntExtra("travel", 25)))
             }
             "delete" -> intent.getStringExtra("id")?.let { alarms.delete(it) }
             "clear" -> alarms.alarms.value.forEach { alarms.delete(it.id) }
