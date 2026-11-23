@@ -170,7 +170,7 @@ class LocationTest {
         val net = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
         val loc = LocationResolver(s, scope, demo = false, auto = auto, networkChanges = net)
         loc.start()
-        val p = OpenMeteoWeatherProvider(s, scope, Fake(null), loc.location, client = Net.http, base = server.url("/v1/forecast"), retryMs = 60_000)
+        val p = OpenMeteoWeatherProvider(s, scope, Fake(null), loc.location, client = Net.http, base = server.url("/v1/forecast"), airBase = server.url("/v1/air-quality"), retryMs = 60_000)
         p.start()
         assertEquals("37.682", lats.poll(5, TimeUnit.SECONDS)) // lookup failed, no cache: Livermore
         kotlinx.coroutines.delay(200)
