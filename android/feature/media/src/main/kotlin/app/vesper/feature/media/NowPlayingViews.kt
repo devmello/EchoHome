@@ -295,6 +295,9 @@ internal class InfoView(context: Context) : View(context) {
         set(v) { if (v != field) { field = v; subFit = null; invalidate() } }
     var showTrack = true
         set(v) { if (v != field) { field = v; invalidate() } }
+    /** Lyrics mode: the lyrics take the title/artist place. */
+    var hideTitles = false
+        set(v) { if (v != field) { field = v; invalidate() } }
     var night = false
         set(v) { field = v; invalidate() }
 
@@ -313,7 +316,7 @@ internal class InfoView(context: Context) : View(context) {
             Text.source.draw(canvas, sourceText, 56f + 17f + 8f, Text.source.baselineIn(top, rowH), c)
         }
         Text.clock.draw(canvas, clock, NP.COL_R - Text.clock.width(clock), Text.clock.baselineIn(top, rowH), col(withAlpha(Color.WHITE, 0.9f)))
-        if (!showTrack) return
+        if (!showTrack || hideTitles) return
         val t = titleFit ?: Text.ellipsize(Text.title, title, NP.COL_W).also { titleFit = it }
         Text.title.draw(canvas, t, NP.COL_L, Text.title.baselineIn(NP.TITLE_T, NP.TITLE_LH), col(Color.WHITE))
         val s = subFit ?: Text.ellipsize(Text.artist, subtitle, NP.COL_W).also { subFit = it }
@@ -664,3 +667,5 @@ internal val R_phone = R.drawable.media_ic_phone
 internal val R_bluetooth = R.drawable.media_ic_bluetooth
 internal val R_vol_low = R.drawable.media_ic_vol_low
 internal val R_vol_high = R.drawable.media_ic_vol_high
+
+internal val R_lyrics = R.drawable.media_ic_lyrics

@@ -27,10 +27,15 @@ class MediaSettingsTest {
     @Test fun pageDefaultsMatchWhatTheCodeReads() {
         val s = Mem()
         val specs = MediaSettings.section.settings.associateBy { it.key }
-        assertEquals(setOf(MediaSettings.OTHER_APPS, MediaSettings.ISLAND, MediaSettings.PAUSED_DRIFT), specs.keys)
+        assertEquals(setOf(MediaSettings.OTHER_APPS, MediaSettings.ISLAND, MediaSettings.LYRICS, MediaSettings.LYRICS_WORDS, MediaSettings.PAUSED_DRIFT), specs.keys)
+        assertEquals(specs.getValue(MediaSettings.LYRICS_WORDS).default.toBoolean(), MediaSettings.lyricsWords(Mem()))
+        assertTrue(MediaSettings.lyricsWords(Mem()))
         assertTrue(specs.values.all { it.type == SettingType.BOOLEAN && it.key.startsWith("media.") })
         assertEquals(specs.getValue(MediaSettings.OTHER_APPS).default.toBoolean(), MediaSettings.otherApps(s))
         assertEquals(specs.getValue(MediaSettings.ISLAND).default.toBoolean(), MediaSettings.island(s))
+        assertEquals(specs.getValue(MediaSettings.LYRICS).default.toBoolean(), MediaSettings.lyrics(s))
+        assertTrue(MediaSettings.lyrics(s))
+        assertTrue(specs.getValue(MediaSettings.LYRICS).help!!.contains("lrclib.net"))
         assertEquals(specs.getValue(MediaSettings.PAUSED_DRIFT).default.toBoolean(), MediaSettings.pausedDrift(s))
         // Defaults: mirror other apps, island on, drift settles after 30 s.
         assertTrue(MediaSettings.otherApps(s)); assertTrue(MediaSettings.island(s)); assertFalse(MediaSettings.pausedDrift(s))

@@ -106,3 +106,28 @@ Design renders came from `NowPlaying.dc.html` with its template values filled in
 
 - `--extra '--es np <cmd>'` on build-install: `empty`, `demo`, `paused`, `playing`, `next`, `popover`, `night`, `day`, `bt` (Bluetooth preview source), `ap2` (AirPlay 2 preview: no skip), `preview-off`, `perf:<flags>` (hide a ambient, r art, g glass, t text).
 - Scripts in `docs/status/shots/media/` for `build-install.sh --then`: `states.sh` (popover, pressed, paused, tracks 2/3, empty), `bt-night.sh`, `final.sh` (route chips, AirPlay 2, Bluetooth popover), `gpu-profile.sh`, `app-session.sh` (Eleven + empty-state perf).
+
+## Live lyrics (Nov 22, branch `worktree-agent-a037d2ca9a2ca0645`)
+
+- **Source**: LRCLIB `/api/get` (title, artist, album, duration), fallback `/api/search` (synced within 4 s of the duration, else plain). OkHttp (already in the app), `User-Agent: Vesper/0.1 (smart display)`, 8 s timeouts, off the main thread. Only fetched while the lyrics mode is open, the screen is shown, and the track plays (a cache hit also works paused); track changes debounced 700 ms.
+- **Cache** (`LyricsRepository`): 24 in memory, disk `cacheDir/lyrics` (200 files / 2 MB, oldest pruned), "no lyrics" cached 7 days; network errors are not cached.
+- **Parse** (`Lyrics.kt`): LRC with several stamps per line, `[offset:]`, Enhanced LRC `<mm:ss.xx>` word stamps (kept as words); plain lyrics fall back to a static, drag-scrollable list; "No lyrics".
+- **UI** (`LyricsView`): toggle button (glass, next to the AirPlay button) or tap the artwork. Lyrics replace title/artist; scrubber and transport drop 36 px. Current line bright, next dimmer, past faded, one 360 ms eased scroll per line change (fractional index drives position + brightness). Each line is rasterised once into an ALPHA_8 mask and tinted per frame (drawing glyphs per frame cost +10 % CPU). Sync timer fires once per line change, only while playing. Night colours supported.
+- **Word by word**: the active line is drawn dim, then bright clipped to the sweep (clipRect, no shader / saveLayer / per-frame allocation; word x layout computed once when the line becomes active). Real word times when present (Enhanced LRC); otherwise estimated inside `[start, start + min(0.9 x gap, max(2.5 s, 0.6 s x syllables)))`, weighted by vowel groups + 0.3 per word. The sweep redraws at ~15 fps (66 ms, single self-sustaining chain, only the active line's rect), only while playing and the screen is shown; fully lit lines are static; paused = no frames.
+- **Settings**: "Live lyrics" (`media.lyrics`, on; help says title/artist/album/length go to lrclib.net) and "Word-by-word lyrics" (`media.lyricsWords`, on; off = line highlight).
+- **Finding**: LRCLIB `syncedLyrics` carried no word stamps in 120 search results for 6 popular songs, so on LRCLIB the word timing is the estimate. No other word-timed source was wired in; I know of no free, keyless, clearly licensed one (NetEase / QQ / Musixmatch / Apple TTML are unofficial or ToS-restricted, not added).
+- **Debug**: `--extra '--es np lyrics:<start s>[:lines][:noamb]'` plays "Blinding Lights" (a real LRCLIB track) with an advancing position; `lines` = no sweep, `noamb` = hide the ambient so only the lyrics cost shows. Screenshots `shots/media/lyrics.png`, `lyrics-words.png`.
+- **Tests**: `LyricsTest`, `LyricsWordsTest` (LRC / Enhanced LRC parse, offsets, line-at-position, wrap, estimator monotonic and within the line span, LRCLIB records, repository with MockWebServer: fetch, disk cache, negative cache, network error).
+
+### Lyrics perf (Echo, debug, 20 s fresh launches, `noamb`)
+| | CPU | frames | janky | p50/p90/p99 | PSS |
+|---|---|---|---|---|---|
+| line highlight only | 9.7 % | 198 | 0 % | 5/6/12 ms | 55.8 MB |
+| word sweep, 66 ms redraw | 15.4 % (+5.7) | 434 | 0.2 % | 5/6/11 ms | 56.8 MB |
+| word sweep, 50 ms | 17.2 % (+6.6) | 498 | 0 % | 5/6/11 ms | 55.5 MB |
+| word sweep, vsync (before the fix: frame chains multiplied) | 31.4 % | 1137 | 0.2 % | 5/6/10 ms | 56.4 MB |
+
+With the ambient drift on, Now Playing was already ~35 % CPU at 60 fps on the device (existing cost); a lyrics scroll adds a few percent on top. Not measured on the Echo: the toggle by touch beyond a tap check, Night mode, a real AirPlay session (position accuracy).
+
+## Contract requests
+- None.

@@ -28,6 +28,7 @@ import app.vesper.core.model.MediaState
 import app.vesper.core.model.MediaSourceKind
 import app.vesper.core.model.observeWhileAttached
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Calendar
@@ -52,6 +53,12 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
         private const val PAUSED_DRIFT_MS = 30_000L
         private val palettes = WeakHashMap<Bitmap, AmbientPalette>()
         private const val DEBUG_SRC = "debug-preview"
+        private const val LY_T = 58f
+        /** The scrubber and transport drop this far in lyrics mode. */
+        private const val LY_SHIFT = 36f
+        private const val LYRICS_DEBOUNCE_MS = 700L
+        /** The eased scroll takes ~360 ms, so the line change starts a little early. */
+        private const val LYRICS_LEAD_MS = 120L
     }
 
     /** The `np=bt` / `np=ap2` preview sources: inert controls with the source's capabilities. */
@@ -74,6 +81,9 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
     private val next = TransportButton(context, R.drawable.media_ic_next, 40f)
     private val volume = VolumeCapsule(context)
     private val route = RouteButton(context)
+    private val lyricsBtn = RouteButton(context).apply { icon = R_lyrics }
+    private val lyricsView = LyricsView(context)
+    private val artHit = View(context)
     private val scrim = object : View(context) {
         @SuppressLint("ClickableViewAccessibility")
         override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -96,6 +106,20 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
     private var paletteAnim: ValueAnimator? = null
     private var popoverOpen = false
     private var pendingCmd: String? = null
+
+    // Lyrics (LRCLIB). Only while the mode is on, the screen is shown and something is loaded;
+    // fetched off the main thread; the sync timer fires once per line change and only while playing.
+    private enum class LyricsState { IDLE, PENDING, LOADING, WAIT_PLAY, DONE, FAILED }
+    private var lyricsEnabled = MediaSettings.lyrics(services.settings)
+    private var lyricsMode = false
+    private var wantLyrics = false
+    private var lyricsKey: String? = null
+    private var lyricsState = LyricsState.IDLE
+    private var lyricsData: Lyrics? = null
+    private var lyricsJob: Job? = null
+    private var lyricsPlacedAt = -2
+    private val lyricsSync = Runnable { syncLyrics() }
+    private val lyricsLoad = Runnable { startLyricsLoad() }
 
     private val ticker = ValueAnimator.ofFloat(0f, 1f).apply {
         duration = 1000
@@ -134,12 +158,21 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
             add(b.lift, x, cy - s / 2f, s, s)
             add(b, x, cy - s / 2f, s, s)
         }
-        add(volume, NP.COL_L, NP.BAR_T, NP.VOLUME_W, NP.BAR_H)
+        add(lyricsView, NP.COL_L, LY_T, LyricsView.W, LyricsView.H)
+        add(volume, NP.COL_L, NP.BAR_T, volumeWidth(), NP.BAR_H)
+        add(lyricsBtn, NP.ROUTE_L - 12f - NP.BAR_H, NP.BAR_T, NP.BAR_H, NP.BAR_H)
         add(route, NP.ROUTE_L, NP.BAR_T, NP.BAR_H, NP.BAR_H)
+        add(artHit, NP.ART_L, NP.ART_T, ArtView.SIZE, ArtView.SIZE)
         add(scrim, 0f, 0f, NP.W, NP.H)
         add(popover, NP.COL_R - NP.POPOVER_W, NP.POPOVER_BOTTOM - 200f, NP.POPOVER_W, 200f)
         add(empty, 0f, 0f, NP.W, NP.H)
-        trackViews = listOf(art, progress, prev.lift, prev, play.lift, play, next.lift, next, volume, route)
+        trackViews = listOf(art, progress, prev.lift, prev, play.lift, play, next.lift, next, volume, route, lyricsBtn)
+        lyricsView.visibility = GONE
+        lyricsView.wordMode = MediaSettings.lyricsWords(services.settings)
+        lyricsView.positionMs = { session?.state?.positionNow() ?: 0L }
+        lyricsBtn.visibility = if (lyricsEnabled) INVISIBLE else GONE
+        artHit.setOnClickListener { if (lyricsEnabled && session != null) setLyricsMode(!lyricsMode) }
+        lyricsBtn.setOnClickListener { setLyricsMode(!lyricsMode) }
         scrim.visibility = GONE
         popover.visibility = GONE
 
@@ -160,6 +193,14 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
                     empty.deviceName = DeviceName.get(services.settings)
                     if (popoverOpen) fillPopover()
                 }
+                MediaSettings.LYRICS_WORDS -> lyricsView.wordMode = MediaSettings.lyricsWords(services.settings)
+                MediaSettings.LYRICS -> {
+                    lyricsEnabled = MediaSettings.lyrics(services.settings)
+                    if (!lyricsEnabled) setLyricsMode(false)
+                    lyricsBtn.visibility = if (!lyricsEnabled) GONE else if (session != null) VISIBLE else INVISIBLE
+                    (volume.layoutParams as LayoutParams).width = volumeWidth().toInt()
+                    volume.requestLayout()
+                }
                 MediaSettings.PAUSED_DRIFT -> { keepDrift = MediaSettings.pausedDrift(services.settings); updateMotion() }
             }
         }
@@ -178,6 +219,7 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
         session = s
         if (s == null) {
             trackKey = null
+            setLyricsMode(false)
             closePopover()
             for (v in trackViews) v.visibility = INVISIBLE
             info.showTrack = false
@@ -191,6 +233,7 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
         val st = s.state
         if (was == null) {
             for (v in trackViews) v.visibility = VISIBLE
+            if (!lyricsEnabled) lyricsBtn.visibility = GONE
             empty.visibility = GONE
             info.showTrack = true
             ambient.blobsVisible = true
@@ -232,7 +275,103 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
         volume.setValue(st.volume ?: services.system.state.value.volume, animate = shown && was != null)
         if (popoverOpen) fillPopover()
         runPending()
+        if (wantLyrics) { wantLyrics = false; setLyricsMode(true) }
+        else if (lyricsMode) { ensureLyrics(); syncLyrics() }
         updateMotion()
+    }
+
+    // --- lyrics ---
+
+    private fun volumeWidth() = if (lyricsEnabled) NP.VOLUME_W - NP.BAR_H - 12f else NP.VOLUME_W
+
+    private fun setLyricsMode(on: Boolean) {
+        if (on == lyricsMode) return
+        if (on && (!lyricsEnabled || session == null)) return
+        lyricsMode = on
+        lyricsBtn.open = on
+        info.hideTitles = on
+        // Controls drop a little to make room; the lyrics sit where title and artist were.
+        val dy = if (on) LY_SHIFT else 0f
+        for (v in listOf(progress, prev, prev.lift, play, play.lift, next, next.lift)) {
+            if (shown) v.animate().translationY(dy).setDuration(300).setInterpolator(Motion.EASE).start() else v.translationY = dy
+        }
+        if (on) {
+            lyricsView.night = night
+            lyricsView.visibility = VISIBLE
+            if (shown) { lyricsView.alpha = 0f; lyricsView.animate().alpha(1f).setDuration(250).start() } else lyricsView.alpha = 1f
+            lyricsKey = null
+            ensureLyrics()
+        } else {
+            main.removeCallbacks(lyricsSync); main.removeCallbacks(lyricsLoad)
+            lyricsJob?.cancel(); lyricsJob = null
+            lyricsState = LyricsState.IDLE; lyricsKey = null; lyricsData = null
+            lyricsView.animate().cancel()
+            lyricsView.stop()
+            lyricsView.visibility = GONE
+        }
+    }
+
+    private fun lyricsKeyOf(st: MediaState) = LrcLib.key(st.title, st.artist, st.album, st.durationMs)
+
+    /** Starts (debounced) the load for the current track, once per track; retries when play resumes. */
+    private fun ensureLyrics() {
+        val s = session ?: return
+        if (!lyricsMode || !shown) return
+        val key = lyricsKeyOf(s.state)
+        if (key != lyricsKey) {
+            lyricsKey = key; lyricsData = null; lyricsPlacedAt = -2
+            lyricsJob?.cancel(); lyricsJob = null
+            main.removeCallbacks(lyricsSync); main.removeCallbacks(lyricsLoad)
+            lyricsView.showMessage(null)
+            lyricsState = LyricsState.PENDING
+            main.postDelayed(lyricsLoad, LYRICS_DEBOUNCE_MS)
+        } else if ((lyricsState == LyricsState.WAIT_PLAY && s.state.playing) || lyricsState == LyricsState.IDLE) {
+            lyricsState = LyricsState.PENDING
+            main.post(lyricsLoad)
+        }
+    }
+
+    private fun startLyricsLoad() {
+        val st = session?.state ?: return
+        val key = lyricsKey ?: return
+        if (!lyricsMode || lyricsState != LyricsState.PENDING) return
+        lyricsState = LyricsState.LOADING
+        lyricsView.showMessage("Loading lyrics…")
+        val repo = LyricsRepository.get(context)
+        lyricsJob = services.scope.launch {
+            var r = withContext(Dispatchers.IO) { repo.cached(key) }
+            if (r == null) {
+                if (session?.state?.playing != true) {
+                    if (lyricsKey == key) { lyricsState = LyricsState.WAIT_PLAY; lyricsView.showMessage("Lyrics load when music plays") }
+                    return@launch
+                }
+                r = withContext(Dispatchers.IO) { repo.fetch(key, st.title, st.artist, st.album, st.durationMs) }
+            }
+            if (lyricsKey != key || !lyricsMode) return@launch
+            if (r == null) { lyricsState = LyricsState.FAILED; lyricsView.showMessage("Lyrics unavailable"); return@launch }
+            lyricsState = LyricsState.DONE
+            lyricsData = r
+            lyricsView.setLyrics(r)
+            lyricsPlacedAt = -2
+            syncLyrics()
+        }
+    }
+
+    /** Places the highlight at the playback position and schedules the next line change (only while playing). */
+    private fun syncLyrics() {
+        main.removeCallbacks(lyricsSync)
+        val d = lyricsData as? Lyrics.Synced ?: return
+        val s = session ?: return
+        if (!lyricsMode || !shown) return
+        lyricsView.setPlaying(s.state.playing)
+        val pos = s.state.positionNow() + LYRICS_LEAD_MS
+        val idx = Lrc.lineAt(d.lines, pos)
+        lyricsView.setIndex(idx, animate = lyricsPlacedAt != -2 && idx != lyricsPlacedAt)
+        lyricsPlacedAt = idx
+        if (s.state.playing) {
+            val nx = Lrc.nextStart(d.lines, idx)
+            if (nx >= 0) main.postDelayed(lyricsSync, (nx - pos).coerceAtLeast(30L))
+        }
     }
 
     private fun sourceIcon(k: MediaSourceKind) = when (k) {
@@ -289,6 +428,7 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
         ambient.night = on; art.night = on; info.night = on; progress.night = on; empty.night = on
         for (b in listOf(prev, play, next)) b.night = on
         volume.night = on; route.night = on; popover.night = on
+        lyricsBtn.night = on; lyricsView.night = on
         updateMotion()
     }
 
@@ -415,12 +555,15 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
             minuteTick.run()
         }
         runPending()
+        if (lyricsMode) { ensureLyrics(); syncLyrics() }
         updateMotion()
     }
 
     override fun onScreenHidden() {
         shown = false
         main.removeCallbacksAndMessages(null)
+        lyricsView.stop()
+        if (lyricsState == LyricsState.PENDING) lyricsState = LyricsState.IDLE
         ticker.cancel()
         paletteAnim?.end()
         art.animate().cancel()
@@ -454,7 +597,15 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
                 "Maya's iPhone", route = listOf("AirPlay 2", "ALAC", "44.1 kHz")), DebugControls(canSkip = false))
             "bt-off", "preview-off" -> services.media.clear(DEBUG_SRC)
             // Debug only: hide view groups to profile GPU cost, e.g. "perf:ar" (a ambient, r art, g glass, t text).
-            else -> if (cmd.startsWith("perf:")) {
+            // Debug only: a real song LRCLIB has, position advancing (np=lyrics or np=lyrics:<start seconds>).
+            else -> if (cmd.startsWith("lyrics")) {
+                // Flags after the start second: ":lines" = no word sweep, ":noamb" = hide the ambient (isolates the lyrics cost).
+                val parts = cmd.split(':')
+                if ("lines" in parts) lyricsView.wordMode = false
+                if ("noamb" in parts) ambient.visibility = INVISIBLE
+                publishLyricsDemo((parts.getOrNull(1)?.toLongOrNull() ?: 0L) * 1000, true)
+                wantLyrics = true
+            } else if (cmd.startsWith("perf:")) {
                 val f = cmd.removePrefix("perf:")
                 fun vis(on: Boolean) = if (on) VISIBLE else INVISIBLE
                 ambient.visibility = vis('a' !in f); art.visibility = vis('r' !in f)
@@ -463,5 +614,21 @@ class NowPlayingScreen(context: Context, private val services: VesperServices) :
                 for (b in listOf(prev, play, next)) b.visibility = vis('t' !in f)
             }
         }
+    }
+
+    private fun publishLyricsDemo(positionMs: Long, playing: Boolean) {
+        val controls = object : MediaControls {
+            private fun now() = services.media.current.value?.state?.positionNow() ?: 0L
+            override fun play() = publishLyricsDemo(now(), true)
+            override fun pause() = publishLyricsDemo(now(), false)
+            override fun next() {}
+            override fun previous() {}
+            override fun seekTo(positionMs: Long) = publishLyricsDemo(positionMs, services.media.current.value?.state?.playing ?: true)
+            override fun setVolume(volume: Float) {}
+            override val canSeek = true
+        }
+        services.media.publish(DEBUG_SRC, MediaState("Blinding Lights", "The Weeknd", "After Hours",
+            DemoArt.forAlbum("After Hours", "Blinding Lights"), 200_000, positionMs, SystemClock.elapsedRealtime(), playing,
+            MediaSourceKind.OTHER_APP, "Music"), controls)
     }
 }
