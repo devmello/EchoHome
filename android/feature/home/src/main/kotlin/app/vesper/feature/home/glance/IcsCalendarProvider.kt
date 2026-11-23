@@ -16,6 +16,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
@@ -26,6 +28,9 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
+/** A person's own iCal URLs (the SecretStore's `Secrets.calendarKeyFor(profileId)`); [color] is the profile's colour. */
+data class PersonalFeeds(val profileId: String, val color: Int?, val urls: List<String>)
+
 /**
  * [CalendarProvider] on iCal subscription URLs (`calendar.icsUrls` in secrets.properties).
  *
@@ -35,6 +40,8 @@ import okhttp3.Request
  *  - Expands today + tomorrow (device zone) and re-expands at midnight.
  *  - Colour per calendar: `calendar.color.<n>` ("#RRGGBB", n = 0-based URL index), else the design palette.
  *  - URLs are secrets (they grant read access): never logged; files are named by a hash.
+ *  - Per-person calendars: [personal] adds each profile's own URLs; their events carry that
+ *    profile's id in [CalendarEvent.profileId] (shared URLs: null). Colours are numbered after the shared ones.
  *  - The URLs can change while the app runs (the settings page sets secrets live): [urls] is
  *    followed and a change refetches at once. With none, it mirrors [fallback] (the fake: the
  *    sample calendar in demo mode, empty otherwise).
@@ -49,13 +56,15 @@ class IcsCalendarProvider(
     private val periodMs: Long = 15 * 60_000L,
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
     private val clock: () -> Long = System::currentTimeMillis,
+    /** Each person's own calendars (their events get [CalendarEvent.profileId]); see [PersonalFeeds]. */
+    private val personal: Flow<List<PersonalFeeds>> = flowOf(emptyList()),
 ) : CalendarProvider {
     private val _events = MutableStateFlow<List<CalendarEvent>>(emptyList())
     override val events: StateFlow<List<CalendarEvent>> = _events.asStateFlow()
     private val lock = Mutex()
     private var started = false
     /** The current URL list (secret: never logged). */
-    @Volatile private var current: List<String> = emptyList()
+    @Volatile private var current: List<Feed> = emptyList()
 
     /** Last download problem per feed, for the status / a future settings screen. */
     val errors = MutableStateFlow<Map<Int, String>>(emptyMap())
@@ -64,7 +73,10 @@ class IcsCalendarProvider(
         if (started) return
         started = true
         scope.launch {
-            urls.map { l -> l.map { it.trim() }.filter { it.isNotEmpty() } }.distinctUntilChanged().collectLatest { list ->
+            combine(urls, personal) { shared, people ->
+                shared.map { it.trim() }.filter { it.isNotEmpty() }.map { Feed(it, null, null) } +
+                    people.flatMap { p -> p.urls.map { it.trim() }.filter { it.isNotEmpty() }.map { Feed(it, p.profileId, p.color) } }
+            }.distinctUntilChanged().collectLatest { list ->
                 current = list
                 if (list.isEmpty()) {
                     errors.value = emptyMap()
@@ -91,8 +103,8 @@ class IcsCalendarProvider(
     private fun key(url: String): String =
         MessageDigest.getInstance("SHA-1").digest(url.toByteArray()).joinToString("") { "%02x".format(it) }.take(16)
 
-    private fun file(u: List<String>, i: Int) = File(cacheDir, "ics/cal$i-${key(u[i])}.ics")
-    private fun meta(u: List<String>, i: Int) = File(cacheDir, "ics/cal$i-${key(u[i])}.meta")
+    private fun file(u: List<Feed>, i: Int) = File(cacheDir, "ics/cal$i-${key(u[i].url)}.ics")
+    private fun meta(u: List<Feed>, i: Int) = File(cacheDir, "ics/cal$i-${key(u[i].url)}.meta")
 
     /** webcal:// is just https. */
     internal fun httpUrl(u: String) = u.trim().replaceFirst(Regex("^webcals?://", RegexOption.IGNORE_CASE), "https://")
@@ -107,10 +119,10 @@ class IcsCalendarProvider(
         errors.value = errs
     }
 
-    private fun download(u: List<String>, i: Int) {
+    private fun download(u: List<Feed>, i: Int) {
         val f = file(u, i); val m = meta(u, i)
         val (etag, modified) = if (m.exists() && f.exists()) m.readLines().let { it.getOrNull(0).orEmpty() to it.getOrNull(1).orEmpty() } else "" to ""
-        val req = Request.Builder().url(httpUrl(u[i])).apply {
+        val req = Request.Builder().url(httpUrl(u[i].url)).apply {
             if (etag.isNotEmpty()) header("If-None-Match", etag)
             if (modified.isNotEmpty()) header("If-Modified-Since", modified)
         }.build()
@@ -135,16 +147,21 @@ class IcsCalendarProvider(
                 val f = file(u, i)
                 if (!f.exists()) return@flatMap emptyList()
                 val cal = try { f.bufferedReader().use { Ics.parse(it, from, to, z) } } catch (_: Exception) { return@flatMap emptyList() }
-                toEvents(cal, i, from, to, z)
+                toEvents(cal, i, u[i], from, to, z)
             }.sortedWith(compareBy({ localDate(it.startMillis, z) }, { !it.allDay }, { it.startMillis }, { it.title }))
         }
         _events.value = list
     }
 
-    private fun toEvents(cal: Ics.Calendar, index: Int, from: Instant, to: Instant, z: ZoneId): List<CalendarEvent> {
-        val color = parseColor(settings.getString("calendar.color.$index", "")) ?: PALETTE[index % PALETTE.size]
-        return Ics.occurrences(cal, from, to, z).map { o -> event(o, index, color, cal.name) }
+    private fun toEvents(cal: Ics.Calendar, index: Int, feed: Feed, from: Instant, to: Instant, z: ZoneId): List<CalendarEvent> {
+        // calendar.color.<n> wins; a person's calendar then takes their profile colour (unless that is the all-white shared one).
+        val color = parseColor(settings.getString("calendar.color.$index", ""))
+            ?: feed.color?.takeIf { it != 0xFFFFFFFF.toInt() } ?: PALETTE[index % PALETTE.size]
+        return Ics.occurrences(cal, from, to, z).map { o -> event(o, index, color, cal.name, feed.profileId) }
     }
+
+    /** One subscribed feed: [profileId] null = a shared calendar. */
+    private data class Feed(val url: String, val profileId: String?, val color: Int?)
 
     companion object {
         /** Calendar.dc.html event colours, assigned to calendars in order. */
@@ -154,7 +171,7 @@ class IcsCalendarProvider(
         fun parseColor(s: String?): Int? = s?.trim()?.removePrefix("#")?.takeIf { it.length == 6 }?.toLongOrNull(16)?.let { (0xFF000000 or it).toInt() }
 
         /** Subtitle: the first part of the location ("Downtown"), else the description's first line, else the calendar's name. */
-        fun event(o: Ics.Occurrence, index: Int, color: Int, calName: String?): CalendarEvent {
+        fun event(o: Ics.Occurrence, index: Int, color: Int, calName: String?, profileId: String? = null): CalendarEvent {
             val e = o.event
             val subtitle = e.location?.substringBefore(',')?.substringBefore('\n')?.trim()?.ifEmpty { null }
                 ?: e.description?.lineSequence()?.firstOrNull { it.isNotBlank() }?.trim()?.take(60)
@@ -168,6 +185,7 @@ class IcsCalendarProvider(
                 allDay = o.allDay,
                 color = color,
                 location = e.location,
+                profileId = profileId,
             )
         }
     }

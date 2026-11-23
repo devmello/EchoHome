@@ -112,7 +112,7 @@ class GlanceTest {
         val settings = MemSettings("weather.unit" to "F")
         val sample = Weather(70, 72, 50, WeatherCondition.CLEAR, false, location = "Sample")
         val loc = LocationResolver(settings, scope, demo = true, auto = null).also { it.start() }
-        val p = OpenMeteoWeatherProvider(settings, scope, Fake(sample), loc.location, client = Net.http, base = server.url("/v1/forecast"))
+        val p = OpenMeteoWeatherProvider(settings, scope, Fake(sample), loc.location, client = Net.http, base = server.url("/v1/forecast"), airBase = server.url("/v1/air-quality"))
         p.start()
         withTimeout(2000) { p.weather.first { it?.location == "Sample" } }
         assertEquals(0, server.requestCount)
@@ -124,7 +124,7 @@ class GlanceTest {
         val req = server.takeRequest(1, TimeUnit.SECONDS)!!
         assertEquals("36.970", req.requestUrl!!.queryParameter("latitude"))
         assertEquals(Net.USER_AGENT, req.getHeader("User-Agent"))
-        assertEquals(1, server.requestCount) // three settings changes → one fetch
+        assertEquals(2, server.requestCount) // three settings changes → one fetch (forecast + air quality)
     }
 
     private fun ics(summary: String) = listOf("BEGIN:VCALENDAR", "X-WR-CALNAME:Work", "BEGIN:VEVENT", "UID:a",

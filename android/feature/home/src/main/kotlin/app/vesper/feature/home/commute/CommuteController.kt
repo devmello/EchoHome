@@ -56,7 +56,7 @@ class CommuteController(
     private val scope: CoroutineScope,
     private val demo: Boolean,
     private val location: StateFlow<HomeLocation>,
-    private val geocoder: Geocoder = Geocoder(settings),
+    private val geocoder: Geocoder = Geocoder.shared(settings),
     private val router: Router = Router(),
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
     private val clock: () -> Long = System::currentTimeMillis,
@@ -91,13 +91,7 @@ class CommuteController(
      * `commute.lat`/`lon`, else `services.location` (manual > IP-detected > Livermore). Null while that
      * is the DEMO location (demo data, nothing manual): the screen shows the design's sample.
      */
-    internal fun home(): LatLon? {
-        WeatherSettings.latLon(WeatherSettings.text(settings, CommuteSettings.HOME))?.let { (lat, lon) -> return LatLon(lat, lon) }
-        val lat = WeatherSettings.number(settings, CommuteSettings.LAT)
-        val lon = WeatherSettings.number(settings, CommuteSettings.LON)
-        if (lat != null && lon != null) return LatLon(lat, lon)
-        return location.value.takeIf { it.source != HomeLocation.Source.DEMO }?.let { LatLon(it.lat, it.lon) }
-    }
+    internal fun home(): LatLon? = CommuteHome.resolve(settings, location)
 
     fun recompute() {
         val now = clock()
