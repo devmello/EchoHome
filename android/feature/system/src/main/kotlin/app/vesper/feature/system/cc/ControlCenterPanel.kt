@@ -627,7 +627,7 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
             Hit.PLAY -> media?.let { if (it.state.playing) it.controls.pause() else it.controls.play() }
             Hit.NEXT -> media?.controls?.next()
             // the sleep sound (or nothing loaded) opens the Sleep screen, any other source Now Playing
-            Hit.MEDIA -> { requestClose(); s.navigator.show(if (media?.sourceId == SleepSounds.SOURCE_ID || (media == null && !ui.demo)) SleepSounds.SCREEN_ID else "nowplaying") }
+            Hit.MEDIA -> { requestClose(); s.navigator.show(if (media?.sourceId == SleepSounds.SOURCE_ID) SleepSounds.SCREEN_ID else "nowplaying") }
             Hit.DND -> c.setDoNotDisturb(!state.doNotDisturb)
             Hit.NIGHT -> c.setNightMode(if (state.nightMode == NightMode.OFF) NightMode.AUTO else NightMode.OFF)
             Hit.MIC -> c.setMicMuted(!state.micMutedSoftware)

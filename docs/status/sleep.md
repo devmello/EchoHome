@@ -34,7 +34,7 @@ There's no board in `design/` for this (NOTES §2.2 listed "sleep sounds / wind-
   - Right column: the "Sleep timer" platter (15 / 30 / 60 / 90 / Off as plain fills on the glass, no glass on glass) with a status line ("Stops at 11:42 PM · 28 min left", "Fading out…", "Paused · 12 min left"); "Play Rain", or Pause/Resume + Stop; the tinted (primary) **Good night** pill, which runs the routine, shows "Good night. Your alarm is at 7:00 AM." and goes to StandBy after 3 s.
   - Header: "Sleep", the state line, the clock and the next alarm. Footer: what Good night will do, from the settings.
   - Night mode: black, red text, red outline glass, the primary pill with a faint red fill. Zero frames while idle: it redraws on state changes, touches and the minute.
-- **Reachable from**: the pager; Control Center's media tile (when the sleep sound is loaded, or when nothing is loaded and demo data is off; any other source still opens Now Playing); the assistant's `open_screen` ("sleep").
+- **Reachable from**: the pager; Control Center's media tile (when the sleep sound is loaded; otherwise it opens Now Playing); the assistant's `open_screen` ("sleep").
 - **Voice** (`:feature:assistant`, `llm/SleepTools.kt`, dispatched from `VesperTools` with 3 added lines):
   - `bedtime` ("good night", "bedtime"; optional sound / timer_minutes / play_sound / dim). It returns the next alarm, DND until, Night mode, the sound and timer and the failed steps, with the card "Good night · Alarm 7:00 AM · Rain 30 min". The system prompt lists it.
   - `sleep_sound` (play / stop / set_timer).
@@ -88,5 +88,5 @@ The test fails above 0.25 % on the JVM (≈ 3 % of an A53 core at 12×). The rea
 
 - An artboard for the Sleep screen (and the routine's answer) would let it be reviewed against a design.
 - The sleep sound is `MediaSourceKind.OTHER_APP` ("Playing from Sleep sounds"); a `SLEEP` kind with its own glyph would need Now Playing and Control Center changes (contract request filed).
-- Control Center's empty media tile still says "AirPlay · Spotify"; it now opens the Sleep screen when nothing is loaded (release builds).
+- Control Center's empty media tile still says "AirPlay · Spotify" and opens Now Playing (the lead kept that: Sleep is in the pager).
 - No equaliser or motion on the tiles while playing (on purpose: zero frames idle).
