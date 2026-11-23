@@ -12,6 +12,7 @@ import android.media.AudioManager
 import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import app.vesper.core.model.NightMode
@@ -51,7 +52,7 @@ internal class RealSystemControls(private val ui: SystemUi) : SystemControls {
         app.registerReceiver(object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) {
                 when (i.action) {
-                    VOLUME_CHANGED -> syncVolume()
+                    VOLUME_CHANGED -> onVolumeBroadcast(i)
                     NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED -> syncDnd()
                     AudioManager.ACTION_MICROPHONE_MUTE_CHANGED -> syncMic()
                 }
@@ -74,6 +75,7 @@ internal class RealSystemControls(private val ui: SystemUi) : SystemControls {
 
     /** Volume keys: one step, no system panel, our HUD. */
     fun stepVolume(direction: Int) {
+        ownChangeAt = SystemClock.uptimeMillis()
         audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0)
         syncVolume()
         ui.showHud(Hud.Level(LevelKind.VOLUME, volumeNow(), audio.isStreamMute(AudioManager.STREAM_MUSIC)))
@@ -81,6 +83,7 @@ internal class RealSystemControls(private val ui: SystemUi) : SystemControls {
 
     override fun setVolume(value: Float, showHud: Boolean): Boolean {
         val idx = (value.coerceIn(0f, 1f) * maxVol).roundToInt()
+        ownChangeAt = SystemClock.uptimeMillis()
         audio.setStreamVolume(AudioManager.STREAM_MUSIC, idx, 0)
         store.update { it.copy(volume = value.coerceIn(0f, 1f)) }
         if (showHud) ui.showHud(Hud.Level(LevelKind.VOLUME, idx.toFloat() / maxVol))
@@ -88,6 +91,46 @@ internal class RealSystemControls(private val ui: SystemUi) : SystemControls {
     }
 
     private fun syncVolume() { val v = volumeNow(); store.update { if (it.volume == v) it else it.copy(volume = v) } }
+
+    private var ownChangeAt = 0L
+    /**
+     * ActivityManager.closeSystemDialogs (hidden, no permission on Android 11): broadcasts
+     * CLOSE_SYSTEM_DIALOGS as the system, which SystemUI's volume dialog obeys. Falls back to
+     * sending the broadcast ourselves.
+     */
+    private val closePanel = Runnable {
+        try {
+            val am = Class.forName("android.app.ActivityManager").getMethod("getService").invoke(null)
+            am.javaClass.getMethod("closeSystemDialogs", String::class.java).invoke(am, "vesper-volume")
+        } catch (e: Exception) {
+            Log.w(TAG_VOL, "closeSystemDialogs: ${e.javaClass.simpleName}")
+            try { @Suppress("DEPRECATION") app.sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)) } catch (e2: Exception) { Log.w(TAG_VOL, "close broadcast: $e2") }
+        }
+    }
+
+    /**
+     * Someone else changed the music volume: the iPhone over Bluetooth (AVRCP absolute volume, which
+     * the Bluetooth stack sets with FLAG_SHOW_UI, so Android's own panel slides in), AirPlay, another
+     * app. Close Android's panel (SystemUI's volume dialog dismisses on ACTION_CLOSE_SYSTEM_DIALOGS)
+     * and show ours, except where a volume slider is already on screen (Now Playing, Control Center).
+     */
+    private fun onVolumeBroadcast(i: Intent) {
+        syncVolume()
+        // One change can arrive twice (e.g. STREAM_ACCESSIBILITY aliased to music, then music):
+        // only the music stream counts, and only when its own value moved.
+        if (i.getIntExtra(EXTRA_STREAM, -1) != AudioManager.STREAM_MUSIC) return
+        val now = i.getIntExtra(EXTRA_VALUE, -1); val prev = i.getIntExtra(EXTRA_PREV, -1)
+        if (now < 0 || now == prev) return
+        if (SystemClock.uptimeMillis() - ownChangeAt < OWN_CHANGE_MS) return
+        val v = now.toFloat() / maxVol
+        Log.i(TAG_VOL, "volume changed outside Vesper: $prev → $now of $maxVol")
+        // SystemUI gets the "show" over binder at the same moment as this broadcast, so a single
+        // close can land before its dialog exists: ask again while it's opening.
+        main.removeCallbacks(closePanel)
+        for (d in CLOSE_DELAYS_MS) main.postDelayed(closePanel, d)
+        if (ui.ccOpen.value || ui.services.navigator.current.value == NOW_PLAYING) return
+        ui.showHud(Hud.Level(LevelKind.VOLUME, v, audio.isStreamMute(AudioManager.STREAM_MUSIC)))
+    }
 
     // --- brightness ---
 
@@ -206,5 +249,14 @@ internal class RealSystemControls(private val ui: SystemUi) : SystemControls {
         private const val TAG = "VesperSystem"
         /** Hidden AudioManager.VOLUME_CHANGED_ACTION (stable since API 1). */
         const val VOLUME_CHANGED = "android.media.VOLUME_CHANGED_ACTION"
+        /** Hidden AudioManager.EXTRA_VOLUME_STREAM_TYPE. */
+        const val EXTRA_STREAM = "android.media.EXTRA_VOLUME_STREAM_TYPE"
+        const val EXTRA_VALUE = "android.media.EXTRA_VOLUME_STREAM_VALUE"
+        const val EXTRA_PREV = "android.media.EXTRA_PREV_VOLUME_STREAM_VALUE"
+        /** Our own setStreamVolume/adjust broadcasts arrive within this. */
+        const val OWN_CHANGE_MS = 600L
+        const val TAG_VOL = "VesperSystem"
+        val CLOSE_DELAYS_MS = longArrayOf(0L, 100L, 160L, 200L, 240L, 280L, 320L, 450L)
+        const val NOW_PLAYING = "nowplaying"
     }
 }

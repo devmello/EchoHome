@@ -32,6 +32,8 @@ import app.vesper.feature.system.ui.EASE
 import app.vesper.feature.system.ui.GlassSpec
 import app.vesper.feature.system.ui.Icon
 import app.vesper.feature.system.ui.Icons
+import app.vesper.feature.system.hud.Hud
+import kotlin.math.roundToInt
 import app.vesper.feature.system.ui.Snapshot
 import app.vesper.feature.system.ui.SysGlassPainter
 import app.vesper.feature.system.ui.Tween
@@ -75,6 +77,19 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
     private val beadA = Tween(0f)
     private val beadScale = Tween(0.4f)
     private val bannerFade = Tween(1f)
+    /** Volume inside the island: 1 while it shows the level bar instead of its content. */
+    private val volA = Tween(0f)
+    private val volLevel = Tween(0f)
+    private var volMuted = false
+    private var volActive = false
+    private val endVolume = Runnable {
+        volActive = false
+        volA.to(0f, 220, EASE)
+        val b = layout.box
+        w.to(b.width, Motion.ISLAND_MS, Motion.ISLAND); h.to(b.height, Motion.ISLAND_MS, Motion.ISLAND); r.to(b.radius, Motion.ISLAND_MS, Motion.ISLAND)
+        invalidate()
+    }
+    private val takeVolume: (Hud.Level) -> Boolean = { lv -> showVolume(lv) }
 
     private var compactAct: LiveActivity? = null
     private var expandedAct: LiveActivity? = null
@@ -92,6 +107,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
     private val rect = RectF()
     private val clip = Path()
     private val boxRect = RectF()
+    private val volRect = RectF()
     private val beadRect = RectF()
 
     private val tTimer = SpecText(19f, 700)
@@ -158,9 +174,11 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         ui.backHandlers += back
+        ui.islandVolume = takeVolume
     }
 
     override fun onDetachedFromWindow() {
+        if (ui.islandVolume === takeVolume) ui.islandVolume = null
         ui.backHandlers -= back
         handler.removeCallbacksAndMessages(null)
         super.onDetachedFromWindow()
@@ -225,8 +243,40 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
             if (l.bead != null) { beadAct = l.bead; beadA.to(1f, 300, EASE); beadScale.to(1f, 500, Motion.SPRING_BOUNCY) }
             else { beadA.to(0f, 300, EASE); beadScale.to(0.4f, 500, Motion.SPRING_BOUNCY) }
         }
+        if (volActive) { w.to(VOL_W, dur, spring); h.to(44f, dur, spring); r.to(22f, dur, spring) }
         updateHitAreas()
         invalidate()
+    }
+
+    /**
+     * A volume change while the island is on screen: the island morphs into a 280×44 pill with the
+     * speaker and a level bar that slides to the new value, then morphs back after [VOL_HOLD_MS].
+     * False when the island isn't showing (the HUD capsule shows it instead).
+     */
+    private fun showVolume(lv: Hud.Level): Boolean {
+        if (layout.mode == IslandMode.HIDDEN || appear.target < 1f || bannerFade.target < 1f || !isAttachedToWindow) return false
+        if (!volActive && volA.value < 0.05f) volLevel.snap(s.system.state.value.volume.coerceIn(0f, 1f))
+        volActive = true
+        volMuted = lv.muted || lv.value <= 0f
+        volA.to(1f, 200, EASE)
+        volLevel.to(lv.value.coerceIn(0f, 1f), 260, EASE)
+        w.to(VOL_W, Motion.ISLAND_MS, Motion.ISLAND); h.to(44f, Motion.ISLAND_MS, Motion.ISLAND); r.to(22f, Motion.ISLAND_MS, Motion.ISLAND)
+        handler.removeCallbacks(endVolume); handler.postDelayed(endVolume, VOL_HOLD_MS)
+        announceForAccessibility("Volume ${(lv.value * 100).roundToInt()} percent")
+        invalidate()
+        return true
+    }
+
+    private fun drawVolume(c: Canvas, bw: Float, bh: Float, a: Float) {
+        val cy = bh / 2f
+        (if (volMuted) Icons.volumeMuted else Icons.volume).drawCentered(c, 26f, cy, 20f, ink(Color.WHITE, a), paint)
+        val l = 48f; val rt = bw - 22f
+        if (rt - l < 20f) return
+        paint.style = Paint.Style.FILL
+        paint.color = ink(withAlpha(Color.WHITE, 0.22f), a)
+        volRect.set(l, cy - 3f, rt, cy + 3f); c.drawRoundRect(volRect, 3f, 3f, paint)
+        paint.color = ink(Color.WHITE, a)
+        volRect.set(l, cy - 3f, l + (rt - l) * volLevel.value, cy + 3f); c.drawRoundRect(volRect, 3f, 3f, paint)
     }
 
     private fun updateHitAreas() {
@@ -265,7 +315,8 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
     private fun drawIsland(canvas: Canvas) {
         val now = Tween.now()
         var running = false
-        for (t in arrayOf(w, h, r, beadX, appear, compactA, expandedA, scrim, beadA, beadScale, bannerFade)) running = t.step(now) or running
+        for (t in arrayOf(w, h, r, beadX, appear, compactA, expandedA, scrim, beadA, beadScale, bannerFade, volA, volLevel)) running = t.step(now) or running
+        val notVol = 1f - volA.value
         val vis = appear.value * bannerFade.value
         buttons.clear()
         var ambient = false
@@ -286,14 +337,15 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
             canvas.clipPath(clip)
             canvas.translate(bx, by)
             boxLeft = bx; boxTop = by
-            val ca = compactA.value * vis
+            val ca = compactA.value * vis * notVol
             compactAct?.let { if (ca > 0.004f) { val (amb, tick) = drawCompact(canvas, it, bw, ca); ambient = ambient or amb; ticking = ticking or tick } }
-            val ea = expandedA.value * vis
-            expandedAct?.let { if (ea > 0.004f || layout.mode == IslandMode.EXPANDED) { ticking = drawExpanded(canvas, it, bw, bh, ea, bx, by) or ticking } }
+            val ea = expandedA.value * vis * notVol
+            expandedAct?.let { if (ea > 0.004f || (layout.mode == IslandMode.EXPANDED && notVol > 0.996f)) { ticking = drawExpanded(canvas, it, bw, bh, ea, bx, by) or ticking } }
+            if (volA.value > 0.004f) drawVolume(canvas, bw, bh, volA.value * vis)
             canvas.restore()
         }
 
-        val ba = beadA.value * vis
+        val ba = beadA.value * vis * notVol
         if (ba > 0.004f) beadAct?.let { act ->
             val sc = beadScale.value
             val size = 44f * sc
@@ -745,6 +797,8 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
 
     companion object {
         const val REMINDER_OPEN_MS = 10_000L
+        const val VOL_W = 280f
+        const val VOL_HOLD_MS = 1_600L
         const val LOOK_KEY = "system.island.look"
         /** Equaliser / orb animation rate: 30 fps is smooth for 22 px bars and halves the cost. */
         const val AMBIENT_FRAME_MS = 33L

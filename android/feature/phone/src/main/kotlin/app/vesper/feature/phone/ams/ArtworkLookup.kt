@@ -66,8 +66,15 @@ class ArtworkLookup(
     }
 
     private fun fetch(artist: String, title: String): Bitmap? {
-        val json = String(download(ItunesArt.searchUrl(artist, title), 64 * 1024) ?: return null, Charsets.UTF_8)
-        val art = ItunesArt.artworkUrl(json, artist) ?: return null
+        // Exact artist + title first; then the lead artist and the bare title ("Lemonade" for
+        // "Lemonade - Remix"), which finds tracks whose names the phone and iTunes spell differently.
+        var art: String? = null
+        for (url in ItunesArt.searchUrls(artist, title)) {
+            val json = String(download(url, 64 * 1024) ?: continue, Charsets.UTF_8)
+            art = ItunesArt.artworkUrl(json, artist, title) ?: continue
+            break
+        }
+        if (art == null) return null
         val bytes = download(art, 2 * 1024 * 1024) ?: return null
         return decode(bytes)
     }
@@ -123,8 +130,35 @@ object ItunesArt {
     fun searchUrl(artist: String, title: String): String =
         "https://itunes.apple.com/search?term=" + URLEncoder.encode("${artist.trim()} ${title.trim()}".trim(), "UTF-8") + "&entity=song&limit=5"
 
+    /** The exact query, then lead artist + bare title when that differs. */
+    fun searchUrls(artist: String, title: String): List<String> {
+        val first = searchUrl(artist, title)
+        val second = searchUrl(artists(artist).firstOrNull() ?: artist, bareTitle(title))
+        return if (second.equals(first, ignoreCase = true)) listOf(first) else listOf(first, second)
+    }
+
+    private val SPLIT = Regex("\\s*(?:,|&|\\+|/|\\bx\\b|\\band\\b|\\bfeat\\.?|\\bft\\.?|\\bfeaturing\\b|\\bwith\\b)\\s*", RegexOption.IGNORE_CASE)
+
+    /** "Internet Money, Don Toliver & Roddy Ricch" → [internet money, don toliver, roddy ricch]. */
+    fun artists(s: String): List<String> = s.lowercase().split(SPLIT).map { it.trim() }.filter { it.isNotEmpty() }
+
+    /** "Lemonade - Remix" / "Lemonade (feat. NAV)" → "Lemonade". */
+    fun bareTitle(t: String): String = t.substringBefore(" - ").substringBefore(" (").substringBefore(" [").trim().ifEmpty { t.trim() }
+
+    private fun norm(s: String) = s.lowercase().filter { it.isLetterOrDigit() }
+
+    /** Same artist: one name contains the other, or they share a credited artist. */
+    fun sameArtist(a: String, b: String): Boolean {
+        val x = a.trim().lowercase(); val y = b.trim().lowercase()
+        if (x.isEmpty() || y.isEmpty()) return false
+        if (x.contains(y) || y.contains(x)) return true
+        val ys = artists(y).toSet()
+        return artists(x).any { it in ys }
+    }
+
     private val ARTWORK = Regex("\"artworkUrl100\"\\s*:\\s*\"([^\"]+)\"")
     private val ARTIST = Regex("\"artistName\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+    private val TRACK = Regex("\"trackName\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
     private val SIZE = Regex("/\\d+x\\d+bb\\.")
     private val UNICODE = Regex("\\\\u([0-9a-fA-F]{4})")
 
@@ -132,18 +166,24 @@ object ItunesArt {
      * The first result by [artist] (case-insensitive, either name containing the other): its
      * artworkUrl100 resized to 600 px, https only. Null when no result matches.
      */
-    fun artworkUrl(json: String, artist: String): String? {
-        val want = artist.trim().lowercase()
-        if (want.isEmpty()) return null
+    fun artworkUrl(json: String, artist: String, title: String = ""): String? {
+        if (artist.isBlank()) return null
         // One chunk per result object (they're flat), split on the key every result starts with.
+        // Among results by the same artist, one whose title matches ("Lemonade (Remix)" for
+        // "Lemonade - Remix") wins; else the first.
+        var first: String? = null
+        val wantTitle = norm(title)
         for (chunk in json.split("\"wrapperType\"").drop(1)) {
-            val name = ARTIST.find(chunk)?.groupValues?.get(1)?.let(::unescape)?.trim()?.lowercase() ?: continue
-            if (name.isEmpty() || !(name.contains(want) || want.contains(name))) continue
+            val name = ARTIST.find(chunk)?.groupValues?.get(1)?.let(::unescape) ?: continue
+            if (!sameArtist(artist, name)) continue
             val raw = ARTWORK.find(chunk)?.groupValues?.get(1)?.replace("\\/", "/") ?: continue
             if (!raw.startsWith("https://")) return null
-            return if (SIZE.containsMatchIn(raw)) raw.replace(SIZE, "/600x600bb.") else raw
+            val url = if (SIZE.containsMatchIn(raw)) raw.replace(SIZE, "/600x600bb.") else raw
+            val track = TRACK.find(chunk)?.groupValues?.get(1)?.let(::unescape)?.let(::norm)
+            if (wantTitle.isNotEmpty() && track == wantTitle) return url
+            if (first == null) first = url
         }
-        return null
+        return first
     }
 
     private fun unescape(s: String) =

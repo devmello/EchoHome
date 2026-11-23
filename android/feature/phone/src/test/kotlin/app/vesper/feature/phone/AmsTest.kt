@@ -214,4 +214,22 @@ class AmsTest {
         assertNull(ItunesArt.artworkUrl("""{"results":[{"wrapperType":"track","artistName":"Bon Iver","artworkUrl100":"http:\/\/example.com\/100x100bb.jpg"}]}""", "Bon Iver"))
         assertEquals(ItunesArt.key("Bon Iver", "Holocene"), ItunesArt.key(" bon iver", "HOLOCENE "))
     }
+
+    @Test fun itunesMatchesCreditListsAndRemixTitles() {
+        // As seen on the Echo: AVRCP says "A, B, C", iTunes says "A, B & C"; the remix beats the original.
+        val json = """{"results":[""" +
+            """{"wrapperType":"track","artistName":"Internet Money, Gunna & Don Toliver","trackName":"Lemonade (feat. NAV)","artworkUrl100":"https:\/\/is1-ssl.mzstatic.com\/image\/thumb\/Music\/orig\/100x100bb.jpg"},""" +
+            """{"wrapperType":"track","artistName":"Internet Money, Don Toliver & Roddy Ricch","trackName":"Lemonade (Remix)","artworkUrl100":"https:\/\/is1-ssl.mzstatic.com\/image\/thumb\/Music\/remix\/100x100bb.jpg"}]}"""
+        assertEquals("https://is1-ssl.mzstatic.com/image/thumb/Music/remix/600x600bb.jpg",
+            ItunesArt.artworkUrl(json, "Internet Money, Don Toliver, Roddy Ricch", "Lemonade - Remix"))
+        // No title match: the first by a shared artist.
+        assertEquals("https://is1-ssl.mzstatic.com/image/thumb/Music/orig/600x600bb.jpg", ItunesArt.artworkUrl(json, "Internet Money", "Lemonade"))
+        assertNull(ItunesArt.artworkUrl(json, "Roddy Wimbley", "Lemonade"))
+        assertEquals(listOf("internet money", "don toliver", "roddy ricch"), ItunesArt.artists("Internet Money, Don Toliver & Roddy Ricch"))
+        assertEquals(listOf("drake", "21 savage"), ItunesArt.artists("Drake feat. 21 Savage"))
+        assertEquals("Lemonade", ItunesArt.bareTitle("Lemonade - Remix"))
+        assertEquals("Lemonade", ItunesArt.bareTitle("Lemonade (feat. NAV)"))
+        assertEquals(2, ItunesArt.searchUrls("Internet Money, Don Toliver, Roddy Ricch", "Lemonade - Remix").size)
+        assertEquals(1, ItunesArt.searchUrls("Bon Iver", "Holocene").size)
+    }
 }

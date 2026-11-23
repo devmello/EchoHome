@@ -41,6 +41,8 @@ internal class SystemUi(val app: Context, val services: VesperServices) {
     // --- banners / island coordination ---
     /** A compact or expanded banner is on screen: the island fades out meanwhile. */
     val bannerShowing = MutableStateFlow(false)
+    /** Set by the island while it's attached: shows a volume change inside the island if the island is on screen (true = handled, no HUD capsule). */
+    var islandVolume: ((app.vesper.feature.system.hud.Hud.Level) -> Boolean)? = null
     /** Island hit areas in window px (main + bead); Control Center's edge pull ignores touches there. */
     val islandHitAreas = mutableListOf<RectF>()
 

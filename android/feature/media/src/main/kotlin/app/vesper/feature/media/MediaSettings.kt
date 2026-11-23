@@ -42,7 +42,7 @@ object MediaSettings {
             ),
             SettingSpec(
                 LYRICS_WORDS, "Word-by-word lyrics", SettingType.BOOLEAN, "true",
-                help = "Fills the current lyric line word by word as it is sung. Word timing is estimated when the lyrics only have line times. Off: the whole line lights at once.",
+                help = "Fills the current lyric line word by word as it is sung, for lyrics that come with word timing. Lyrics with only line timing light up a whole line at a time. Off: always a whole line.",
             ),
             SettingSpec(
                 PAUSED_DRIFT, "Keep the background moving while paused", SettingType.BOOLEAN, "false",

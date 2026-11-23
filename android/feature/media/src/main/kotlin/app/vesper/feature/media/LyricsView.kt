@@ -169,10 +169,10 @@ internal class LyricsView(context: Context) : View(context) {
         val line = ls[i]
         if (line.text.isEmpty()) return
         val next = if (i + 1 < ls.size) ls[i + 1].timeMs else line.timeMs + 6000L
-        val words = line.words ?: WordTiming.estimate(line.text, line.timeMs, next)
+        // Only real word stamps (Enhanced LRC) sweep; a line-timed line simply lights up whole.
+        val words = line.words ?: return
         if (words.isEmpty()) return
-        val sungEnd = if (line.words != null) minOf(maxOf(next, words.last().startMs + 400L), words.last().startMs + 1500L)
-        else WordTiming.sungEnd(line.timeMs, next, line.text)
+        val sungEnd = minOf(maxOf(next, words.last().startMs + 400L), words.last().startMs + 1500L)
         val n = words.size
         actStart = LongArray(n); actEnd = LongArray(n); actRow = IntArray(n); actX0 = FloatArray(n); actX1 = FloatArray(n)
         val rows = lines[i]
