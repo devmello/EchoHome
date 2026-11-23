@@ -183,9 +183,17 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
         s.island.activities.value.mapNotNull { it.staleAfterElapsed }.filter { it > now }.minOrNull()?.let { handler.postDelayed(recompute, it - now + 16) }
     }
 
+    /** A reminder (leave now) opens to say so, then folds back to its pill so it doesn't sit over the clock. */
+    private val foldReminder = Runnable {
+        if (layout.mode == IslandMode.EXPANDED && layout.main?.kind == ActivityKind.LEAVE_NOW) setLayout(model.collapse())
+    }
+
     private fun setLayout(l: IslandLayout) {
         val prev = layout
         layout = l
+        if (l.mode == IslandMode.EXPANDED && l.main?.kind == ActivityKind.LEAVE_NOW && prev.main?.id != l.main?.id) {
+            handler.removeCallbacks(foldReminder); handler.postDelayed(foldReminder, REMINDER_OPEN_MS)
+        }
         val spring = Motion.ISLAND
         val dur = Motion.ISLAND_MS
         if (l.mode == IslandMode.HIDDEN) {
@@ -736,6 +744,7 @@ internal class IslandOverlay(context: Context, private val ui: SystemUi) : Frame
     }
 
     companion object {
+        const val REMINDER_OPEN_MS = 10_000L
         const val LOOK_KEY = "system.island.look"
         /** Equaliser / orb animation rate: 30 fps is smooth for 22 px bars and halves the cost. */
         const val AMBIENT_FRAME_MS = 33L

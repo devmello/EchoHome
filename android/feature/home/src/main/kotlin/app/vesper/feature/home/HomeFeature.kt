@@ -74,6 +74,8 @@ object HomeFeature : VesperFeature {
             changes = { s.profiles.active.map { } }).also { it.start() }
         BriefWatcher(s.settings, { s.system }, { s.alarms }, { s.navigator }, s.scope).start()
         host.registerScreen(ScreenSpec(BriefWatcher.SCREEN_ID, order = 90, inPager = false) { ctx -> BriefView(ctx, host.services) })
+        // The brief shows the leave time and rain itself; the island would sit over its greeting.
+        host.services.island.hideOnScreen(BriefWatcher.SCREEN_ID)
         if (s.config.debug) debugIntents(s, rain, leave)
 
         host.registerScreen(ScreenSpec("commute", order = 40) { ctx -> CommuteView(ctx, host.services) })
