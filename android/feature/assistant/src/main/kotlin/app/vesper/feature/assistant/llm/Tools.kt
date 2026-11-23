@@ -48,6 +48,7 @@ class ToolSpec(
                 val a = v as JSONArray
                 for (i in 0 until a.length()) if (!contains(e, a.get(i))) return "'$k' has an unknown value"
             }
+            if (v is String && p.has("maxLength") && v.length > p.getInt("maxLength")) return "'$k' is longer than ${p.get("maxLength")} characters"
             if (v is Number) {
                 if (p.has("minimum") && v.toDouble() < p.getDouble("minimum")) return "'$k' is below ${p.get("minimum")}"
                 if (p.has("maximum") && v.toDouble() > p.getDouble("maximum")) return "'$k' is above ${p.get("maximum")}"
@@ -74,8 +75,8 @@ interface ToolHost {
 
 /** JSON-schema helpers for the specs. */
 internal object Schema {
-    fun str(desc: String, enum: List<String>? = null) = JSONObject().put("type", "string").put("description", desc)
-        .also { o -> enum?.let { o.put("enum", JSONArray(it)) } }
+    fun str(desc: String, enum: List<String>? = null, max: Int? = null) = JSONObject().put("type", "string").put("description", desc)
+        .also { o -> enum?.let { o.put("enum", JSONArray(it)) }; max?.let { o.put("maxLength", it) } }
     fun int(desc: String, min: Int? = null, max: Int? = null) = JSONObject().put("type", "integer").put("description", desc)
         .also { o -> min?.let { o.put("minimum", it) }; max?.let { o.put("maximum", it) } }
     fun num(desc: String, min: Double? = null, max: Double? = null) = JSONObject().put("type", "number").put("description", desc)

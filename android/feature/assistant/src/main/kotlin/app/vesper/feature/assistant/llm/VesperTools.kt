@@ -2,6 +2,7 @@ package app.vesper.feature.assistant.llm
 
 import android.os.SystemClock
 import app.vesper.core.model.Alarm
+import app.vesper.core.model.Profile
 import app.vesper.core.model.VesperServices
 import app.vesper.core.model.VesperTimer
 import app.vesper.feature.assistant.llm.Schema.bool
@@ -34,7 +35,9 @@ class VesperTools(
     private val wall: () -> Long = System::currentTimeMillis,
 ) : ToolHost {
 
-    override fun specs(): List<ToolSpec> = BASE + if (services().config.secrets.haConfigured) HOME else emptyList()
+    private val echo = EchoTools(zone, elapsed, wall)
+
+    override fun specs(): List<ToolSpec> = BASE + EchoTools.SPECS + if (services().config.secrets.haConfigured) HOME else emptyList()
 
     override suspend fun run(name: String, input: JSONObject): ToolOutcome = withContext(main) {
         val s = services()
@@ -44,7 +47,7 @@ class VesperTools(
             "cancel_timer" -> cancelTimer(s, input)
             "set_alarm" -> setAlarm(s, input)
             "list_alarms" -> ToolOutcome(JSONObject().put("alarms", JSONArray(s.alarms.alarms.value.map(::alarmJson)))
-                .put("next", s.alarms.next.value?.let { JSONObject().put("alarm_id", it.alarm.id).put("at", iso(it.triggerAtMillis)) }))
+                .put("next", s.alarms.next.value?.let { n -> JSONObject().put("alarm_id", n.alarm.id).put("at", iso(n.triggerAtMillis)).also { o -> n.reason?.let { o.put("reason", it) } } }))
             "update_alarm" -> updateAlarm(s, input)
             "delete_alarm" -> deleteAlarm(s, input)
             "get_weather" -> weather(s)
@@ -54,11 +57,13 @@ class VesperTools(
             "set_volume" -> setVolume(s, input)
             "set_brightness" -> setBrightness(s, input)
             "get_display" -> s.system.state.value.let { st ->
-                ToolOutcome(JSONObject().put("brightness_percent", (st.brightness * 100).toInt()).put("volume_percent", (st.volume * 100).toInt()))
+                ToolOutcome(JSONObject().put("brightness_percent", (st.brightness * 100).toInt()).put("volume_percent", (st.volume * 100).toInt())
+                    .put("do_not_disturb", st.doNotDisturb).put("night_mode", st.nightMode.name.lowercase()).put("night_active", st.nightActive)
+                    .put("camera_enabled", !st.cameraDisabled).put("camera_shutter_closed", st.shutterClosed).put("mic_muted", st.micMuted))
             }
             "home_list" -> if (s.config.secrets.haConfigured) homeList(s, input) else notAvailable()
             "home_control" -> if (s.config.secrets.haConfigured) homeControl(s, input) else notAvailable()
-            else -> ToolOutcome.error("UNKNOWN_TOOL", "No tool named $name")
+            else -> echo.run(s, name, input) ?: ToolOutcome.error("UNKNOWN_TOOL", "No tool named $name")
         }
     }
 
@@ -77,14 +82,7 @@ class VesperTools(
 
     private fun cancelTimer(s: VesperServices, input: JSONObject): ToolOutcome {
         val list = s.timers.timers.value
-        val id = input.optString("timer_id", "")
-        val label = input.optString("label", "")
-        val target = when {
-            id.isNotEmpty() -> list.firstOrNull { it.id == id }
-            label.isNotEmpty() -> list.firstOrNull { it.label.equals(label, ignoreCase = true) }
-            list.size == 1 -> list[0]
-            else -> null
-        } ?: return ToolOutcome.error("NOT_FOUND", if (list.isEmpty()) "No timers are running." else "Say which timer: ${list.joinToString { it.label.ifEmpty { it.id } }}")
+        val target = EchoTools.resolveTimer(list, input) ?: return EchoTools.timerNotFound(list)
         if (target.state == VesperTimer.State.DONE) s.timers.dismiss(target.id) else s.timers.cancel(target.id)
         return ToolOutcome(JSONObject().put("cancelled", target.id),
             card = ResultCard.Action(target.label.ifEmpty { "Timer" }, "Cancelled", Icon.TIMER))
@@ -106,10 +104,14 @@ class VesperTools(
             hour = input.getInt("hour"), minute = input.getInt("minute"),
             days = days(input.optJSONArray("days")),
             label = input.optString("label", "").ifBlank { "Alarm" },
+            leaveBy = input.optBoolean("leave_by", false),
+            readyMinutes = if (input.has("ready_minutes")) input.getInt("ready_minutes") else 45,
+            skipHolidays = input.optBoolean("skip_holidays", false),
+            profileId = s.profiles.active.value.id.takeIf { it != Profile.SHARED_ID && input.optBoolean("mine", false) },
         )
         s.alarms.upsert(a)
         return ToolOutcome(JSONObject().put("alarm", alarmJson(a)),
-            card = ResultCard.Action(a.label, "${clock(a.hour, a.minute)}${repeatText(a.days)}", Icon.ALARM))
+            card = ResultCard.Action(a.label, "${clock(a.hour, a.minute)}${repeatText(a.days)}${if (a.leaveBy) " · leave-by" else ""}", Icon.ALARM))
     }
 
     private fun updateAlarm(s: VesperServices, input: JSONObject): ToolOutcome {
@@ -120,6 +122,10 @@ class VesperTools(
             minute = if (input.has("minute")) input.getInt("minute") else old.minute,
             enabled = if (input.has("enabled")) input.getBoolean("enabled") else old.enabled,
             days = if (input.has("days")) days(input.optJSONArray("days")) else old.days,
+            label = if (input.has("label")) input.getString("label").ifBlank { old.label } else old.label,
+            leaveBy = if (input.has("leave_by")) input.getBoolean("leave_by") else old.leaveBy,
+            readyMinutes = if (input.has("ready_minutes")) input.getInt("ready_minutes") else old.readyMinutes,
+            skipHolidays = if (input.has("skip_holidays")) input.getBoolean("skip_holidays") else old.skipHolidays,
         )
         s.alarms.upsert(a)
         val state = if (a.enabled) "${clock(a.hour, a.minute)}${repeatText(a.days)}" else "Off"
@@ -129,6 +135,8 @@ class VesperTools(
     private fun deleteAlarm(s: VesperServices, input: JSONObject): ToolOutcome {
         val a = s.alarms.alarms.value.firstOrNull { it.id == input.getString("alarm_id") }
             ?: return ToolOutcome.error("NOT_FOUND", "No alarm with that id; call list_alarms.")
+        if (!input.getBoolean("confirmed")) return ToolOutcome.error("NEEDS_CONFIRMATION",
+            "Not deleted. Ask the user to confirm deleting \"${a.label}\" (${clock(a.hour, a.minute)}), then call again with confirmed=true.")
         s.alarms.delete(a.id)
         return ToolOutcome(JSONObject().put("deleted", a.id), card = ResultCard.Action(a.label, "Deleted", Icon.ALARM))
     }
@@ -138,6 +146,10 @@ class VesperTools(
         .put("time", "%02d:%02d".format(a.hour, a.minute))
         .put("enabled", a.enabled)
         .put("days", JSONArray(a.days.sorted().map { it.name.take(3) }))
+        .also { o ->
+            if (a.leaveBy) o.put("leave_by", true).put("ready_minutes", a.readyMinutes)
+            if (a.skipHolidays) o.put("skip_holidays", true)
+        }
 
     private fun days(a: JSONArray?): Set<DayOfWeek> =
         (0 until (a?.length() ?: 0)).mapNotNull { i -> DayOfWeek.values().firstOrNull { it.name.startsWith(a!!.getString(i)) } }.toSet()
@@ -182,12 +194,27 @@ class VesperTools(
         val day = if (input.optString("day") == "tomorrow") today.plusDays(1) else today
         val from = day.atStartOfDay(z).toInstant().toEpochMilli()
         val to = day.plusDays(1).atStartOfDay(z).toInstant().toEpochMilli()
-        val events = s.calendar.events.value.filter { it.endMillis > from && it.startMillis < to }
+        val profiles = s.profiles.profiles.value
+        val active = s.profiles.active.value
+        val who = input.optString("person", "").trim()
+        // Default: the active person's calendars plus shared ones; everyone when nobody in particular is active.
+        val pid: String? = when {
+            who.isEmpty() -> active.id.takeIf { it != Profile.SHARED_ID }
+            who.equals("everyone", true) || who.equals("all", true) -> null
+            else -> (profiles.firstOrNull { it.id.equals(who, true) || it.name.equals(who, true) }
+                ?: return ToolOutcome.error("NOT_FOUND", "People: ${profiles.filter { it.id != Profile.SHARED_ID }.joinToString { it.name }}")).id
+        }
+        val events = s.calendar.events.value.filter {
+            it.endMillis > from && it.startMillis < to && (pid == null || it.profileId == null || it.profileId == pid)
+        }
+        fun owner(id: String?) = if (id == null) "shared" else profiles.firstOrNull { it.id == id }?.name ?: id
         val arr = JSONArray(events.map { e ->
             JSONObject().put("title", e.title).put("start", iso(e.startMillis)).put("end", iso(e.endMillis))
                 .put("all_day", e.allDay).put("location", e.location ?: JSONObject.NULL).put("details", e.subtitle)
+                .put("calendar", owner(e.profileId))
         })
-        return ToolOutcome(JSONObject().put("day", day.toString()).put("events", arr))
+        return ToolOutcome(JSONObject().put("day", day.toString())
+            .put("showing", if (pid == null) "everyone" else owner(pid) + " and shared").put("events", arr))
     }
 
     private fun nowPlaying(s: VesperServices): ToolOutcome {
@@ -306,23 +333,32 @@ class VesperTools(
             ToolSpec("set_alarm", "Create an alarm on this display. Times are local, 24-hour.",
                 props("hour" to int("0-23", 0, 23), "minute" to int("0-59", 0, 59),
                     "label" to str("Optional name."),
-                    "days" to strArray("Repeat days; empty or omitted for a one-time alarm.", DAY_NAMES)),
+                    "days" to strArray("Repeat days; empty or omitted for a one-time alarm.", DAY_NAMES),
+                    "leave_by" to bool("Ring earlier when the day's first calendar event with a place needs it (event start minus travel minus ready_minutes). Never later than the set time."),
+                    "ready_minutes" to int("Getting-ready time for leave_by; default 45.", 0, 240),
+                    "skip_holidays" to bool("Don't ring on public holidays or all-day holiday / day-off events."),
+                    "mine" to bool("Make it the active person's own alarm instead of a shared one.")),
                 listOf("hour", "minute")),
-            ToolSpec("list_alarms", "List the alarms and when the next one rings."),
+            ToolSpec("list_alarms", "List the alarms (with their ids) and when the next one rings."),
             ToolSpec("update_alarm", "Change an alarm's time, repeat days, or turn it on or off.",
                 props("alarm_id" to str("From list_alarms."), "hour" to int("0-23", 0, 23), "minute" to int("0-59", 0, 59),
-                    "enabled" to bool("On or off."), "days" to strArray("Repeat days.", DAY_NAMES)),
+                    "enabled" to bool("On or off."), "days" to strArray("Repeat days.", DAY_NAMES),
+                    "label" to str("New name."), "leave_by" to bool("Leave-by on or off."),
+                    "ready_minutes" to int("Getting-ready time for leave_by.", 0, 240),
+                    "skip_holidays" to bool("Skip public holidays.")),
                 listOf("alarm_id")),
-            ToolSpec("delete_alarm", "Delete an alarm.", props("alarm_id" to str("From list_alarms.")), listOf("alarm_id")),
+            ToolSpec("delete_alarm", "Delete an alarm for good. Unless the user plainly asked to delete this exact alarm, first ask them to confirm in your answer, then call with confirmed=true after they say yes. With confirmed=false nothing is deleted.",
+                props("alarm_id" to str("From list_alarms."), "confirmed" to bool("True only if the user plainly asked for this deletion or just confirmed it.")),
+                listOf("alarm_id", "confirmed")),
             ToolSpec("get_weather", "Current weather, today's high and low, a summary for tomorrow and the hourly forecast."),
-            ToolSpec("get_calendar", "The user's calendar events for today or tomorrow.",
-                props("day" to str("Which day.", listOf("today", "tomorrow"))), listOf("day")),
-            ToolSpec("now_playing", "What's playing on this display (AirPlay, Spotify or another app)."),
+            ToolSpec("get_calendar", "Calendar events for today or tomorrow. By default the active person's plus shared ones (everyone's if no one is active); person picks someone by name, or \"everyone\".",
+                props("day" to str("Which day.", listOf("today", "tomorrow")), "person" to str("A household member's name, or \"everyone\".")), listOf("day")),
+            ToolSpec("now_playing", "What's playing on this display (AirPlay, Spotify or another app): title, artist, source, whether it can skip or pause."),
             ToolSpec("media_control", "Control what's already playing on this display. It can't search for or start new music, and some sources (e.g. AirPlay) can't skip or pause: now_playing says.",
                 props("action" to str("What to do.", listOf("play", "pause", "next", "previous"))), listOf("action")),
             ToolSpec("set_volume", "Set this display's speaker volume.",
                 props("percent" to int("0-100", 0, 100)), listOf("percent")),
-            ToolSpec("get_display", "This display's current screen brightness and volume, in percent."),
+            ToolSpec("get_display", "This display's brightness and volume in percent, plus Do Not Disturb, Night mode, camera and microphone state."),
             ToolSpec("set_brightness", "Set this display's screen brightness. For \"brighter\" or \"dimmer\", read get_display and move about 20 points.",
                 props("percent" to int("1-100", 1, 100)), listOf("percent")),
         )

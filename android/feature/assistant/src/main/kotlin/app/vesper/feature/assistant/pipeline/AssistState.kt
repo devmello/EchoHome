@@ -96,6 +96,16 @@ object Transcript {
 /** Short step labels for the tools Claude calls ("Working on it…" chips). */
 object ToolLabels {
     private val map = linkedMapOf(
+        "donotdisturb" to "Do Not Disturb",
+        "nightmode" to "Night mode",
+        "camera" to "Camera",
+        "openscreen" to "Screen",
+        "profile" to "Profile",
+        "airquality" to "Air quality",
+        "nowcast" to "Weather",
+        "traveltime" to "Travel",
+        "phonebattery" to "iPhone",
+        "note" to "Note",
         "weather" to "Weather",
         "forecast" to "Weather",
         "calendar" to "Calendar",
