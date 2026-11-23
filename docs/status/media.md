@@ -27,7 +27,7 @@ Branch `worktree-agent-af29799b3bed8abf4`, rebased on main `4ecdc78` (contracts 
   - `media.otherApps` "Show other apps' music" (BOOLEAN, default on). Off clears the mirrored sessions and stops publishing them; on resyncs.
   - `media.island` "Show music in the island" (BOOLEAN, default on). Off ends the MUSIC activity.
   - `media.pausedDrift` "Keep the background moving while paused" (BOOLEAN, default off = the drift settles 30 s after pause).
-  - Device name: the popover ("Streaming to / Connected to / Playing on <name>") and the empty state ("AirPlay to <name> from …") use `DeviceName.get(services.settings)` and follow changes live (screenshots show the default "Echo Show"). The listener's label in Android settings is "Vesper media".
+  - Device name: the popover ("Streaming to / Connected to / Playing on <name>") and the empty state ("AirPlay to <name> from …") use `DeviceName.get(services.settings)` and follow changes live (screenshots show the default "Echo Show"). The listener's label in Android settings is "EchoHome media".
   - Verified on the Echo: the defaults and the device name (silent: screenshots only). Toggling the switches on the device waits for the settings page; the readers are unit-tested.
 
 ## Left
@@ -109,7 +109,7 @@ Design renders came from `NowPlaying.dc.html` with its template values filled in
 
 ## Live lyrics (Nov 22, branch `worktree-agent-a037d2ca9a2ca0645`)
 
-- **Source**: LRCLIB `/api/get` (title, artist, album, duration), fallback `/api/search` (synced within 4 s of the duration, else plain). OkHttp (already in the app), `User-Agent: Vesper/0.1 (smart display)`, 8 s timeouts, off the main thread. Only fetched while the lyrics mode is open, the screen is shown, and the track plays (a cache hit also works paused); track changes debounced 700 ms.
+- **Source**: LRCLIB `/api/get` (title, artist, album, duration), fallback `/api/search` (synced within 4 s of the duration, else plain). OkHttp (already in the app), `User-Agent: EchoHome/0.1 (smart display)`, 8 s timeouts, off the main thread. Only fetched while the lyrics mode is open, the screen is shown, and the track plays (a cache hit also works paused); track changes debounced 700 ms.
 - **Cache** (`LyricsRepository`): 24 in memory, disk `cacheDir/lyrics` (200 files / 2 MB, oldest pruned), "no lyrics" cached 7 days; network errors are not cached.
 - **Parse** (`Lyrics.kt`): LRC with several stamps per line, `[offset:]`, Enhanced LRC `<mm:ss.xx>` word stamps (kept as words); plain lyrics fall back to a static, drag-scrollable list; "No lyrics".
 - **UI** (`LyricsView`): toggle button (glass, next to the AirPlay button) or tap the artwork. Lyrics replace title/artist; scrubber and transport drop 36 px. Current line bright, next dimmer, past faded, one 360 ms eased scroll per line change (fractional index drives position + brightness). Each line is rasterised once into an ALPHA_8 mask and tinted per frame (drawing glyphs per frame cost +10 % CPU). Sync timer fires once per line change, only while playing. Night colours supported.

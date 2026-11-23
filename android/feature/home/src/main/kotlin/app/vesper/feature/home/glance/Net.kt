@@ -13,7 +13,7 @@ import okhttp3.Request
  * for one) and carries no personal data beyond what each request needs.
  */
 object Net {
-    const val USER_AGENT = "Vesper/0.1 (personal bedside display; Android)"
+    const val USER_AGENT = "EchoHome/0.1 (personal bedside display; Android)"
 
     val http: OkHttpClient by lazy {
         OkHttpClient.Builder()

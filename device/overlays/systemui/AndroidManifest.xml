@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Vesper draws its own volume HUD in the island; SystemUI's volume panel only flashed over it
+<!-- EchoHome draws its own volume HUD in the island; SystemUI's volume panel only flashed over it
      (Bluetooth absolute volume asks for FLAG_SHOW_UI). Static: always on, no user toggle. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="app.vesper.overlay.systemui">

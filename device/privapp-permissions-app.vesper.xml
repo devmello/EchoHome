@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Privileged permissions Vesper may hold as a /system/priv-app (ro.control_privapp_permissions=enforce).
+  Privileged permissions EchoHome may hold as a /system/priv-app (ro.control_privapp_permissions=enforce).
   Listing a permission the app doesn't request is harmless. The /system copy of the APK must not request a
   privileged permission missing from this list, or the Echo won't boot: scripts/echo-system-install.sh checks.
   Updates installed over it (adb install) just don't get unlisted ones.

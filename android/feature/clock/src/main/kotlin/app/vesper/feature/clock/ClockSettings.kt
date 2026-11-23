@@ -34,7 +34,7 @@ object ClockSettings {
         id = "clock",
         title = "Clock & StandBy",
         order = 20,
-        help = "The faces Vesper shows at rest. Swipe up or down on the Echo to switch; touch and hold to customize.",
+        help = "The faces EchoHome shows at rest. Swipe up or down on the Echo to switch; touch and hold to customize.",
         settings = buildList {
             add(SettingSpec(KEY_FACE, "Clock face", SettingType.CHOICE, default = "digital",
                 options = faces.map { it.id to it.name },

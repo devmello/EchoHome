@@ -6,7 +6,7 @@ import android.util.Log
 /**
  * Turns off what Android shows when a top-edge swipe reveals its bars over us (the swipe that
  * opens Control Center): the status bar's clock and icons, the notification shade, and the
- * Back / Home / Recents buttons. Only while Vesper is in front: [restore] gives other apps (the
+ * Back / Home / Recents buttons. Only while EchoHome is in front: [restore] gives other apps (the
  * stock launcher, Android Settings) their bars back.
  *
  * Needs `android.permission.STATUS_BAR` (privileged; allow-listed for the /system copy). Without it

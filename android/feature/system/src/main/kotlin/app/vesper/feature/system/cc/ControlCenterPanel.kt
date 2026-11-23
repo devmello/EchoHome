@@ -629,7 +629,7 @@ internal class ControlCenterPanel(context: Context, private val ui: SystemUi, pr
     }
 
     /**
-     * Opens Android's own launcher (Vesper stays the Home app, so Home brings you back). The system
+     * Opens Android's own launcher (EchoHome stays the Home app, so Home brings you back). The system
      * bars come back while another app is in front (MainActivity re-enables them on pause).
      */
     private fun leaveForAndroid() {

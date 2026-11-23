@@ -18,7 +18,7 @@
     <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:ignore="ProtectedPermissions" />
     <!-- shutter state from the window policy dump (`pm grant app.vesper android.permission.DUMP`) -->
     <uses-permission android:name="android.permission.DUMP" tools:ignore="ProtectedPermissions" />
-    <!-- Privileged (allow-listed in device/privapp-permissions-app.vesper.xml): hide the system bars' contents while Vesper is in front (MainActivity / SystemBars). -->
+    <!-- Privileged (allow-listed in device/privapp-permissions-app.vesper.xml): hide the system bars' contents while EchoHome is in front (MainActivity / SystemBars). -->
     <uses-permission android:name="android.permission.STATUS_BAR" tools:ignore="ProtectedPermissions" />
 
     <application>

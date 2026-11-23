@@ -1,4 +1,4 @@
-# Voice assistant setup (Vesper)
+# Voice assistant setup (EchoHome)
 
 The assistant (`:feature:assistant`, design `design/Assistant.dc.html`) listens, transcribes and
 speaks **on the Echo**, and asks **Claude** (Anthropic Messages API, Claude Haiku 5.5 by default)
@@ -19,7 +19,7 @@ mic (16 kHz) ─► wake word (optional, on device) ─► streaming STT (on dev
 
 There are two ways to set it. You don't need to rebuild for either one.
 
-- **Settings page (recommended).** Open the Vesper settings page and paste the key into the
+- **Settings page (recommended).** Open the EchoHome settings page and paste the key into the
   Anthropic API key field (a SECRET field, declared by the settings feature). It's stored
   encrypted on the Echo, and the page only shows whether it's set. The assistant picks it up
   right away: `services.configFlow` emits the change, the status pill switches from "No key" to

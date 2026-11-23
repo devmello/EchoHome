@@ -50,7 +50,7 @@ class FakeSettingsStore : SettingsStore {
 fun demoSections(actionLog: MutableList<String> = mutableListOf()): List<SettingsSection> = listOf(
     SettingsSection("general", "General", 0, listOf(
         SettingSpec("device.name", "Name", SettingType.TEXT, "Echo Show", help = "How the Echo shows up in AirPlay, Bluetooth and here."),
-        SettingSpec("settings.restartApp", "Restart app", SettingType.ACTION, help = "Restarts Vesper on the Echo (about 5 seconds).",
+        SettingSpec("settings.restartApp", "Restart app", SettingType.ACTION, help = "Restarts EchoHome on the Echo (about 5 seconds).",
             onAction = { actionLog += "restart"; "Restarting the Echo app…" }),
     )),
     SettingsSection("clock", "Clock", 10, listOf(

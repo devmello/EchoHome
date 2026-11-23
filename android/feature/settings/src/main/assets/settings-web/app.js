@@ -1,4 +1,4 @@
-/* Vesper settings page. Built entirely from GET /api/schema: every SettingSpec a feature registers
+/* EchoHome settings page. Built entirely from GET /api/schema: every SettingSpec a feature registers
  * on the Echo shows up here with a control for its type. Saves as you go (PUT /api/settings) and
  * stays in sync with changes made on the Echo (SSE /api/events). No libraries, no build step. */
 'use strict';

@@ -1,6 +1,6 @@
-# Vesper
+# EchoHome
 
-Project name **Vesper** (was "Echo Bedside"). Code package and applicationId: `app.vesper` (renamed Nov 22, 2026; classes `Vesper*`, log tags `Vesper*`). The `echo-*` scripts keep their names (they drive the Echo). On the network (AirPlay, Bluetooth, settings page) the device is **"Echo Show"** (setting `device.name`).
+Project name **EchoHome** (renamed from Vesper on Nov 23, 2026; before that "Echo Bedside"). The code keeps the Vesper names: package and applicationId `app.vesper` (renamed Nov 22, 2026; classes `Vesper*`, log tags `Vesper*`). The `echo-*` scripts keep their names (they drive the Echo). On the network (AirPlay, Bluetooth, settings page) the device is **"Echo Show"** (setting `device.name`).
 
 Custom Liquid Glass smart-display software for a jailbroken Amazon Echo Show 5 (1st gen, "checkers") running unofficial LineageOS 18.1 (Android 11, API 30, armv7, 1 GB RAM, 960×480 screen).
 

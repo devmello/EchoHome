@@ -219,7 +219,7 @@ with `design/Assistant.dc.html`:
 
 ## Needs from the user
 
-- **An Anthropic API key**, set on the Vesper settings page (or in `android/secrets.properties`).
+- **An Anthropic API key**, set on the EchoHome settings page (or in `android/secrets.properties`).
 - **OK to download the eSpeak NG TTS engine APK from F-Droid** (f-droid.org; the package is probably
   `com.reecedunn.espeak`) and install it with `adb install` (no root, no /system). Then: pick
   "System voice", measure, and listen at low volume.

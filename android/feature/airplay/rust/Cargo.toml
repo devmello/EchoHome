@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.94"
 publish = false
-description = "JNI bridge from Vesper's :feature:airplay to the shairplay AirPlay receiver (audio only)"
+description = "JNI bridge from EchoHome's :feature:airplay to the shairplay AirPlay receiver (audio only)"
 license = "LGPL-3.0-or-later"
 
 [lib]

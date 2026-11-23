@@ -1,4 +1,4 @@
-// Common config for every Vesper library module (:core:*, :feature:*).
+// Common config for every EchoHome library module (:core:*, :feature:*).
 // Applied with `apply(from = rootProject.file("gradle/echo-library.gradle"))`.
 android {
     compileSdk = 35

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build Vesper's two static ROM overlays (device/overlays/), and with --install put them in
+# Build EchoHome's two static ROM overlays (device/overlays/), and with --install put them in
 # /system/product/overlay and reboot. --install writes /system: ask the user first (CLAUDE.md).
 #   systemui:  enable_volume_ui=false (no SystemUI volume panel flashing over the island)
 #   bluetooth: avrcp_controller_enable_cover_art=true (album art from the iPhone over Bluetooth)

@@ -104,7 +104,7 @@ class LyricsTest {
             val r = repo.fetch("k1", "Song", "Artist", "Album", 200_000) as Lyrics.Synced
             assertEquals("hi", r.lines[0].text)
             val first = server.takeRequest()
-            assertEquals("Vesper/0.1 (smart display)", first.getHeader("User-Agent"))
+            assertEquals("EchoHome/0.1 (smart display)", first.getHeader("User-Agent"))
             assertTrue(first.path!!.contains("track_name=Song") && first.path!!.contains("duration=200"))
 
             // A fresh repository (empty memory) reads the disk cache: no more requests.

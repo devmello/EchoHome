@@ -21,7 +21,7 @@ internal class LyricsRepository(private val dir: File, private val http: OkHttpC
         const val MAX_BYTES = 2L * 1024 * 1024
         const val NEGATIVE_TTL_MS = 7L * 24 * 3600 * 1000
         const val BASE = "https://lrclib.net/api"
-        const val USER_AGENT = "Vesper/0.1 (smart display)"
+        const val USER_AGENT = "EchoHome/0.1 (smart display)"
 
         fun client(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(8, TimeUnit.SECONDS).readTimeout(8, TimeUnit.SECONDS).callTimeout(15, TimeUnit.SECONDS)

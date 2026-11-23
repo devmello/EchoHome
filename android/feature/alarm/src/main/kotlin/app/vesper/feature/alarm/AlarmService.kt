@@ -227,7 +227,7 @@ class AlarmService : Service() {
             r.alarm -> r.alarmTitle
             r.timer -> r.timerTitle
             else -> r.keepAliveTitle
-        }.ifEmpty { "Vesper" }
+        }.ifEmpty { "EchoHome" }
         val b = Notification.Builder(this, channel)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle(title)

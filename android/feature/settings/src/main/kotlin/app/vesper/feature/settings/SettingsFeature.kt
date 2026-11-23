@@ -46,7 +46,7 @@ object SettingsFeature : VesperFeature {
             SettingSpec(DeviceName.KEY, "Name", SettingType.TEXT, DeviceName.DEFAULT,
                 help = "How the Echo shows up in AirPlay, Bluetooth and here."),
             SettingSpec(KEY_RESTART, "Restart app", SettingType.ACTION,
-                help = "Restarts Vesper on the Echo (about 5 seconds). Needed after changing Home Assistant.",
+                help = "Restarts EchoHome on the Echo (about 5 seconds). Needed after changing Home Assistant.",
                 onAction = { restart(ctx); "Restarting the Echo app…" }),
         )))
         host.registerSettings(accountsSection())

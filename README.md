@@ -1,8 +1,8 @@
-# Vesper
+# EchoHome
 
-A Liquid Glass smart-display interface for a jailbroken **Amazon Echo Show 5 (1st gen)**. Vesper is an Android HOME launcher that replaces the stock Echo software with clock faces, an AirPlay and Bluetooth speaker, an on-device voice assistant, glanceable weather and calendar, and a Dynamic-Island-style live surface. It runs fully on the device and doesn't need Home Assistant or a cloud account.
+A Liquid Glass smart-display interface for a jailbroken **Amazon Echo Show 5 (1st gen)**. EchoHome is an Android HOME launcher that replaces the stock Echo software with clock faces, an AirPlay and Bluetooth speaker, an on-device voice assistant, glanceable weather and calendar, and a Dynamic-Island-style live surface. It runs fully on the device and doesn't need Home Assistant or a cloud account.
 
-> **Not affiliated with, endorsed by, or sponsored by Amazon or Apple.** Amazon, Echo and Echo Show are trademarks of Amazon.com, Inc. or its affiliates. Apple, AirPlay, iPhone, Dynamic Island, StandBy and Liquid Glass are trademarks of Apple Inc. These names are used only to describe the hardware Vesper runs on and the protocols it works with.
+> **EchoHome is an independent, unofficial project. It is not affiliated with, endorsed by, or sponsored by Amazon or Apple.** "Echo" in the name only says which hardware it runs on. Amazon, Echo and Echo Show are trademarks of Amazon.com, Inc. or its affiliates. Apple, AirPlay, iPhone, Dynamic Island, StandBy and Liquid Glass are trademarks of Apple Inc. These names are used only to describe the hardware EchoHome runs on and the protocols it works with.
 
 ## What it runs on
 
@@ -61,17 +61,17 @@ You need JDK 17 (newer JDKs are too new for this Gradle setup), the Android SDK 
 
 ## License
 
-Vesper is licensed under the **GNU General Public License v3.0**. See [`LICENSE`](LICENSE).
+EchoHome is licensed under the **GNU General Public License v3.0**. See [`LICENSE`](LICENSE).
 
 ### Third-party components
 
 | Component | Licence | Notes |
 |---|---|---|
-| [shairplay](https://crates.io/crates/shairplay) 0.13.0 (vendored in `android/feature/airplay/rust/vendor/shairplay`) | LGPL-3.0-or-later | One small Vesper patch, described in `VESPER-PATCH.md`. Upstream notes that its FairPlay code has uncertain provenance; see its `docs/fairplay-provenance.md`. |
+| [shairplay](https://crates.io/crates/shairplay) 0.13.0 (vendored in `android/feature/airplay/rust/vendor/shairplay`) | LGPL-3.0-or-later | One small EchoHome patch, described in `VESPER-PATCH.md`. Upstream notes that its FairPlay code has uncertain provenance; see its `docs/fairplay-provenance.md`. |
 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) libraries, keyword-spotting and speech-to-text models | Apache-2.0 | Downloaded by `fetch-voice.sh`, not in the repository. |
 | Piper voice `en_US-amy-low` (sherpa-onnx package) | See the voice's `MODEL_CARD` | Downloaded by `fetch-voice.sh`, not in the repository. |
 | [MediaPipe](https://github.com/google-ai-edge/mediapipe) BlazeFace short-range model | Apache-2.0 | In `android/feature/camera/src/main/assets/models/`. |
-| [EdgeFace](https://github.com/otroshi/edgeface) XXS and XS weights (converted to TFLite) | Code BSD-3-Clause; **weights trained on WebFace4M/12M, licensed for non-commercial research only** | Vesper is non-commercial. If you use Vesper commercially, replace these weights. Details in `android/feature/camera/MODELS.md`. |
+| [EdgeFace](https://github.com/otroshi/edgeface) XXS and XS weights (converted to TFLite) | Code BSD-3-Clause; **weights trained on WebFace4M/12M, licensed for non-commercial research only** | EchoHome is non-commercial. If you use EchoHome commercially, replace these weights. Details in `android/feature/camera/MODELS.md`. |
 | [TensorFlow Lite](https://www.tensorflow.org/lite) | Apache-2.0 | |
 | [OkHttp](https://square.github.io/okhttp/) and [kotlinx.coroutines](https://github.com/Kotlin/kotlinx.coroutines) | Apache-2.0 | |
 | [Inter](https://rsms.me/inter/) and [Nunito](https://github.com/googlefonts/nunito) fonts | SIL Open Font License 1.1 | The licence texts are next to the font files. |
