@@ -137,6 +137,13 @@ class RealAlarmStore(private val ctx: Context, private val services: VesperServi
         return m
     }
 
+    /** Debug: plant a leave-by shift (the travel service may not be bound on this build). */
+    internal fun debugShift(alarmId: String, date: java.time.LocalDate, shift: app.vesper.feature.alarm.engine.LeaveShift?) {
+        val key = app.vesper.feature.alarm.engine.LeaveBy.key(alarmId, date)
+        engine.setPlan(if (shift == null) engine.data.shifts - key else engine.data.shifts + (key to shift), engine.data.dayOffs)
+        evaluate("debug shift")
+    }
+
     /** An inexact wake-up for the next plan refresh (overnight, 3 h before a leave-by alarm). */
     private fun scheduleRefresh() {
         val pi = trigger(REQ_REFRESH, AlarmTriggerReceiver.ACTION_REFRESH)

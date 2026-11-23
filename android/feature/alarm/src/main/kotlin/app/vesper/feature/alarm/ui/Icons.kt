@@ -7,7 +7,7 @@ import android.graphics.Path
 import android.graphics.RectF
 
 /** The SVG icons from Alarm.dc.html / Timers.dc.html, redrawn on a 24-unit viewBox. */
-enum class Icon { ALARM, SNOOZE, CLOSE, PLUS, PAUSE, PLAY, REPEAT, BULB, SUN, CLOUD, MOON, RAIN }
+enum class Icon { ALARM, SNOOZE, CLOSE, PLUS, MINUS, CHECK, PAUSE, PLAY, REPEAT, BULB, SUN, CLOUD, MOON, RAIN }
 
 object Icons {
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
@@ -70,6 +70,8 @@ object Icons {
             }
             Icon.CLOSE -> { c.drawLine(6f, 6f, 18f, 18f, stroke); c.drawLine(18f, 6f, 6f, 18f, stroke) }
             Icon.PLUS -> { c.drawLine(12f, 5f, 12f, 19f, stroke); c.drawLine(5f, 12f, 19f, 12f, stroke) }
+            Icon.MINUS -> c.drawLine(5f, 12f, 19f, 12f, stroke)
+            Icon.CHECK -> { p.reset(); p.moveTo(5f, 12.5f); p.lineTo(10f, 17.5f); p.lineTo(19f, 7f); c.drawPath(p, stroke) }
             Icon.PAUSE -> { c.drawRect(7f, 4.5f, 10.4f, 19.5f, fill); c.drawRect(13.6f, 4.5f, 17f, 19.5f, fill) }
             Icon.PLAY -> {
                 // M8 5.3 … rounded triangle: (8,4)…(20.6,12)…(8,20) with r≈1.3 corners

@@ -7,8 +7,8 @@ import app.vesper.core.model.SettingsSection
 import app.vesper.core.model.SettingsStore
 
 /**
- * The "Alarms & timers" card on the settings page. Global: they apply to every alarm (there's no
- * per-alarm editor yet). Read at use time, and a change re-evaluates the alarms at once (a new
+ * The "Alarms & timers" card on the settings page. Global: they apply to every alarm (the
+ * editor on the Alarms screen has the per-alarm choices: time, days, leave-by, skip holidays). Read at use time, and a change re-evaluates the alarms at once (a new
  * sunrise length moves the next sunrise start), so nothing needs a restart.
  */
 internal object AlarmSettings {
