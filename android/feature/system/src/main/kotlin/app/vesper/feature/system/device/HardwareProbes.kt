@@ -13,8 +13,11 @@ import java.io.File
  *
  *  - **Mic button**: the `amazon-gating` platform driver exposes the latched hardware state
  *    at `/sys/devices/platform/amazon-gating/state` (world-readable; DT `state-gpios` = gpio-405,
- *    active-low). The button toggles that latch in hardware and also sends KEY_POWER on the
- *    `gating` input device, which Android swallows as the power key until it's remapped.
+ *    active-low). The button sends KEY_POWER on the `gating` input device (remapped to
+ *    KEYCODE_MUTE by gating.kl). On LineageOS the press alone doesn't cut the mics: writing `1` to
+ *    `amazon-gating/enable` does (mics cut, red LED on, state reads 1), and only the button
+ *    releases it. `enable` is root-only (0220) unless `device/echohome.rc` (installed by
+ *    scripts/echo-system-install.sh) opens it, as Fire OS's init.project.rc did for system.
  *  - **Shutter** (`SW_CAMERA_LENS_COVER`, gpio-keys, gpio-499 active-low): apps get no switch
  *    events, so it's read from (1) WindowManager's policy dump (`mCameraLensCoverState`), which
  *    needs `android.permission.DUMP` granted once with `pm grant` (a development permission), or
@@ -23,6 +26,7 @@ import java.io.File
 internal object HardwareProbes {
     private const val TAG = "VesperSystem"
     const val GATING_STATE = "/sys/devices/platform/amazon-gating/state"
+    const val GATING_ENABLE = "/sys/devices/platform/amazon-gating/enable"
     const val DEBUGFS_GPIO = "/sys/kernel/debug/gpio"
     /** Value of [GATING_STATE] while the mics are gated (the red-light state). To confirm on the device. */
     const val GATING_MUTED_VALUE = 1
@@ -31,6 +35,11 @@ internal object HardwareProbes {
     fun readGatingMuted(): Boolean? = try {
         File(GATING_STATE).readText().trim().toIntOrNull()?.let { it == GATING_MUTED_VALUE }
     } catch (_: Exception) { null }
+
+    /** Cuts the mics in hardware (red LED). False when [GATING_ENABLE] can't be written. */
+    fun cutMicsInHardware(): Boolean = try {
+        File(GATING_ENABLE).writeText("1"); true
+    } catch (e: Exception) { Log.w(TAG, "can't write $GATING_ENABLE: ${e.message}"); false }
 
     /** Lens covered, or null when no source works. Also reports which source answered. */
     fun readShutterClosed(ctx: Context): Pair<Boolean, String>? {

@@ -89,9 +89,21 @@ internal class HardwareMonitor(private val ui: SystemUi) {
                     ui.showHud(Hud.Message(if (now) MessageKind.MIC_OFF else MessageKind.MIC_ON))
                 }
             } else if (latch == before) {
-                // The latch didn't move: the button isn't gating in hardware here, so make it the software mute.
-                Log.w(TAG, "gating latch unchanged after the mic key; toggling the software mic mute")
-                main.post { ui.controls.setMicMuted(!ui.services.system.state.value.micMutedSoftware) }
+                // The latch didn't move. Mics on: cut them in hardware (red LED; the button releases
+                // it). A software mute from before goes off instead, and without a writable
+                // `enable` the press toggles the software mute.
+                val sw = ui.services.system.state.value.micMutedSoftware
+                when {
+                    sw -> main.post { ui.controls.setMicMuted(false) }
+                    !latch && HardwareProbes.cutMicsInHardware() && HardwareProbes.readGatingMuted() == true -> {
+                        Log.i(TAG, "mic key: mics cut in hardware")
+                        readOnce(true)
+                    }
+                    else -> {
+                        Log.w(TAG, "gating latch unchanged after the mic key; toggling the software mic mute")
+                        main.post { ui.controls.setMicMuted(true) }
+                    }
+                }
             }
         }, 300)
     }

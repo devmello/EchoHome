@@ -28,6 +28,10 @@ import kotlin.math.max
  *  - Light: [AutoNight] (default enter < 3 lux for 30 s, leave > 10 lux; `clock.night.*Lux`,
  *    `delaySec`). The sensor (`Sensor.TYPE_LIGHT`, on-change) is registered only while StandBy is
  *    shown ([start] / [stop]) and only for the `auto` source.
+ *  - The Echo's light HAL only reports changes: registering sends no reading, so after a restart
+ *    in a room that stays dark Night would never come on. If no event arrives within
+ *    [FIRST_READING_MS] of registering, the current value is read once from the driver's own
+ *    file ([LUX_FILE], world-readable) instead.
  *  - Schedule: one timer to the next start/end (re-checked at least every 5 minutes, so clock
  *    changes are caught), running whether or not StandBy is shown.
  */
@@ -48,6 +52,13 @@ class NightController(context: Context, private val services: VesperServices) : 
 
     private val check = Runnable { auto.onTick(SystemClock.elapsedRealtime()); apply(); schedule() }
     private val scheduleTick = Runnable { apply(); planScheduleTick() }
+    private var sensorEvents = 0
+    private val firstReading = Runnable {
+        if (!listening || sensorEvents > 0) return@Runnable
+        val lux = readLuxFile() ?: return@Runnable
+        Log.i(TAG, "no light event since registering: $LUX_FILE reads $lux")
+        onLux(lux)
+    }
 
     val hasSensor: Boolean get() = light != null
 
@@ -122,7 +133,9 @@ class NightController(context: Context, private val services: VesperServices) : 
     private fun register() {
         if (listening) return
         val s = light ?: run { Log.w(TAG, "no light sensor"); return }
+        sensorEvents = 0
         listening = sensors.registerListener(this, s, SensorManager.SENSOR_DELAY_NORMAL, handler)
+        if (listening) handler.postDelayed(firstReading, FIRST_READING_MS)
         schedule()
     }
 
@@ -130,6 +143,7 @@ class NightController(context: Context, private val services: VesperServices) : 
         if (listening) sensors.unregisterListener(this)
         listening = false
         handler.removeCallbacks(check)
+        handler.removeCallbacks(firstReading)
     }
 
     private fun minuteOfDay(): Int = Calendar.getInstance().let { it.get(Calendar.HOUR_OF_DAY) * 60 + it.get(Calendar.MINUTE) }
@@ -156,7 +170,7 @@ class NightController(context: Context, private val services: VesperServices) : 
         schedule()
     }
 
-    override fun onSensorChanged(event: SensorEvent) = onLux(event.values[0])
+    override fun onSensorChanged(event: SensorEvent) { sensorEvents++; onLux(event.values[0]) }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
@@ -176,5 +190,16 @@ class NightController(context: Context, private val services: VesperServices) : 
         }
     }
 
-    companion object { private const val TAG = "VesperClock" }
+    companion object {
+        private const val TAG = "VesperClock"
+        /** Amazon's STK3x1x driver: the current lux as text, e.g. "0 lux". */
+        const val LUX_FILE = "/sys/bus/platform/drivers/als_ps/lux"
+        const val FIRST_READING_MS = 1_500L
+
+        /** "12 lux" → 12f; null for anything else. */
+        fun parseLux(text: String): Float? =
+            text.trim().removeSuffix("lux").trim().toFloatOrNull()?.takeIf { it >= 0f && it.isFinite() }
+
+        private fun readLuxFile(): Float? = try { parseLux(java.io.File(LUX_FILE).readText()) } catch (_: Exception) { null }
+    }
 }

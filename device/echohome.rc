@@ -1,0 +1,7 @@
+# EchoHome: lets the app cut the mics in hardware (installed to /system/etc/init by
+# scripts/echo-system-install.sh). Writing 1 to amazon-gating/enable cuts the mics and lights the
+# red LED; only the physical button releases it. Fire OS's init.project.rc chowned it to system;
+# EchoHome runs as an app uid, so the node is made writable (write-only: it can only cut, not read
+# or release).
+on boot
+    chmod 0222 /sys/devices/platform/amazon-gating/enable

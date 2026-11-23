@@ -1,7 +1,8 @@
 #!/bin/bash
 # One-time Echo system setup (user-approved Nov 22, 2026; NOTES §5.1, §5.3). Reboots the Echo.
 #  1. Vesper as a privileged system app: /system/priv-app/Vesper + its privapp allow-list.
-#  2. The mic button key layout: /system/usr/keylayout/gating.kl (KEY_POWER → KEYCODE_MUTE).
+#  2. The mic button key layout: /system/usr/keylayout/gating.kl (KEY_POWER → KEYCODE_MUTE), and
+#     /system/etc/init/echohome.rc, which lets the app cut the mics in hardware (red LED).
 #  3. Built-in Camera app disabled (opening the shutter launched it over the launcher).
 #  4. Lock screen disabled.
 # Needs a partition backup in backups/ first (./scripts/echo-backup.sh). Undo: ./scripts/echo-system-undo.sh
@@ -13,6 +14,7 @@ ls "$ECHO_ROOT"/backups/*/COMPLETE >/dev/null 2>&1 || { echo "No complete partit
 APK="$CHECKOUT/android/app/build/outputs/apk/release/app-release.apk"
 XML="$ECHO_ROOT/device/privapp-permissions-app.vesper.xml"
 KL="$ECHO_ROOT/device/gating.kl"
+RC="$ECHO_ROOT/device/echohome.rc"
 AAPT2=$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)/aapt2
 
 lock_acquire; trap lock_release EXIT
@@ -37,8 +39,9 @@ adb_echo shell 'mkdir -p /system/priv-app/Vesper && chmod 755 /system/priv-app/V
 adb_echo push "$APK" /system/priv-app/Vesper/Vesper.apk >/dev/null
 adb_echo push "$XML" /system/etc/permissions/privapp-permissions-app.vesper.xml >/dev/null
 adb_echo push "$KL" /system/usr/keylayout/gating.kl >/dev/null
-adb_echo shell 'chmod 644 /system/priv-app/Vesper/Vesper.apk /system/etc/permissions/privapp-permissions-app.vesper.xml /system/usr/keylayout/gating.kl
-  restorecon -R /system/priv-app/Vesper /system/etc/permissions/privapp-permissions-app.vesper.xml /system/usr/keylayout/gating.kl
+adb_echo push "$RC" /system/etc/init/echohome.rc >/dev/null
+adb_echo shell 'chmod 644 /system/priv-app/Vesper/Vesper.apk /system/etc/permissions/privapp-permissions-app.vesper.xml /system/usr/keylayout/gating.kl /system/etc/init/echohome.rc
+  restorecon -R /system/priv-app/Vesper /system/etc/permissions/privapp-permissions-app.vesper.xml /system/usr/keylayout/gating.kl /system/etc/init/echohome.rc
   sync'
 adb_echo shell 'pm disable-user --user 0 com.android.camera2; locksettings set-disabled true'
 echo "Installed; rebooting..."
@@ -48,5 +51,6 @@ adb_echo shell cmd package set-home-activity "$HOME_ACTIVITY" >/dev/null 2>&1 ||
 echo "--- verify"
 adb_echo shell "dumpsys package app.vesper | grep -E 'codePath|pkgFlags|privateFlags' | head -6
   dumpsys input | grep -A3 ': gating' | grep -i KeyLayoutFile
+  ls -l /sys/devices/platform/amazon-gating/enable
   pm list packages -d | grep camera2
   locksettings get-disabled"

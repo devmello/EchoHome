@@ -8,7 +8,7 @@ lock_acquire; trap lock_release EXIT
 echo_connect >/dev/null
 root_echo
 adb_echo remount
-adb_echo shell 'rm -rf /system/priv-app/Vesper /system/etc/permissions/privapp-permissions-app.vesper.xml /system/etc/permissions/privapp-permissions-com.echobedside.xml /system/usr/keylayout/gating.kl; sync
+adb_echo shell 'rm -rf /system/priv-app/Vesper /system/etc/permissions/privapp-permissions-app.vesper.xml /system/etc/permissions/privapp-permissions-com.echobedside.xml /system/usr/keylayout/gating.kl /system/etc/init/echohome.rc; sync
   pm enable com.android.camera2; locksettings set-disabled false'
 adb_echo reboot || true
 wait_boot
