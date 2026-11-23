@@ -18,8 +18,10 @@ use std::time::Duration;
 use jni::objects::{GlobalRef, JByteArray, JObject, JShortArray, JString, JValue};
 use jni::sys::{jboolean, jint, jlong, JNI_FALSE, JNI_TRUE};
 use jni::{JNIEnv, JavaVM};
+use std::net::{IpAddr, Ipv6Addr};
+
 use shairplay::{
-    AirPlayMode, AudioFormat, AudioHandler, AudioSession, RaopServer, RemoteCommand,
+    AirPlayMode, AudioFormat, BindConfig, AudioHandler, AudioSession, RaopServer, RemoteCommand,
     RemoteControl, ShairplayError, TrackMetadata,
 };
 
@@ -348,7 +350,10 @@ fn start(
     let mut builder = RaopServer::builder()
         .name(name)
         .hwaddr(hwaddr)
-        .port(port)
+        // One dual-stack listener on [::]. The library's default (0.0.0.0 plus [::]) can't bind
+        // the second on Android (bindv6only=0: [::] already covers IPv4), so it served IPv4 only,
+        // and iPhones, which connect over IPv6, got no answer (connected, no sound).
+        .bind(BindConfig::new().addrs([IpAddr::V6(Ipv6Addr::UNSPECIFIED)]).port(port))
         .max_clients(4)
         .output_max_channels(2)
         .mode(if ap2 { AirPlayMode::AirPlay2 } else { AirPlayMode::AirPlay1 });

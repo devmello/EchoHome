@@ -26,3 +26,8 @@ lto = "fat"
 codegen-units = 1
 strip = true
 debug = false
+
+# Vendored shairplay 0.13.0 with one patch (src/raop/connection.rs, `socket_ip_bytes`): IPv4
+# clients on the dual-stack listener are treated as IPv4. See vendor/shairplay/VESPER-PATCH.md.
+[patch.crates-io]
+shairplay = { path = "vendor/shairplay" }
