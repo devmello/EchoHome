@@ -47,16 +47,16 @@ class LocationTest {
         putString(Locations.AUTO_PLACE, p.name); putString(Locations.AUTO_AT, at.toString())
     }
 
-    @Test fun precedenceManualThenAutoThenLivermore() {
+    @Test fun precedenceManualThenAutoThenSanFrancisco() {
         val s = MemSettings()
-        assertEquals(HomeLocation.LIVERMORE, Locations.resolve(s, demo = false)) // works with no settings
-        assertEquals(Place(37.6819, -121.7680, "Livermore"), Locations.LIVERMORE)
+        assertEquals(HomeLocation.SAN_FRANCISCO, Locations.resolve(s, demo = false)) // works with no settings
+        assertEquals(Place(37.7749, -122.4194, "San Francisco"), Locations.SAN_FRANCISCO)
         assertEquals(HomeLocation.SANTA_CRUZ, Locations.resolve(s, demo = true)) // the designs' sample
         s.auto(sf, 0)
         assertEquals(HomeLocation("San Francisco", sf.lat, sf.lon, Source.AUTO), Locations.resolve(s, demo = false))
         assertEquals(Source.DEMO, Locations.resolve(s, demo = true).source)
-        s.putString("weather.lat", "37.70"); s.putString("weather.lon", "-121.90"); s.putString("weather.place", "Pleasanton")
-        val manual = HomeLocation("Pleasanton", 37.70, -121.90, Source.MANUAL)
+        s.putString("weather.lat", "37.70"); s.putString("weather.lon", "-121.90"); s.putString("weather.place", "Oakland")
+        val manual = HomeLocation("Oakland", 37.70, -121.90, Source.MANUAL)
         assertEquals(manual, Locations.resolve(s, demo = false))
         assertEquals(manual, Locations.resolve(s, demo = true)) // manual beats demo too
         assertEquals(sf, Locations.auto(s)) // auto values live under their own keys
@@ -67,11 +67,11 @@ class LocationTest {
         val s = MemSettings()
         var answer: Place? = oakland
         val r = LocationResolver(s, scope, demo = false, AutoLocation(s, { answer }, clock = { 0L }))
-        assertEquals(HomeLocation.LIVERMORE, r.location.value) // before any lookup
+        assertEquals(HomeLocation.SAN_FRANCISCO, r.location.value) // before any lookup
         r.start()
         assertEquals("Oakland", withTimeout(3000) { r.location.first { it.source == Source.AUTO } }.name)
-        s.putString("weather.lat", "37.70"); s.putString("weather.lon", "-121.90"); s.putString("weather.place", "Pleasanton")
-        assertEquals("Pleasanton", withTimeout(3000) { r.location.first { it.source == Source.MANUAL } }.name)
+        s.putString("weather.lat", "37.70"); s.putString("weather.lon", "-121.90"); s.putString("weather.place", "Oakland")
+        assertEquals("Oakland", withTimeout(3000) { r.location.first { it.source == Source.MANUAL } }.name)
         s.remove("weather.lat")
         assertEquals("Oakland", withTimeout(3000) { r.location.first { it.source == Source.AUTO } }.name)
     }
@@ -101,11 +101,11 @@ class LocationTest {
         assertEquals(3, calls)
     }
 
-    @Test fun failureWithNoCacheFallsBackToLivermore() = runBlocking {
+    @Test fun failureWithNoCacheFallsBackToSanFrancisco() = runBlocking {
         val s = MemSettings()
         val auto = AutoLocation(s, { null }, clock = { 0L })
         assertNull(auto.refresh())
-        assertEquals(HomeLocation.LIVERMORE, Locations.resolve(s, demo = false))
+        assertEquals(HomeLocation.SAN_FRANCISCO, Locations.resolve(s, demo = false))
         assertNull(s.map[Locations.AUTO_AT]) // nothing answered: the next refresh tries again
     }
 
@@ -132,14 +132,14 @@ class LocationTest {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest) = when (request.path) {
                 "/ipapi/" -> MockResponse().setBody("""{"error":true,"reason":"RateLimited"}""")
-                "/ipwho/" -> MockResponse().setBody("""{"ip":"203.0.113.9","success":true,"city":"","latitude":37.68,"longitude":-121.77}""")
+                "/ipwho/" -> MockResponse().setBody("""{"ip":"203.0.113.9","success":true,"city":"","latitude":37.77,"longitude":-122.42}""")
                 else -> MockResponse().setResponseCode(404)
             }
         }
         var reversed: Pair<Double, Double>? = null
-        val loc = IpLocator(Net.http, listOf(server.url("/ipapi/"), server.url("/ipwho/")), reverse = { lat, lon -> reversed = lat to lon; "Livermore" })
-        assertEquals(Place(37.68, -121.77, "Livermore"), loc.lookup())
-        assertEquals(37.68 to -121.77, reversed)
+        val loc = IpLocator(Net.http, listOf(server.url("/ipapi/"), server.url("/ipwho/")), reverse = { lat, lon -> reversed = lat to lon; "San Francisco" })
+        assertEquals(Place(37.77, -122.42, "San Francisco"), loc.lookup())
+        assertEquals(37.77 to -122.42, reversed)
         val first = server.takeRequest(1, TimeUnit.SECONDS)!!
         assertEquals("/ipapi/", first.path) // a bare GET: no query, nothing identifying
         assertEquals(Net.USER_AGENT, first.getHeader("User-Agent"))
@@ -147,8 +147,8 @@ class LocationTest {
 
         val none = IpLocator(Net.http, listOf(server.url("/down/")))
         assertNull(none.lookup())
-        assertEquals(Place(37.6819, -121.768, "Livermore"),
-            IpLocator.parse(JSONObject("""{"city":"Livermore","latitude":37.6819,"longitude":-121.768}""")))
+        assertEquals(Place(37.7749, -122.4194, "San Francisco"),
+            IpLocator.parse(JSONObject("""{"city":"San Francisco","latitude":37.7749,"longitude":-122.4194}""")))
         assertNull(IpLocator.parse(JSONObject("""{"success":false,"message":"Invalid IP address"}""")))
         assertNull(IpLocator.parse(JSONObject("""{"latitude":0,"longitude":0}""")))
     }
@@ -172,7 +172,7 @@ class LocationTest {
         loc.start()
         val p = OpenMeteoWeatherProvider(s, scope, Fake(null), loc.location, client = Net.http, base = server.url("/v1/forecast"), airBase = server.url("/v1/air-quality"), retryMs = 60_000)
         p.start()
-        assertEquals("37.682", lats.poll(5, TimeUnit.SECONDS)) // lookup failed, no cache: Livermore
+        assertEquals("37.775", lats.poll(5, TimeUnit.SECONDS)) // lookup failed, no cache: San Francisco
         kotlinx.coroutines.delay(200)
         t += 11 * 60_000L; answer = sf
         net.emit(Unit) // Wi-Fi changed → look up again → SF → weather restarts for SF

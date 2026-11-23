@@ -51,7 +51,7 @@ object WeatherSettings {
         return Place(lat, lon, text(s, PLACE).orEmpty())
     }
 
-    /** "37.68,-121.77" → (lat, lon), range-checked. */
+    /** "37.77,-122.42" → (lat, lon), range-checked. */
     fun latLon(v: String?): Pair<Double, Double>? {
         val parts = v?.split(',')?.map { it.trim() }?.takeIf { it.size == 2 } ?: return null
         val lat = parts[0].toDoubleOrNull() ?: return null

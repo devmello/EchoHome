@@ -14,7 +14,7 @@ import app.vesper.feature.home.home.Slot
  * For debugging they can also be set from adb with the launch intent:
  *
  *     adb shell am start -n app.vesper/.MainActivity --es screen commute \
- *       --es home.set 'weather.location=37.68,-121.77;weather.location.place=Livermore'
+ *       --es home.set 'weather.location=37.77,-122.42;weather.location.place=San Francisco'
  *
  * (`home.set` = `key=value` pairs separated by `;` for the keys above; an empty value removes one.)
  */

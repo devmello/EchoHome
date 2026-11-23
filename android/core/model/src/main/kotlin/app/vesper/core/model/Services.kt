@@ -63,7 +63,7 @@ class VesperServices(
     var phone: StateFlow<PhoneStatus?> = MutableStateFlow(null)
     /** Crashes and hangs (`:app`'s watchdog binds it; the settings page shows it). */
     var crashLog: CrashLog = EmptyCrashLog
-    /** Home location (see [HomeLocation]); `:feature:home` binds manual > auto > Livermore. */
+    /** Home location (see [HomeLocation]); `:feature:home` binds manual > auto > San Francisco. */
     var location: StateFlow<HomeLocation> = MutableStateFlow(HomeLocation.default(config.demoData))
 
     /**

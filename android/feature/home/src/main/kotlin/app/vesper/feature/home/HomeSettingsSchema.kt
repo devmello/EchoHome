@@ -15,7 +15,7 @@ import app.vesper.feature.home.stocks.StockSettings
 object HomeSettingsSchema {
     val weather = SettingsSection("weather", "Weather & location", 30, listOf(
         SettingSpec(WeatherSettings.LOCATION, "Location", SettingType.LOCATION,
-            help = "Leave empty to detect it from your internet connection (Livermore, CA if that fails). Also the commute's start."),
+            help = "Leave empty to detect it from your internet connection (San Francisco, CA if that fails). Also the commute's start."),
         SettingSpec(WeatherSettings.UNIT, "Temperature unit", SettingType.CHOICE, default = "",
             options = listOf("" to "Automatic (from region)", "F" to "°F", "C" to "°C")),
     ), help = "Forecasts from Open-Meteo (CC BY 4.0).")

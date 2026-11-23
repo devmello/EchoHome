@@ -71,22 +71,22 @@ class SunTimesTest {
     }
     private fun noon(y: Int, m: Int, d: Int) = ZonedDateTime.of(y, m, d, 12, 0, 0, 0, la.toZoneId()).toInstant().toEpochMilli()
 
-    @Test fun livermoreWinterSolstice() {
+    @Test fun sanFranciscoWinterSolstice() {
         // 2025-12-21: sunrise ~7:19, sunset ~4:52 PM (PST)
-        val (rise, set) = SunMath.sunriseSunset(noon(2025, 12, 21), 37.6819, -121.7680, la)!!
+        val (rise, set) = SunMath.sunriseSunset(noon(2025, 12, 21), 37.7749, -122.4194, la)!!
         assertEquals((7 * 60 + 19).toDouble(), minutes(rise).toDouble(), 5.0)
         assertEquals((16 * 60 + 52).toDouble(), minutes(set).toDouble(), 5.0)
     }
 
-    @Test fun livermoreSummerSolstice() {
+    @Test fun sanFranciscoSummerSolstice() {
         // 2026-06-21: sunrise ~5:47, sunset ~8:33 PM (PDT)
-        val (rise, set) = SunMath.sunriseSunset(noon(2026, 6, 21), 37.6819, -121.7680, la)!!
+        val (rise, set) = SunMath.sunriseSunset(noon(2026, 6, 21), 37.7749, -122.4194, la)!!
         assertEquals((5 * 60 + 47).toDouble(), minutes(rise).toDouble(), 5.0)
         assertEquals((20 * 60 + 33).toDouble(), minutes(set).toDouble(), 5.0)
     }
 
     @Test fun showsTodayUntilSunsetThenTomorrow() {
-        val lat = 37.6819; val lon = -121.7680
+        val lat = 37.7749; val lon = -122.4194
         val morning = ZonedDateTime.of(2026, 3, 10, 3, 0, 0, 0, la.toZoneId()).toInstant().toEpochMilli()
         val evening = ZonedDateTime.of(2026, 3, 10, 22, 0, 0, 0, la.toZoneId()).toInstant().toEpochMilli()
         val a = SunTimes.next(morning, lat, lon, la, null)!!

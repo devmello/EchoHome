@@ -28,7 +28,7 @@ sealed interface CommuteState {
 object CommuteSettings {
     /** Where to go: "auto" (next calendar event with a place, else [DESTINATION]), "event" or "fixed". */
     const val SOURCE = "commute.source"
-    /** Start point, LOCATION ("lat,lon"); default: the home location (manual > IP-detected > Livermore). */
+    /** Start point, LOCATION ("lat,lon"); default: the home location (manual > IP-detected > San Francisco). */
     const val HOME = "commute.home"
     /** Older start-point keys, still read. */
     const val LAT = "commute.lat"
@@ -88,7 +88,7 @@ class CommuteController(
     private fun int(key: String, def: Int) = WeatherSettings.number(settings, key)?.toInt() ?: def
 
     /**
-     * `commute.lat`/`lon`, else `services.location` (manual > IP-detected > Livermore). Null while that
+     * `commute.lat`/`lon`, else `services.location` (manual > IP-detected > San Francisco). Null while that
      * is the DEMO location (demo data, nothing manual): the screen shows the design's sample.
      */
     internal fun home(): LatLon? = CommuteHome.resolve(settings, location)

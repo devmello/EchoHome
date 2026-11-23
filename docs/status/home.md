@@ -13,14 +13,14 @@ The module works with **no Home Assistant and no API keys**. Weather, calendar, 
     1. MANUAL: `weather.location` ("lat,lon", the settings page's LOCATION field) plus `weather.location.place`. The older `weather.lat`/`lon`/`place` keys are still read for one release.
     2. DEMO: Santa Cruz (the designs' sample), only while demo data is on and nothing is manual.
     3. AUTO: detected from the IP address.
-    4. FALLBACK: **Livermore, CA (37.6819, −121.7680)**.
+    4. FALLBACK: **San Francisco, CA (37.7749, −122.4194)**.
   - Weather and commute both read `services.location`.
   - **Auto-detection:**
     - Uses keyless HTTPS IP geolocation: `ipapi.co/json/`, falling back to `ipwho.is/`. Each is a bare GET with the generic User-Agent: no query, no device name, no user data.
     - The place name is the response's city. If the city is missing, Nominatim reverse-geocodes it at town level.
     - Results are stored under separate keys (`weather.auto.lat`, `.lon`, `.place`, `.at`), so they never overwrite manual values.
     - Looks up at most once a day, plus when the network comes back as a different network (ConnectivityManager callback, no polling). Even a forced lookup is rate-limited to one per 10 min.
-    - A failed lookup keeps the last cached auto value. With no cached value, Livermore is used.
+    - A failed lookup keeps the last cached auto value. With no cached value, San Francisco is used.
     - **Sanity check:** a result more than 150 km from the cached auto location (VPN, carrier routing) is held back once in `weather.auto.pending`. It's accepted only if the next lookup lands near it again.
   - While the location is DEMO, weather mirrors the fake (the design's sample weather). Release never shows "not configured".
   - The commute starts from the same place unless `commute.home` is set (advanced).
@@ -91,7 +91,7 @@ The module works with **no Home Assistant and no API keys**. Weather, calendar, 
   - **Stocks** (50): watchlist (TEXT_LIST).
   - **Home Assistant** (60): room order; advanced: doorbell entity, camera, lock, talk script.
 - **Unit tests**: 46 JVM tests in `src/test`, all passing.
-  - Location: precedence (manual > demo > auto > Livermore), `weather.location` over the old keys, the resolver flow, the daily cache, failure keeping the cache, failure with no cache → Livermore, forced-lookup rate limit, the 150 km hold-back and its repeat, the ipapi.co → ipwho.is fallback with reverse geocoding, and the release provider fetching Livermore → the auto place after a network change → the manual place.
+  - Location: precedence (manual > demo > auto > San Francisco), `weather.location` over the old keys, the resolver flow, the daily cache, failure keeping the cache, failure with no cache → San Francisco, forced-lookup rate limit, the 150 km hold-back and its repeat, the ipapi.co → ipwho.is fallback with reverse geocoding, and the release provider fetching San Francisco → the auto place after a network change → the manual place.
   - ICS: zones, folding, all-day, weekly BYDAY+COUNT+EXDATE, daily UNTIL across DST, monthly 2TU / -1FR / 31st, overrides, skip-ahead.
   - Home model: registry and room grouping, tile mapping, presenter, SVG path parser.
   - HomeController: optimistic → confirmed, rollback with error, debounced thermostat, brightness 0 → off.
@@ -177,7 +177,7 @@ Fixed after comparing: the thermostat arc, lamp fill, commute route and stocks c
 
 Nothing is required: weather, location, commute and stocks all work with no settings or keys. All settings are on the web settings page.
 
-1. **Location (optional):** detected from the IP address, with Livermore as the fallback. Set Settings › Weather & location › Location only if the detected one is wrong. A manual value always wins.
+1. **Location (optional):** detected from the IP address, with San Francisco as the fallback. Set Settings › Weather & location › Location only if the detected one is wrong. A manual value always wins.
 2. **Calendars:** add your private iCal URLs under Secrets › `calendar.icsUrls` (comma-separated), e.g. Google Calendar's "Secret address in iCal format" or an iCloud public calendar link. They take effect at once.
 3. **Commute (optional):** Settings › Commute: a destination and arrive-by time for weekdays. Calendar events with a place are used automatically.
 4. **Stocks (optional):** Settings › Stocks › Watchlist (up to 5 symbols).
@@ -190,7 +190,7 @@ Nothing beyond installing the app. For debugging, the same settings can also be 
 ```sh
 ./platform-tools/adb -s "$(cat .echo-serial)" shell am start -n app.vesper/.MainActivity \
   --es screen commute \
-  --es home.set "'weather.location=37.68,-121.77;weather.location.place=Livermore;commute.destination=Pleasanton, CA'"
+  --es home.set "'weather.location=37.77,-122.42;weather.location.place=San Francisco;commute.destination=Oakland, CA'"
 ```
 
 Screens: `--es screen home|commute|stocks`. Doorbell demo (makes no sound itself, but don't run it during quiet hours): `--es screen home --es doorbell ring`.

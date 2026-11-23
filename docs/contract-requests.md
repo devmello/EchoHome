@@ -29,7 +29,7 @@ Template:
 - Need: the World face's "you are here" marker and the Weather face's sunrise/sunset/sky need the home latitude/longitude (and a place name). Nothing in `:core` carries them; HA has `zone.home`.
 - Proposed: `data class HomeLocation(val name: String, val lat: Double, val lon: Double)` in `:core:model` and `var location: StateFlow<HomeLocation?>` in `VesperServices` (bound by `:feature:home` from HA's `zone.home`; demo default Santa Cruz 36.97, -122.03). Or add `latitude`/`longitude` to `Weather`.
 - Stub meanwhile: `:feature:clock` reads settings `clock.location.name|lat|lon`, else Santa Cruz when demo data is on (`HomeLocation.from` in FaceKit.kt).
-- Status: accepted (main dd665de): `HomeLocation(name, lat, lon, source)` + `VesperServices.location: StateFlow<HomeLocation>`. Default: demo → Santa Cruz, else **Livermore** (user decision). `:feature:home` binds manual > IP-geolocated > Livermore. Clock: read `services.location`, drop the `clock.location.*` stub.
+- Status: accepted (main dd665de): `HomeLocation(name, lat, lon, source)` + `VesperServices.location: StateFlow<HomeLocation>`. Default: demo → Santa Cruz, else **San Francisco** (user decision). `:feature:home` binds manual > IP-geolocated > San Francisco. Clock: read `services.location`, drop the `clock.location.*` stub.
 
 ## 2026-11-22 · A (clock) · Weather: tomorrow's hourly rain
 - Need: Weather.dc.html's "TOMORROW" module draws 10 hourly rain-chance bars for tomorrow; `Weather.hourly` in the fake only covers the next 6 h.

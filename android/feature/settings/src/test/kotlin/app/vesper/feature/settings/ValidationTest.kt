@@ -84,8 +84,8 @@ class ValidationTest {
 
     @Test fun location() {
         val s = spec(SettingType.LOCATION)
-        assertEquals(listOf(Write.Str("k", "37.6819,-121.768"), Write.Str("k.place", "Livermore, California")),
-            ok(s, JSONObject().put("lat", 37.6819).put("lon", -121.768).put("place", "Livermore, California")))
+        assertEquals(listOf(Write.Str("k", "37.7749,-122.4194"), Write.Str("k.place", "San Francisco, California")),
+            ok(s, JSONObject().put("lat", 37.7749).put("lon", -122.4194).put("place", "San Francisco, California")))
         assertEquals(listOf(Write.Str("k", "51.5,-0.12"), Write.Remove("k.place")), ok(s, "51.5, -0.12"))
         assertEquals(listOf(Write.Remove("k"), Write.Remove("k.place")), ok(s, ""))
         assertEquals(listOf(Write.Remove("k"), Write.Remove("k.place")), ok(s, JSONObject.NULL))

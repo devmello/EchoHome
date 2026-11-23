@@ -29,9 +29,9 @@ import app.vesper.feature.home.stocks.StocksView
 /**
  * `:feature:home` (agent F — glances + optional smart home). Works with no Home Assistant (NOTES §4.1):
  *  - services.weather → Open-Meteo for the manual location, else the IP-detected one, else
- *    Livermore (works with no settings). Demo mode with no manual location: the sample weather.
+ *    San Francisco (works with no settings). Demo mode with no manual location: the sample weather.
  *  - services.calendar → the iCal URLs in secrets (`calendar.icsUrls`, followed live); none = the fake.
- *  - services.location → manual > IP-detected > Livermore (demo: Santa Cruz unless manual).
+ *  - services.location → manual > IP-detected > San Francisco (demo: Santa Cruz unless manual).
  *  - Settings sections: [HomeSettingsSchema].
  *  - Commute (order 40): Nominatim + OSRM, no key. Stocks (order 50): Yahoo chart, no key.
  *  - Home (order 20) + doorbell: only with Home Assistant configured. In demo mode without HA the
@@ -46,7 +46,7 @@ object HomeFeature : VesperFeature {
     override fun install(host: FeatureHost) {
         val s = host.services
         // services.location: manual > (demo: Santa Cruz) > IP-detected (daily, and after a network
-        // change) > Livermore. Weather and commute read it; in demo with nothing manual, weather
+        // change) > San Francisco. Weather and commute read it; in demo with nothing manual, weather
         // keeps the sample data.
         val location = LocationResolver(s.settings, s.scope, s.config.demoData, AutoLocation(s.settings), NetworkChanges.flow(host.context))
         s.location = location.location

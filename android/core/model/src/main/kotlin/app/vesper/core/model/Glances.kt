@@ -76,16 +76,16 @@ object NoTravelEstimator : TravelEstimator {
 
 /**
  * Where the Echo is: weather, sunrise/sunset, the World face's "you are here", commute's start.
- * Precedence (NOTES §5.6): manual settings > auto (IP geolocation) > Livermore fallback.
+ * Precedence (NOTES §5.6): manual settings > auto (IP geolocation) > San Francisco fallback.
  * `:feature:home` binds the real one in `VesperServices.location`.
  */
 data class HomeLocation(val name: String, val lat: Double, val lon: Double, val source: Source = Source.FALLBACK) {
     enum class Source { MANUAL, AUTO, FALLBACK, DEMO }
     companion object {
-        val LIVERMORE = HomeLocation("Livermore", 37.6819, -121.7680, Source.FALLBACK)
+        val SAN_FRANCISCO = HomeLocation("San Francisco", 37.7749, -122.4194, Source.FALLBACK)
         /** The designs' sample location (demo data only). */
         val SANTA_CRUZ = HomeLocation("Santa Cruz", 36.97, -122.03, Source.DEMO)
-        fun default(demo: Boolean) = if (demo) SANTA_CRUZ else LIVERMORE
+        fun default(demo: Boolean) = if (demo) SANTA_CRUZ else SAN_FRANCISCO
     }
 }
 

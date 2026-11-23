@@ -38,8 +38,8 @@ class WeatherExtrasTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     @After fun tearDown() { scope.cancel(); server.shutdown() }
 
-    // Real response (Livermore, Nov 2026), trimmed: minutely_15 precipitation, 8 steps.
-    private val nowcastJson = """{"latitude":37.676254,"longitude":-121.78164,"timezone":"America/Los_Angeles",
+    // Real response (San Francisco, Nov 2026), trimmed: minutely_15 precipitation, 8 steps.
+    private val nowcastJson = """{"latitude":37.770510,"longitude":-122.42710,"timezone":"America/Los_Angeles",
         "minutely_15_units":{"time":"unixtime","precipitation":"mm"},
         "minutely_15":{"time":[1795402800,1795403700,1795404600,1795405500,1795406400,1795407300,1795408200,1795409100],
         "precipitation":[0.00,0.00,0.00,0.40,0.00,3.10,null,0.00]}}"""
@@ -89,12 +89,12 @@ class WeatherExtrasTest {
     }
 
     @Test fun urlsUseOpenMeteosParameterNames() {
-        val place = Place(37.68194, -121.768, "x")
+        val place = Place(37.77490, -122.4194, "x")
         val air = OpenMeteoAir.url(place)
         assertEquals("air-quality-api.open-meteo.com", air.host)
         assertEquals("us_aqi,uv_index,grass_pollen,birch_pollen,alder_pollen,olive_pollen,mugwort_pollen,ragweed_pollen", air.queryParameter("current"))
         assertEquals("uv_index_max", air.queryParameter("daily"))
-        assertEquals("37.682", air.queryParameter("latitude"))
+        assertEquals("37.775", air.queryParameter("latitude"))
         val f = OpenMeteo.url(place, false)
         assertEquals("precipitation", f.queryParameter("minutely_15"))
         assertEquals("9", f.queryParameter("forecast_minutely_15"))
@@ -131,7 +131,7 @@ class WeatherExtrasTest {
                 }
             }
         }
-        val loc = MutableStateFlow(HomeLocation("Livermore", 37.68, -121.77, HomeLocation.Source.MANUAL))
+        val loc = MutableStateFlow(HomeLocation("San Francisco", 37.77, -122.42, HomeLocation.Source.MANUAL))
         var t = System.currentTimeMillis()
         val p = OpenMeteoWeatherProvider(MemSettings("weather.unit" to "F"), scope, Fake(null), loc, client = Net.http,
             base = server.url("/v1/forecast"), airBase = server.url("/v1/air-quality"), periodMs = 400, retryMs = 400, nowcastMs = 150, clock = { t })

@@ -220,13 +220,13 @@ class AlertsTest {
 
     private fun estimator(clock: () -> Long = { now }): HomeTravelEstimator {
         val settings = MemSettings()
-        val loc = MutableStateFlow(HomeLocation("Home", 37.68, -121.77, HomeLocation.Source.MANUAL))
+        val loc = MutableStateFlow(HomeLocation("Home", 37.77, -122.42, HomeLocation.Source.MANUAL))
         return HomeTravelEstimator(settings, loc,
             geocoder = Geocoder(settings, Net.http, server.url("/search"), clock = { System.currentTimeMillis() }),
             router = Router(Net.http, server.url("/route/v1/driving/")), clock = clock, gapMs = 0)
     }
 
-    private val osrm = """{"code":"Ok","routes":[{"duration":1380.4,"distance":21000,"legs":[{"steps":[]}],"geometry":{"coordinates":[[-121.77,37.68],[-121.9,37.7]]}}]}"""
+    private val osrm = """{"code":"Ok","routes":[{"duration":1380.4,"distance":21000,"legs":[{"steps":[]}],"geometry":{"coordinates":[[-122.42,37.77],[-121.9,37.7]]}}]}"""
 
     @Test fun travelGeocodesRoutesAndCaches() = runBlocking {
         val counts = HashMap<String, Int>()
@@ -238,8 +238,8 @@ class AlertsTest {
             }
         }
         val e = estimator()
-        assertEquals(23, e.minutesTo("Downtown Pleasanton", now))
-        assertEquals(23, e.minutesTo("downtown   pleasanton", now + min)) // same place: cached
+        assertEquals(23, e.minutesTo("Downtown Oakland", now))
+        assertEquals(23, e.minutesTo("downtown   oakland", now + min)) // same place: cached
         assertEquals(1, counts["search"]); assertEquals(1, counts["route"])
         assertEquals(2, server.requestCount)
         assertNull(e.minutesTo("https://zoom.us/j/123", now)) // nothing to drive to

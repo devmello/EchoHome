@@ -184,8 +184,8 @@ class GlanceTest {
     @Test fun manualLocationKeyWinsOverTheOldKeys() {
         val s = MemSettings("weather.lat" to "36.97", "weather.lon" to "-122.03", "weather.place" to "Santa Cruz")
         assertEquals(Place(36.97, -122.03, "Santa Cruz"), WeatherSettings.place(s)) // old keys still read
-        s.putString("weather.location", " 37.68 , -121.77 "); s.putString("weather.location.place", "Livermore")
-        assertEquals(Place(37.68, -121.77, "Livermore"), WeatherSettings.place(s))
+        s.putString("weather.location", " 37.77 , -122.42 "); s.putString("weather.location.place", "San Francisco")
+        assertEquals(Place(37.77, -122.42, "San Francisco"), WeatherSettings.place(s))
         s.putString("weather.location", "somewhere")
         assertEquals("Santa Cruz", WeatherSettings.place(s)!!.name) // unparsable: falls back
         assertNull(WeatherSettings.latLon("91,0"))

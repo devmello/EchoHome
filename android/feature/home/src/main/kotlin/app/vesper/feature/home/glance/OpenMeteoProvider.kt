@@ -65,7 +65,7 @@ object OpenMeteoAir {
 
 /**
  * [WeatherProvider] on Open-Meteo for `VesperServices.location` ([LocationResolver]: manual > auto >
- * Livermore), so it works out of the box with no settings. While the location is the DEMO one
+ * San Francisco), so it works out of the box with no settings. While the location is the DEMO one
  * (demo data, nothing manual) it mirrors [fallback], the design's sample weather. Refreshes every
  * 30 min and when the location or `weather.unit` changes; after a failure it retries in 5 min and
  * keeps the last good forecast.

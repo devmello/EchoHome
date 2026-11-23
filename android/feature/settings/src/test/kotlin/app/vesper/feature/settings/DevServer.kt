@@ -21,8 +21,8 @@ class DevServer {
         val port = System.getenv("SETTINGS_DEVSERVER")?.toIntOrNull()
         assumeTrue("set SETTINGS_DEVSERVER=<port> to run", port != null)
         val settings = FakeSettingsStore().apply {
-            putString("weather.location", "37.6819,-121.768")
-            putString("weather.location.place", "Livermore, California")
+            putString("weather.location", "37.7749,-122.4194")
+            putString("weather.location.place", "San Francisco, California")
             putBoolean("clock.seconds", true)
             putString("clock.color.digital", "#FF9F0A")
         }

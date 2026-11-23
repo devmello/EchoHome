@@ -32,10 +32,10 @@ import org.json.JSONObject
  *     (the older `weather.lat` / `weather.lon` / `weather.place` are still read for one release);
  *  2. DEMO: Santa Cruz, the designs' sample, only while demo data is on and nothing is manual;
  *  3. AUTO: detected from the public IP, stored under `weather.auto.*` (never touches the manual keys);
- *  4. FALLBACK: Livermore, CA.
+ *  4. FALLBACK: San Francisco, CA.
  */
 object Locations {
-    val LIVERMORE = HomeLocation.LIVERMORE.toPlace()
+    val SAN_FRANCISCO = HomeLocation.SAN_FRANCISCO.toPlace()
 
     const val AUTO_LAT = "weather.auto.lat"
     const val AUTO_LON = "weather.auto.lon"
@@ -52,12 +52,12 @@ object Locations {
         return Place(lat, lon, WeatherSettings.text(s, AUTO_PLACE).orEmpty())
     }
 
-    /** manual > (demo: Santa Cruz) > auto > Livermore. */
+    /** manual > (demo: Santa Cruz) > auto > San Francisco. */
     fun resolve(s: SettingsStore, demo: Boolean): HomeLocation {
         WeatherSettings.place(s)?.let { return HomeLocation(it.name, it.lat, it.lon, HomeLocation.Source.MANUAL) }
         if (demo) return HomeLocation.SANTA_CRUZ
         auto(s)?.let { return HomeLocation(it.name, it.lat, it.lon, HomeLocation.Source.AUTO) }
-        return HomeLocation.LIVERMORE
+        return HomeLocation.SAN_FRANCISCO
     }
 
     /** Great-circle distance in km. */

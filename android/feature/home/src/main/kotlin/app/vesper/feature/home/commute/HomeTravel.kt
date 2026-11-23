@@ -63,7 +63,7 @@ class HomeTravelEstimator(
 object CommuteHome {
     /**
      * `commute.home` ("lat,lon"), the older `commute.lat`/`lon`, else `services.location` (manual >
-     * IP-detected > Livermore). The DEMO location counts only when [allowDemo] (the commute screen shows
+     * IP-detected > San Francisco). The DEMO location counts only when [allowDemo] (the commute screen shows
      * its own sample then; routing for travel estimates can use Santa Cruz like any other place).
      */
     fun resolve(settings: SettingsStore, location: StateFlow<HomeLocation>, allowDemo: Boolean = false): LatLon? {

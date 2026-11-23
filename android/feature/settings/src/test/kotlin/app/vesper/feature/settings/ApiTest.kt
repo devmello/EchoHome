@@ -132,12 +132,12 @@ class ApiTest {
 
     @Test fun locationWritesPlace() {
         val t = pair(api)
-        api.handle(req("PUT", "/api/settings", "{\"weather.location\":{\"lat\":37.68,\"lon\":-121.77,\"place\":\"Livermore, California\"}}", cookie = t))
-        assertEquals("37.68,-121.77", settings.getString("weather.location", ""))
-        assertEquals("Livermore, California", settings.getString("weather.location.place", ""))
+        api.handle(req("PUT", "/api/settings", "{\"weather.location\":{\"lat\":37.77,\"lon\":-122.42,\"place\":\"San Francisco, California\"}}", cookie = t))
+        assertEquals("37.77,-122.42", settings.getString("weather.location", ""))
+        assertEquals("San Francisco, California", settings.getString("weather.location.place", ""))
         val ch = api.changeJson("weather.location.place")!!
         assertEquals("weather.location", ch.getString("key"))
-        assertEquals("Livermore, California", ch.getJSONObject("value").getString("place"))
+        assertEquals("San Francisco, California", ch.getJSONObject("value").getString("place"))
     }
 
     @Test fun actionsRun() {

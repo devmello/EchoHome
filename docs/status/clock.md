@@ -111,7 +111,7 @@ None: no `pm grant`, `appops` or `settings put`. The light sensor needs no permi
 - **Night sun/moon** (`AstroView`, `Astro.kt`): moon glyph with lit part, phase name + %, sunrise/sunset (weather source if both present, else `SunMath` NOAA-style for `services.location`; after sunset shows tomorrow's). Bottom-right in red; Analog: lower-left inside the dial (hands can cross it); hidden on Weather/Calendar faces. Updates on minute tick / inputs only. Setting `clock.night.astro`.
 - **Personal line** (`PersonalView`): avatar, name, their next alarm (own, else shared; uses store `next` when it's theirs) and next event (own calendar, else shared), top-left, 700 ms fade in/out, Night red, ellipsised to avoid the island. Setting `clock.personalLine`. Debug extra `fakealarm on|off` (Maya 6:15 alarm).
 - **AQI/UV**: Digital's weather block gets "AQI 42 · UV 3" when `Weather.air` exists. Not added to the Weather face.
-- Tests: `AstroTest.kt` (moon full/new/quarters vs known dates, Livermore sunrise/sunset solstices within 5 min, alarm/event selection, air line).
+- Tests: `AstroTest.kt` (moon full/new/quarters vs known dates, San Francisco sunrise/sunset solstices within 5 min, alarm/event selection, air line).
 - Device: idle StandBy 35.1 MB PSS, 0.2% CPU, 0 frames (before: 37.3 MB, 0%). Shots: `shots/clock/astro-night-*.png`, `personal-*.png`.
 - Unverified: AQI line on device (no air data), Night + personal on faces other than Digital/Analog/Float, extras during face swipes (hidden while sliding), real-calendar events.
 - Note: demo data was toggled on the Echo for screenshots and set back to false.
