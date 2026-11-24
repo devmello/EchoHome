@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Set up EchoHome</title>
   <meta name="description" content="Install EchoHome on an Echo Show 5 (1st gen) that already runs LineageOS 18.1: wireless debugging, one APK, and the settings page on your phone.">
-  <meta name="theme-color" content="#05070f">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%235aa2ff'/%3E%3Cstop offset='.55' stop-color='%232f5bff'/%3E%3Cstop offset='1' stop-color='%236a3cff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3Crect x='8' y='7' width='16' height='5' rx='2.5' fill='white' opacity='.9'/%3E%3C/svg%3E">
+  <meta name="theme-color" content="#141415">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231c1c1e'/%3E%3Crect x='5' y='10' width='22' height='11' rx='1.5' fill='%23ededed'/%3E%3C/svg%3E">
   <link rel="preload" href="fonts/InterVariable.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -14,7 +14,7 @@
 
 <nav class="nav" aria-label="Main">
   <div class="wrap">
-    <a class="brand" href="./"><span class="brand-mark" aria-hidden="true"></span>EchoHome</a>
+    <a class="brand" href="./">EchoHome</a>
     <div class="nav-links">
       <a href="./#features" class="hide-sm">Features</a>
       <a href="setup.html" aria-current="page">Set up</a>
@@ -33,36 +33,36 @@
 <div class="wrap guide">
   <aside class="toc" aria-label="Steps">
     <ol id="toc">
-      <li><a href="#before">Before you start</a></li>
-      <li><a href="#debugging">Wireless debugging</a></li>
-      <li><a href="#connect">Connect your computer</a></li>
-      <li><a href="#install">Install EchoHome</a></li>
-      <li><a href="#first-run">First-run setup</a></li>
-      <li><a href="#phone">Settings on your phone</a></li>
-      <li><a href="#music">Music and your iPhone</a></li>
-      <li><a href="#voice">Voice assistant</a></li>
-      <li><a href="#screens">Choose your screens</a></li>
-      <li><a href="#updates">Updates</a></li>
-      <li><a href="#system">System install</a></li>
-      <li><a href="#undo">Going back</a></li>
-      <li><a href="#trouble">Troubleshooting</a></li>
+      <li><a href="#before"><span>1</span>Before you start</a></li>
+      <li><a href="#debugging"><span>2</span>Wireless debugging</a></li>
+      <li><a href="#connect"><span>3</span>Connect your computer</a></li>
+      <li><a href="#install"><span>4</span>Install EchoHome</a></li>
+      <li><a href="#first-run"><span>5</span>First-run setup</a></li>
+      <li><a href="#phone"><span>6</span>Settings on your phone</a></li>
+      <li><a href="#music"><span>7</span>Music and your iPhone</a></li>
+      <li><a href="#voice"><span>8</span>Voice assistant</a></li>
+      <li><a href="#screens"><span>9</span>Choose your screens</a></li>
+      <li><a href="#updates"><span>10</span>Updates</a></li>
+      <li><a href="#system"><span>11</span>System install</a></li>
+      <li><a href="#undo"><span>12</span>Going back</a></li>
+      <li><a href="#trouble"><span></span>Troubleshooting</a></li>
     </ol>
   </aside>
 
   <main>
-    <section class="step" id="before" style="padding-top:clamp(20px,3vw,32px)">
-      <div class="step-head"><span class="num">1</span><h2>Before you start</h2></div>
+    <section class="step" id="before">
+      <div class="step-head"><span class="mono">1</span><h2>Before you start</h2></div>
       <ul>
         <li><strong>An Echo Show 5, 1st generation (2019)</strong>, codename <code>checkers</code>. The 2nd generation (2021, <code>cronos</code>) and other Echo models aren't supported.</li>
         <li><strong>Unlocked and running the unofficial LineageOS 18.1</strong> (Android 11). EchoHome doesn't cover unlocking. Follow the <a href="https://xdaforums.com/t/rom-unofficial-11-checkers-lineageos-18-1-for-the-amazon-echo-show-5-2019.4763475/">LineageOS 18.1 for the Echo Show 5 thread on XDA</a>, which links the unlock steps.</li>
         <li><strong>A computer with adb</strong>, from Google's <a href="https://developer.android.com/tools/releases/platform-tools">SDK Platform-Tools</a> (macOS, Windows or Linux).</li>
         <li>The Echo and the computer on the <strong>same Wi-Fi</strong>.</li>
       </ul>
-      <div class="warn"><b>Note</b><p>Unlocking and flashing can brick an Echo, and they're at your own risk. EchoHome itself is an ordinary Android app: removing it gives you back the LineageOS launcher (see <a href="#undo">Going back</a>).</p></div>
+      <div class="note"><b>Note</b><p>Unlocking and flashing can brick an Echo, and they're at your own risk. EchoHome itself is an ordinary Android app: removing it gives you back the LineageOS launcher (see <a href="#undo">Going back</a>).</p></div>
     </section>
 
     <section class="step" id="debugging">
-      <div class="step-head"><span class="num">2</span><h2>Turn on wireless debugging on the Echo</h2></div>
+      <div class="step-head"><span class="mono">2</span><h2>Turn on wireless debugging on the Echo</h2></div>
       <ol>
         <li>Open <strong>Settings › About tablet</strong> and tap <strong>Build number</strong> seven times, until it says you're a developer.</li>
         <li>Go back to <strong>Settings › System › Developer options</strong> and turn on <strong>Wireless debugging</strong>. Allow it for your Wi-Fi network when asked.</li>
@@ -72,7 +72,7 @@
     </section>
 
     <section class="step" id="connect">
-      <div class="step-head"><span class="num">3</span><h2>Connect your computer</h2></div>
+      <div class="step-head"><span class="mono">3</span><h2>Connect your computer</h2></div>
       <p>On the Echo, tap <strong>Pair device with pairing code</strong>. It shows a six-digit code and an address with its own port. On your computer:</p>
       <div class="code"><pre><code>adb pair 192.168.1.50:37123</code></pre></div>
       <p>Type the code when asked. Then connect with the address and port shown at the top of the <strong>Wireless debugging</strong> screen (a different port from the pairing one):</p>
@@ -82,7 +82,7 @@
     </section>
 
     <section class="step" id="install">
-      <div class="step-head"><span class="num">4</span><h2>Install EchoHome</h2></div>
+      <div class="step-head"><span class="mono">4</span><h2>Install EchoHome</h2></div>
       <ol>
         <li>Download <code>EchoHome-&lt;version&gt;.apk</code> from the <a href="https://github.com/devmello/EchoHome/releases/latest">latest release</a>. The <code>.sha256</code> file next to it is its checksum, if you want to check the download.</li>
         <li>Install it and make it the home screen:</li>
@@ -94,7 +94,7 @@ adb shell input keyevent KEYCODE_HOME</code></pre></div>
     </section>
 
     <section class="step" id="first-run">
-      <div class="step-head"><span class="num">5</span><h2>First-run setup on the Echo</h2></div>
+      <div class="step-head"><span class="mono">5</span><h2>First-run setup on the Echo</h2></div>
       <p>The first time it starts, EchoHome walks you through a short setup on the Echo's screen. Every step can be skipped and changed later.</p>
       <ul>
         <li><strong>Wi-Fi</strong> and the Echo's <strong>name</strong>, which is how it appears in AirPlay, Bluetooth and Spotify.</li>
@@ -105,19 +105,19 @@ adb shell input keyevent KEYCODE_HOME</code></pre></div>
     </section>
 
     <section class="step" id="phone">
-      <div class="step-head"><span class="num">6</span><h2>Open the settings on your phone</h2></div>
+      <div class="step-head"><span class="mono">6</span><h2>Open the settings on your phone</h2></div>
       <p>EchoHome's settings are a web page that the Echo serves on your home Wi-Fi.</p>
       <ol>
         <li>On the Echo, pull down from the top edge to open <strong>Control Center</strong> and tap <strong>Settings</strong>. A sheet shows a QR code and the address.</li>
         <li>Scan the code with your phone's camera, or type the address (port <code>8080</code>) into a browser on any phone or computer on the same Wi-Fi.</li>
         <li>Tap <strong>Pair</strong>. A six-digit code appears on the Echo for two minutes; type it on the page.</li>
       </ol>
-      <img src="img/pair.jpg" alt="The Echo's settings sheet with a QR code and the address of the settings page" loading="lazy">
+      <img src="img/pair.jpg" width="960" height="480" alt="The Echo's settings sheet with a QR code and the address of the settings page" loading="lazy">
       <p>On an iPhone, <strong>Share › Add to Home Screen</strong> makes it an app icon. Calendars (iCal links), Home Assistant, photos and everything else are set up here.</p>
     </section>
 
     <section class="step" id="music">
-      <div class="step-head"><span class="num">7</span><h2>Music and your iPhone</h2></div>
+      <div class="step-head"><span class="mono">7</span><h2>Music and your iPhone</h2></div>
       <ul>
         <li><strong>AirPlay:</strong> nothing to set up. Pick your Echo's name in the AirPlay menu on an iPhone, iPad or Mac.</li>
         <li><strong>Spotify Connect:</strong> needs Spotify Premium. Your Echo appears in the Spotify app's device list.</li>
@@ -127,7 +127,7 @@ adb shell input keyevent KEYCODE_HOME</code></pre></div>
     </section>
 
     <section class="step" id="voice">
-      <div class="step-head"><span class="num opt">8</span><h2>Voice assistant (optional)</h2></div>
+      <div class="step-head"><span class="mono">8</span><h2>Voice assistant<span class="opt">Optional</span></h2></div>
       <p>The wake word, speech-to-text and the spoken voice run on the Echo. The answers come from Claude, so this part needs two things:</p>
       <ol>
         <li><strong>An Anthropic API key.</strong> Paste it into <strong>Accounts &amp; keys</strong> on the settings page. It's stored on the Echo.</li>
@@ -141,12 +141,12 @@ cd EchoHome
     </section>
 
     <section class="step" id="screens">
-      <div class="step-head"><span class="num opt">9</span><h2>Choose your screens</h2></div>
+      <div class="step-head"><span class="mono">9</span><h2>Choose your screens<span class="opt">Optional</span></h2></div>
       <p>On the settings page, <strong>Screens</strong> lists every page you can swipe through. Switch off the ones you don't use and move the rest into the order you like. StandBy always comes first. A hidden screen isn't loaded at all, which saves memory, and it still opens by voice or from Control Center.</p>
     </section>
 
     <section class="step" id="updates">
-      <div class="step-head"><span class="num">10</span><h2>Updates</h2></div>
+      <div class="step-head"><span class="mono">10</span><h2>Updates</h2></div>
       <p>EchoHome checks the project's GitHub releases once a night. The <strong>Updates</strong> section of the settings page shows your version, what's new, and has <strong>Check now</strong> and <strong>Install now</strong>. Every download is checked against its checksum and must be signed with the same key as the installed app.</p>
       <table class="table">
         <thead><tr><th>Your install</th><th>How updates arrive</th></tr></thead>
@@ -158,7 +158,7 @@ cd EchoHome
     </section>
 
     <section class="step" id="system">
-      <div class="step-head"><span class="num opt">11</span><h2>System install (advanced, optional)</h2></div>
+      <div class="step-head"><span class="mono">11</span><h2>System install<span class="opt">Advanced, optional</span></h2></div>
       <p>A few features need EchoHome installed as a privileged system app:</p>
       <ul>
         <li>The <strong>mic button mutes the microphones</strong>. On a normal install the Echo's mic button sends a power-key press, which can turn the screen off.</li>
@@ -167,20 +167,20 @@ cd EchoHome
         <li>Alarms that show over other apps, and Bluetooth pairing confirmed on the Echo's own screen.</li>
       </ul>
       <p>It's done from a clone of the repository and changes <code>/system</code>. It needs JDK 17 and the Android SDK to build the app, and <strong>Rooted debugging</strong> turned on in Developer options.</p>
-      <div class="code"><pre><code>./scripts/echo-backup.sh          # back up every partition first
-./scripts/echo-system-install.sh  # builds, installs to /system/priv-app, reboots</code></pre></div>
-      <div class="warn"><b>Read first</b><p>Back up before changing <code>/system</code>, and read the comments at the top of <code>scripts/echo-system-install.sh</code>. A copy you build yourself is signed with your own key, so the project's GitHub releases won't install over it: you update by building again. <code>./scripts/echo-system-undo.sh</code> reverses the install.</p></div>
+      <div class="code"><pre><code>./scripts/echo-backup.sh          <span class="comment"># back up every partition first</span>
+./scripts/echo-system-install.sh  <span class="comment"># builds, installs to /system/priv-app, reboots</span></code></pre></div>
+      <div class="note"><b>Read first</b><p>Back up before changing <code>/system</code>, and read the comments at the top of <code>scripts/echo-system-install.sh</code>. A copy you build yourself is signed with your own key, so the project's GitHub releases won't install over it: you update by building again. <code>./scripts/echo-system-undo.sh</code> reverses the install.</p></div>
     </section>
 
     <section class="step" id="undo">
-      <div class="step-head"><span class="num opt">12</span><h2>Going back</h2></div>
+      <div class="step-head"><span class="mono">12</span><h2>Going back</h2></div>
       <p>To use the LineageOS launcher again, make it the home screen, or remove EchoHome completely:</p>
       <div class="code"><pre><code>adb shell cmd package set-home-activity com.android.launcher3/.uioverrides.QuickstepLauncher
 adb uninstall app.vesper</code></pre></div>
     </section>
 
     <section class="step" id="trouble">
-      <div class="step-head"><span class="num opt">?</span><h2>Troubleshooting</h2></div>
+      <div class="step-head"><span class="mono"></span><h2>Troubleshooting</h2></div>
       <h3><code>adb connect</code> fails</h3>
       <p>Check the port on the Echo's <strong>Wireless debugging</strong> screen again: it changes after a reboot. Make sure both devices are on the same Wi-Fi, not a guest network.</p>
       <h3>The settings page doesn't open</h3>
@@ -198,7 +198,7 @@ adb uninstall app.vesper</code></pre></div>
 <footer>
   <div class="wrap">
     <div class="row">
-      <a class="brand" href="./"><span class="brand-mark" aria-hidden="true"></span>EchoHome</a>
+      <a class="brand" href="./">EchoHome</a>
       <div class="nav-links">
         <a href="./">Home</a>
         <a href="https://github.com/devmello/EchoHome/releases">Releases</a>
