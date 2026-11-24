@@ -224,3 +224,72 @@ Measured on the Echo (debug build, `echo-perf.sh`; swipes are raw `sendevent` on
 - `ScreenPager` pages are keyed by screen id (`ScreenPager(context, ids) { id -> view }`). `setPages(ids, current)` replaces the list live: pages that stay keep their views (the current one is only moved, not rebuilt or re-recorded), pages that left turn invisible at once and are removed one per quiet moment (first step of the existing `QuietWork` warm-up), and a page that comes back before it was freed is reused. New neighbours are built ahead on quiet moments as before; ahead-of-time work (`WARM_DELAY_MS`, prerender) is unchanged.
 - `MainActivity` builds the list with `PagerScreens.pages(app.screens, settings["pager.screens"])` and re-applies it on `settings.changes`: current page kept if still listed, else StandBy (with `onScreenHidden` / `onScreenShown`). A hidden screen opens on top through `navigator.show` like any off-pager screen.
 - Measured (details in settings.md): hiding 3 built pages on a resting page drew 3–5 frames, none janky; showing them again costs one ~61 ms frame on a resting page when the new neighbour is built ahead. All 11 pages visited: 98.5 MB PSS; 4 pages: 74.1 MB.
+
+## Nov 24: near / far layout (NOTES §6.5 item 2)
+
+From across the room StandBy shows one big clock and one fact; close up (walking up, touching) the normal face. The
+camera decides (`SystemState.viewDistance`, see `docs/status/camera.md` "Near / far" for the signals, thresholds and
+hysteresis); StandBy only follows it. Camera off, blocked or dark → always the normal layout.
+
+- **Far layout** (`FarLayout.kt`; no artboard, derived from the StandBy designs: same type, larger, fewer elements):
+  - **Digital, World, Solar, Weather, Calendar** give way to `FarClockView`: Digital's time (Inter, line-height .8,
+    tracking −0.045em, the colon 0.01em apart and lifted 0.05em) at the largest size where four tabular digits fit
+    between 48 px margins (≈338 px; Digital's is 252), Solar's weight 400, the others 600, in the face's colour (white
+    for World / Weather), and under it **one fact** at 44/600 with a 40 px icon in the colour at 0.92: the next alarm
+    if it rings within 12 h, else rain starting within the hour (nowcast), else the weather now ("47°  Cloudy"), else
+    the date. `FarFact.pick` is pure and tested.
+  - **Analog, Float, Liquid Glass** are already one big clock: they stay and fade their small details out
+    (`FaceView.setFarAmount`, new in `:core:model`, default no-op): Analog's date, alarm **and second hand** (its 1 Hz
+    redraw stops), Float's alarm line, Glass's date and alarm.
+  - Night: everything #BE180E and the usual 0.42 dim; the Night sun/moon and the personal line fade out with the far layout.
+  - Other features' faces (photos) have no far layout.
+- **Transition**: 0.6 s `Motion.EASE`. For the big clock, the face fades out while growing 6 % and the far clock fades
+  in from 0.9×, both on hardware layers for the duration (two textures whose alpha / scale change, no re-recording); at
+  rest the layers are dropped, the face is `INVISIBLE` and stopped (`onScreenHidden`: Weather's drift stops), and only
+  the far clock draws, once a minute. For the own-far faces the details' alpha is redrawn each frame (36 frames).
+  Never during a touch, a face swipe or edit mode (it waits and retries every 150 ms); instant when StandBy is hidden.
+- **Touch in far**: the camera already says NEAR on touch-down; StandBy swallows that gesture (no face swipe, long-press
+  or tap action such as the Weather face's radar; Night still wakes) and goes near when the finger lifts.
+  Horizontal swipes still page. Edit mode always shows the near face. While far, a recognised person's face switches
+  in place instead of sliding.
+- **Setting**: `clock.farLayout` "Big clock from across the room" (Clock & StandBy, default on, applied live). With it
+  off the camera always says NEAR and StandBy never goes far.
+- **Debug extras** (`--es screen standby`): `farlayout true|false` (the setting), and in debug builds
+  `distance near|far|auto` (forces the layout over the camera; `--es faranim true` animates to it) and
+  `distance cycle` (near ⇄ far every 2 s, 6 times, animated: measures the transition without `am start` competing).
+- **Tests**: `FarLayoutTest` (9): styles and weights, the fact's priority (alarm ≤ 12 h, past alarm, rain soon vs
+  later vs already raining, clear night/day, the date), `fade`.
+
+Screenshots (`shots/clock/`, from the Echo, debug build, forced with `distance`):
+`far-digital.png` (vs `far-off-digital.png`, the same moment near), `far-world.png`, `far-solar.png`,
+`far-weather.png`, `far-calendar.png`, `far-analog.png` (vs `far-off-analog.png`), `far-glass.png`, `far-float.png`,
+Night: `far-night-digital.png`, `far-night-analog.png` (vs `far-off-night-digital.png`), and
+`far-transition-mid.png` (Digital → far, mid-transition).
+
+**Measured** (Echo, debug build, `scripts/echo-perf.sh`, forced with `distance`, 20–30 s idle each):
+
+| Face | Near | Far |
+|---|---|---|
+| Digital | 1.1 % CPU, 0 frames, PSS 64.3 MB | 1.2 % CPU, 0 frames, PSS 62.7 MB |
+| Analog | 3.1 % CPU, 20 frames / 20 s (second hand) | 1.6 % CPU, 0 frames (second hand stops) |
+| Liquid Glass | 1.6 % CPU, 0 frames | 1.8 % CPU, 0 frames |
+
+So at rest the far layout costs nothing, and for Analog it saves the 1 Hz redraw. In auto mode with the presence
+pipeline running, the setting on vs off measured 1.1 % vs 1.2 % CPU, 1 frame each, 76.2 MB both
+(`docs/status/camera.md`).
+
+Transitions (`distance cycle`: six animated changes in 13 s, no `am start` competing):
+
+| Face | Frames | Janky | p50 / p90 / p99 | CPU over the 13 s |
+|---|---|---|---|---|
+| Digital (big clock, hardware layers) | 222 | 14.9 % | 5 / 18 / 31 ms | 11.5 % |
+| Liquid Glass (details redrawn) | 216 | 0 % | 9 / 10 / 12 ms | 19.1 % |
+| Analog (details redrawn) | 221 | 0.45 % | 10 / 12 / 15 ms | 23.2 % |
+
+**Follow-up:** Digital's janky frames are most likely at the start of each transition: the hardware layers are built
+and the far clock draws for the first time there. Pre-building the far clock's layer, or starting the alpha one frame
+later, should fix that. Low priority: a real transition happens at most once per hold (45–60 s), usually once per
+arrival.
+
+**Unverified on the Echo:** the change being driven by the camera rather than the forced extra (see camera.md), and a
+real person's touch while far. Calendar's and Solar's far views were checked in screenshots only, with no perf run.

@@ -15,6 +15,7 @@ import app.vesper.core.model.VesperServices
 import app.vesper.core.model.Presence
 import app.vesper.core.model.Profile
 import app.vesper.core.model.SwitchReason
+import app.vesper.core.model.ViewDistance
 import app.vesper.feature.camera.capture.Camera1Source
 import app.vesper.feature.camera.capture.Camera2Source
 import app.vesper.feature.camera.capture.FrameSource
@@ -38,6 +39,8 @@ import app.vesper.feature.camera.face.TfliteEmbedder
 import app.vesper.feature.camera.face.alignFace
 import app.vesper.feature.camera.face.cropFace
 import app.vesper.feature.camera.presence.MotionDetector
+import app.vesper.feature.camera.presence.MotionResult
+import app.vesper.feature.camera.presence.NearFar
 import app.vesper.feature.camera.presence.PresenceTracker
 import app.vesper.feature.camera.profiles.FaceProfileManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -81,6 +84,10 @@ class EnrolSample(val box: FaceBox?, val frameW: Int, val frameH: Int, val issue
  *     rests for [REST_MS] (presence stays PRESENT), since nothing needs it while someone's here.
  *  3. Detection burst (~5 fps for ~2 s) after someone arrives.
  *  4. Quality filter. 5. Recognition (≤3 tries, 2 consecutive matches). 6. Greeting + switch.
+ *
+ * Near / far ([NearFar], `SystemState.viewDistance`) rides on the same frames: touches, the size
+ * of the motion in presence frames, the eye distance in the face check. Its only camera time of
+ * its own is one ≤2.2 s look before a rest, when someone moved while it says FAR.
  *
  * Detection is BlazeFace (or `android.media.FaceDetector`, setting `camera.detector`); the face is
  * aligned on its landmarks and embedded by EdgeFace (setting `camera.embedder`) on TFLite, with LBP as the fallback if
@@ -162,6 +169,12 @@ class CameraPipeline(
     /** Debug: run both detectors on every detection frame (bench stage "detect-compare"). */
     @Volatile var benchCompare = false
 
+    /** Near / far from touches, motion size and face size (main thread). */
+    private val nearFar = NearFar()
+    private val distanceTick = Runnable { updateDistance() }
+    /** The extra look before a rest is over: rest now (unless something else keeps the camera on). */
+    private val lookOver = Runnable { if (source != null) maybeRest(allowLook = false) }
+
     // arrival bookkeeping (main thread)
     private var lastKnown = Presence.UNKNOWN
     private var burstsThisArrival = 0
@@ -226,8 +239,10 @@ class CameraPipeline(
                 if (k == KEY_REST && !restEnabled()) endRestNow()
                 if (k.startsWith("camera.stage.")) evaluate()
                 if (k == KEY_EMBEDDER) synchronized(modelLock) { embedder.release(); embedder = buildEmbedder(); Log.i(TAG, "face model: ${embedder.id}") }
+                if (k == ViewDistance.KEY_FAR_LAYOUT) updateDistance()
             }
         }
+        services.scope.launch { services.system.state.map { it.presence }.distinctUntilChanged().collect { updateDistance() } }
     }
 
     /** Our window became visible / invisible (screen off, another app in front). */
@@ -244,6 +259,8 @@ class CameraPipeline(
 
     /** A touch anywhere: someone is here (also retries a dark camera now). */
     fun onTouch() {
+        nearFar.onTouch(SystemClock.elapsedRealtime())
+        updateDistance()
         if (_ui.value.off == OffReason.RESTING) { startRest(); return } // still here: rest longer
         if (_ui.value.off == OffReason.DARK) { darkUntil = 0L; evaluate() }
         touchAt = SystemClock.elapsedRealtime()
@@ -309,13 +326,23 @@ class CameraPipeline(
         stageEnabled("detect") && profiles.autoByFace.value
 
     /** Someone moved (or touched the screen): presence is PRESENT for a while, so turn the camera off. */
-    private fun maybeRest() {
+    private fun maybeRest(allowLook: Boolean = true) {
         if (!restEnabled() || enrolListener != null || benchStage != null) return
         if (SystemClock.elapsedRealtime() < burstUntil || _ui.value.greeting != null || faceCheckPending()) return
+        if (allowLook && nearFar.wantsLook(SystemClock.elapsedRealtime())) {
+            // Far, but this didn't look far: maybe they're walking up. ~2 more frames, then rest.
+            nearFar.lookTaken()
+            main.removeCallbacks(lookOver)
+            main.postDelayed(lookOver, NearFar.LOOK_MS)
+            Log.i(TAG, "near/far: one more look before resting (${nearFar.lastKind})")
+            return
+        }
         startRest()
     }
 
     private fun startRest() {
+        main.removeCallbacks(lookOver)
+        nearFar.onRest()
         restUntil = SystemClock.elapsedRealtime() + REST_MS
         touchAt = 0L
         main.removeCallbacks(endRest)
@@ -490,7 +517,8 @@ class CameraPipeline(
         var touchArrived = false
         if (touched != 0L) { touchAt = 0L; tracker.onTouch(touched); touchArrived = tracker.arrived }
         val p = tracker.onSample(m.motion || (benchStage != null), now)
-        postPresence(p, tracker.arrived || touchArrived, m.motion || touched != 0L)
+        // Motion size is judged on presence frames only (1 s apart; bursts are 0.2 s apart).
+        postPresence(p, tracker.arrived || touchArrived, m.motion || touched != 0L, m.takeIf { f.width < DETECT_WIDTH && benchStage == null })
 
         val enrol = enrolListener
         val inBurst = now < burstUntil || benchStage == CameraPhase.DETECTING || benchStage == CameraPhase.RECOGNIZED
@@ -518,6 +546,11 @@ class CameraPipeline(
             }
         }
         val box = faces.firstOrNull()
+        if (box != null && enrol == null) {
+            val eye = box.eyeDist * DETECT_WIDTH / f.width
+            val conf = box.confidence
+            main.post { nearFar.onFace(SystemClock.elapsedRealtime(), eye, conf); updateDistance() }
+        }
         val q = if (enrol != null) enrolQuality else quality
         var issue = box?.let { q.check(it, f.width, f.height) } ?: QualityIssue.TOO_SMALL
         var emb: FloatArray? = null
@@ -562,13 +595,30 @@ class CameraPipeline(
         return v
     }
 
-    private fun postPresence(p: Presence, arrived: Boolean, moved: Boolean = false) {
+    private fun postPresence(p: Presence, arrived: Boolean, moved: Boolean = false, sample: MotionResult? = null) {
         main.post {
             if (services.system.state.value.presence != p) services.system.update { it.copy(presence = p) }
             if (_ui.value.presence != p) _ui.value = _ui.value.copy(presence = p)
+            if (sample != null) nearFar.onSample(SystemClock.elapsedRealtime(), sample.motion, sample.changed, sample.rows)
+            updateDistance()
             onPresence(p, arrived, moved)
             if (p == Presence.PRESENT && moved && source != null) maybeRest()
         }
+    }
+
+    // --- near / far (main thread) ---
+
+    /** Re-decides near / far and publishes `SystemState.viewDistance` when it changes. */
+    private fun updateDistance() {
+        nearFar.enabled = settings.getBoolean(ViewDistance.KEY_FAR_LAYOUT, true)
+        val now = SystemClock.elapsedRealtime()
+        val d = nearFar.update(now, services.system.state.value.presence)
+        if (services.system.state.value.viewDistance != d) {
+            Log.i(TAG, "near/far: $d (${nearFar.reason})")
+            services.system.update { it.copy(viewDistance = d) }
+        }
+        main.removeCallbacks(distanceTick)
+        nearFar.nextCheckAt(now)?.let { main.postDelayed(distanceTick, it - now + 20) }
     }
 
     // --- arrivals and bursts (main thread) ---

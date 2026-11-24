@@ -41,9 +41,12 @@ class AnalogFace(context: Context, private val services: VesperServices) : Frame
     private var nextAlarm: NextAlarm? = null
     private val cal = Calendar.getInstance()
 
+    /** Far layout (StandBy): 0 normal … 1 far, where the date, alarm and second hand are faded out. */
+    private var far = 0f
+
     private val secondTick = object : Runnable {
         override fun run() {
-            if (!running) return
+            if (!running || far >= 1f) return // far: no second hand, the hands move on the minute tick
             hands.invalidate()
             val now = System.currentTimeMillis()
             // next whole second (+4 ms so we land just after it)
@@ -67,6 +70,16 @@ class AnalogFace(context: Context, private val services: VesperServices) : Frame
     override fun onTimeChanged() {
         dial.refresh()
         hands.invalidate()
+    }
+
+    override fun setFarAmount(amount: Float) {
+        val a = amount.coerceIn(0f, 1f)
+        if (a == far) return
+        val wasStopped = far >= 1f
+        far = a
+        if (config.complications) dial.invalidate()
+        hands.invalidate()
+        if (wasStopped && a < 1f && running) secondTick.run()
     }
 
     override fun onScreenShown(args: android.os.Bundle?) {
@@ -131,22 +144,24 @@ class AnalogFace(context: Context, private val services: VesperServices) : Frame
             for (n in NUMERALS) {
                 numeralText.drawCentered(canvas, n.label, n.cx, numeralText.baselineIn(n.cy - 28f, 56f), fg)
             }
-            if (config.complications) drawComplications(canvas)
+            if (config.complications && far < 1f) drawComplications(canvas, 1f - far)
             canvas.restore()
         }
 
-        private fun drawComplications(canvas: Canvas) {
+        private fun drawComplications(canvas: Canvas, a: Float) {
+            val ac = fade(accent, a)
+            val fc = fade(fg, a)
             // Date at 9: column centred in 150..270 from top 214, gap 2
             var y = 214f
-            dayShortText.drawCentered(canvas, dayShort, 210f, dayShortText.baselineIn(y), accent)
+            dayShortText.drawCentered(canvas, dayShort, 210f, dayShortText.baselineIn(y), ac)
             y += dayShortText.normalLineHeight + 2f
-            dayNumText.drawCentered(canvas, dayNum, 210f, dayNumText.baselineIn(y, 30f), fg)
+            dayNumText.drawCentered(canvas, dayNum, 210f, dayNumText.baselineIn(y, 30f), fc)
             // Alarm at 3: icon 18 then the time, gap 4, centred in 690..810
             val label = alarmLabel ?: return
             y = 214f
-            drawIcon(canvas, alarmIcon, 750f - 9f, y, 18f, accent)
+            drawIcon(canvas, alarmIcon, 750f - 9f, y, 18f, ac)
             y += 18f + 4f
-            alarmText.drawCentered(canvas, label, 750f, alarmText.baselineIn(y), fg)
+            alarmText.drawCentered(canvas, label, 750f, alarmText.baselineIn(y), fc)
         }
     }
 
@@ -177,14 +192,14 @@ class AnalogFace(context: Context, private val services: VesperServices) : Frame
             drawHand(canvas, minDeg, 88f)
             canvas.drawCircle(480f, 240f, 7f, plain)
 
-            // second hand: 3×228 from y=46, pivot 194 px down (= the centre)
-            plain.color = accent
+            // second hand: 3×228 from y=46, pivot 194 px down (= the centre); gone in the far layout
+            plain.color = fade(accent, 1f - far)
             canvas.save()
             canvas.rotate(secDeg, 480f, 240f)
             rect.set(478.5f, 46f, 481.5f, 274f)
             canvas.drawRoundRect(rect, 1.5f, 1.5f, plain)
             canvas.restore()
-            canvas.drawCircle(480f, 240f, 5f, plain)
+            if (far < 1f) canvas.drawCircle(480f, 240f, 5f, plain)
             plain.color = Color.BLACK
             canvas.drawCircle(480f, 240f, 1.5f, plain)
             canvas.restore()

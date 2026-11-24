@@ -63,6 +63,8 @@ class GlassFace(context: Context, services: VesperServices) : SpecFace(context, 
     private val lensMatrix = Matrix()
 
     private var nextAlarm: NextAlarm? = null
+    /** Far layout (StandBy): the date and alarm lines fade out; the 300 px time stays. */
+    private var far = 0f
     private var time = ""
     private var dateLine = ""
     private var alarmLabel: String? = null
@@ -91,6 +93,13 @@ class GlassFace(context: Context, services: VesperServices) : SpecFace(context, 
     }
 
     override fun onConfigChanged(old: FaceConfig) { time = ""; rebuild() }
+
+    override fun setFarAmount(amount: Float) {
+        val a = amount.coerceIn(0f, 1f)
+        if (a == far) return
+        far = a
+        invalidate()
+    }
 
     override fun onAttachedToWindow() { super.onAttachedToWindow(); rebuild() }
 
@@ -193,12 +202,12 @@ class GlassFace(context: Context, services: VesperServices) : SpecFace(context, 
     override fun drawSpec(canvas: Canvas) {
         val night = config.night
         wallpaper?.let { canvas.drawBitmap(it, null, screenRect, bmpPaint) }
-        val dateColor = if (night) Night.COLOR else withAlpha(Color.WHITE, 0.86f)
+        val dateColor = fade(if (night) Night.COLOR else withAlpha(Color.WHITE, 0.86f), 1f - far)
 
         // date, centred at top 46
         dateText.paint.clearShadowLayer()
-        if (!night) dateText.paint.setShadowLayer(9.5f, 0f, 1f, withAlpha(Color.BLACK, 0.25f))
-        dateText.drawCentered(canvas, dateLine, W / 2, dateText.baselineIn(46f), dateColor)
+        if (!night) dateText.paint.setShadowLayer(9.5f, 0f, 1f, withAlpha(Color.BLACK, 0.25f * (1f - far)))
+        if (far < 1f) dateText.drawCentered(canvas, dateLine, W / 2, dateText.baselineIn(46f), dateColor)
 
         if (time.isNotEmpty()) {
             val x = (W - timeWidth) / 2f
@@ -225,7 +234,7 @@ class GlassFace(context: Context, services: VesperServices) : SpecFace(context, 
         }
 
         // next alarm, centred, bottom 34
-        alarmLabel?.let {
+        alarmLabel?.takeIf { far < 1f }?.let {
             val rowH = max(17f, alarmText.normalLineHeight)
             val top = H - 34f - rowH
             val w = 17f + 8f + alarmText.width(it)

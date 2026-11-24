@@ -50,6 +50,8 @@ class FloatFace(context: Context, services: VesperServices) : SpecFace(context, 
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private var nextAlarm: NextAlarm? = null
+    /** Far layout (StandBy): the alarm line fades out; the digits are already the whole screen. */
+    private var far = 0f
     private var time = ""
     private var alarmLabel: String? = null
 
@@ -66,6 +68,13 @@ class FloatFace(context: Context, services: VesperServices) : SpecFace(context, 
     }
 
     override fun onConfigChanged(old: FaceConfig) { time = "" }
+
+    override fun setFarAmount(amount: Float) {
+        val a = amount.coerceIn(0f, 1f)
+        if (a == far) return
+        far = a
+        if (alarmLabel != null) invalidate()
+    }
 
     override fun update(): Boolean {
         val t = TimeText.time(cal, is24)
@@ -149,10 +158,11 @@ class FloatFace(context: Context, services: VesperServices) : SpecFace(context, 
             canvas.drawCircle(g.left + 26f, cy + 75f - 26f, 26f, dotPaint)
         }
 
-        alarmLabel?.let {
+        alarmLabel?.takeIf { far < 1f }?.let {
             val rowH = max(18f, alarmText.normalLineHeight)
-            drawIcon(canvas, alarmIcon, 36f, 28f + (rowH - 18f) / 2, 18f, alarmColor)
-            alarmText.draw(canvas, it, 36f + 18f + 7f, alarmText.baselineIn(28f, rowH), alarmColor)
+            val c = fade(alarmColor, 1f - far)
+            drawIcon(canvas, alarmIcon, 36f, 28f + (rowH - 18f) / 2, 18f, c)
+            alarmText.draw(canvas, it, 36f + 18f + 7f, alarmText.baselineIn(28f, rowH), c)
         }
     }
 

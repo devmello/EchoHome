@@ -13,6 +13,12 @@ data class MotionResult(
     val motion: Boolean,
     /** Too dark to see anything: closed shutter or an unlit room. */
     val dark: Boolean,
+    /**
+     * Vertical extent of the change: fraction of the grid's rows with at least [MotionDetector.ROW_MIN]
+     * changed pixels, 0..1. Someone close fills the frame top to bottom; across the room they
+     * don't, even when walking sideways (which widens the change but doesn't heighten it).
+     */
+    val rows: Float = 0f,
 )
 
 /**
@@ -58,9 +64,16 @@ class MotionDetector(
         val mean = (sum / cur.size).toInt()
         val dark = mean < darkLuma
         var changed = 0
+        var rowsHit = 0
         if (hasPrev) {
             val shift = mean - prevMean
-            for (i in cur.indices) if (abs(cur[i] - prev[i] - shift) > pixelThreshold) changed++
+            var i = 0
+            for (y in 0 until h) {
+                var inRow = 0
+                for (x in 0 until w) { if (abs(cur[i] - prev[i] - shift) > pixelThreshold) inRow++; i++ }
+                changed += inRow
+                if (inRow >= ROW_MIN) rowsHit++
+            }
         }
         val frac = if (hasPrev) changed.toFloat() / cur.size else 0f
         val motion = hasPrev && !dark && frac >= motionFraction
@@ -68,10 +81,13 @@ class MotionDetector(
         val t = prev; prev = cur; cur = t
         prevMean = mean
         hasPrev = true
-        return MotionResult(frac, mean, motion, dark)
+        return MotionResult(frac, mean, motion, dark, rowsHit.toFloat() / h)
     }
 
     companion object {
+        /** Changed pixels a row needs to count toward [MotionResult.rows] (3 of 80: not a stray pixel). */
+        const val ROW_MIN = 3
+
         /** Downscales [src]'s Y plane into [out] ([ow]×[oh]): mean of 4 samples per output pixel. */
         fun downscale(src: YPlane, out: IntArray, ow: Int, oh: Int) {
             val buf = src.buffer

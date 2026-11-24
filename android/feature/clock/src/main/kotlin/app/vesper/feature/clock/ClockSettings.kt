@@ -4,6 +4,7 @@ import app.vesper.core.model.FaceSpec
 import app.vesper.core.model.SettingSpec
 import app.vesper.core.model.SettingType
 import app.vesper.core.model.SettingsSection
+import app.vesper.core.model.ViewDistance
 
 /**
  * Every user-facing setting `:feature:clock` reads, declared for the web settings page
@@ -23,6 +24,8 @@ object ClockSettings {
     const val KEY_NIGHT_END = "clock.night.end"
     const val KEY_NIGHT_ASTRO = "clock.night.astro"
     const val KEY_PERSONAL_LINE = "clock.personalLine"
+    /** Big clock from across the room ([FarLayout]); the camera reads it too. */
+    const val KEY_FAR_LAYOUT = ViewDistance.KEY_FAR_LAYOUT
     const val DEFAULT_NIGHT_START = "22:00"
     const val DEFAULT_NIGHT_END = "07:00"
 
@@ -60,6 +63,9 @@ object ClockSettings {
                 options = WidgetStacks.options()))
             add(SettingSpec(WidgetStacks.KEY_WALLPAPER, "Widgets: wallpaper", SettingType.CHOICE, default = WidgetStacks.DEFAULT_WALLPAPER,
                 options = (GlassFace.PALETTES.keys + WidgetStacks.WALLPAPER_BLACK).map { it to it }))
+            add(SettingSpec(KEY_FAR_LAYOUT, "Big clock from across the room", SettingType.BOOLEAN, default = "true",
+                help = "When the camera sees that you're across the room, StandBy shows just the time, large, and one thing worth knowing (the next alarm, rain, the weather). " +
+                    "Walking up or touching the screen brings the details back. Needs Presence detection (Camera & people); with the camera off StandBy always shows the details."))
             add(SettingSpec(KEY_NIGHT_MODE, "Night mode", SettingType.CHOICE, default = "auto",
                 options = listOf("auto" to "Automatic (dark room)", "schedule" to "On a schedule", "on" to "Always on", "off" to "Off"),
                 help = "Night shows every face in dim red. Automatic turns it on when the room stays dark; a schedule uses the times below. A person can have their own (People)."))

@@ -36,6 +36,7 @@ import app.vesper.core.model.NightMode
 import app.vesper.core.model.Presence
 import app.vesper.core.model.Profile
 import app.vesper.core.model.SwitchReason
+import app.vesper.core.model.ViewDistance
 import app.vesper.core.model.observeWhileAttached
 import kotlin.math.abs
 
@@ -56,10 +57,17 @@ import kotlin.math.abs
  *  - **Night** (Night.dc.html): faces draw in #BE180E and the stage dims to 0.42 (1.6 s ease);
  *    a tap (or presence from the camera) wakes it to full for 6 s. The light sensor runs only
  *    while this screen is shown ([NightController]).
+ *  - **Near / far** ([FarLayout]): when the camera says whoever's looking is across the room
+ *    (`SystemState.viewDistance`, setting `clock.farLayout`), the face gives way to the big far
+ *    clock, or (Analog, Float, Liquid Glass) fades its small details out. 0.6 s `Motion.EASE`,
+ *    on GPU layers (alpha + scale of two textures), never during a touch or another StandBy
+ *    animation. In far, a touch only brings the near layout back (no swipe, long-press or tap action).
  *
  * Debug launch extras (`--es screen standby …`): `face <id>`, `edit true`, `palette open`,
  * `nightmode on|off|auto`, `wake true`, `color RRGGBB`, `glass 0..1`, `wallpaper Blue|Dusk|Graphite`,
- * `complications true|false`, and in debug builds `fakelux <lux>` (feeds the night state machine).
+ * `complications true|false`, `farlayout true|false` (the setting), and in debug builds
+ * `fakelux <lux>` (feeds the night state machine) and `distance near|far|auto` (forces the
+ * layout for screenshots; `faranim true` animates to it; `cycle` toggles it 6× every 2 s, animated).
  */
 @SuppressLint("ViewConstructor")
 class StandbyScreen(context: Context, private val services: VesperServices, private val night: NightController) :
@@ -101,13 +109,42 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
     private var overlay: EditOverlay? = null
     private var dimAnim: ValueAnimator? = null
 
-    // Night sun / moon and the recognised person's line (Extras.kt); drawn over the faces
+    // Night sun / moon and the recognised person's line (Extras.kt); drawn over the faces, in one
+    // full-size box that fades out for the far layout (its two views never overlap: no layer).
     private val astro = AstroView(context)
     private val personal = PersonalView(context)
+    private val extras = object : FrameLayout(context) { override fun hasOverlappingRendering() = false }
+
+    // near / far
+    private val far = FarClockView(context, services)
+    /** 0 = near … 1 = far, as on screen. */
+    private var farProgress = 0f
+    private var farAnim: ValueAnimator? = null
+    private var farAnimTarget = 0f
+    /** The far clock covers the current face, so it's invisible and stopped. */
+    private var faceHidden = false
+    /** Debug launch extra `distance`: overrides the camera. */
+    private var forcedDistance: ViewDistance? = null
+    private var fingerDown = false
+    /** This gesture began in the far layout: it only brings the near layout back. */
+    private var farGesture = false
+    private val farRetry = Runnable { syncFar() }
+    /** Debug `distance cycle`: near ⇄ far every 2 s, 6 times, animated (measures the transition without `am start`). */
+    private var farCycles = 0
+    private val farCycle: Runnable = object : Runnable {
+        override fun run() {
+            if (farCycles <= 0) return
+            farCycles--
+            forcedDistance = if (farProgress >= 0.5f) ViewDistance.NEAR else ViewDistance.FAR
+            syncFar()
+            handler.postDelayed(this, 2000)
+        }
+    }
 
     private val timeReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
             for (b in built.values) if (b.face.view.visibility == VISIBLE) b.face.onTimeChanged()
+            if (far.visibility == VISIBLE) far.refresh()
             refreshExtras()
         }
     }
@@ -121,8 +158,12 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         addView(stage, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         // Parked neighbours sit just outside the stage; clipChildren only clips each face to its
         // own (translated) bounds, so clip the stage itself (shows once it's zoomed out in edit mode).
-        stage.addView(astro, LayoutParams(AstroView.W.toInt(), AstroView.H.toInt()))
-        stage.addView(personal, LayoutParams(PersonalView.W.toInt(), PersonalView.H.toInt()))
+        // faces go in at index 0, under these: [faces…, far clock, extras]
+        stage.addView(far, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        far.visibility = GONE
+        stage.addView(extras, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        extras.addView(astro, LayoutParams(AstroView.W.toInt(), AstroView.H.toInt()))
+        extras.addView(personal, LayoutParams(PersonalView.W.toInt(), PersonalView.H.toInt()))
         astro.visibility = GONE
         stage.addOnLayoutChangeListener { v, l, t, r, b, _, _, _, _ -> v.clipBounds = android.graphics.Rect(0, 0, r - l, b - t) }
         observeWhileAttached(services.faces.faces) { list ->
@@ -139,6 +180,7 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         observeWhileAttached(services.settings.changes) { k ->
             if (ClockSettings.affectsStandby(k)) { followProfile(); refreshExtras() }
             else if (k == GlassFace.KEY_WALLPAPER) syncOverlay()
+            else if (k == ClockSettings.KEY_FAR_LAYOUT) syncFar()
         }
         observeWhileAttached(services.profiles.profiles) { followProfile(); refreshExtras() }
         observeWhileAttached(services.system.state) { st ->
@@ -153,9 +195,11 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
             syncOverlay()
         }
         var lastPresence = Presence.UNKNOWN
+        var lastDistance = ViewDistance.NEAR
         observeWhileAttached(services.system.state) { st ->
             if (st.presence == Presence.PRESENT && lastPresence != Presence.PRESENT && nightOn) wake()
             lastPresence = st.presence
+            if (st.viewDistance != lastDistance) { lastDistance = st.viewDistance; syncFar() }
         }
     }
 
@@ -206,7 +250,7 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         val want = selectedFaceId()
         if (want != cur.spec.id) {
             val i = indexOf(want)
-            if (shown && !editing && !dragging && switchAnim == null && i >= 0) slideTo(i, persist = false)
+            if (shown && !editing && !dragging && switchAnim == null && i >= 0 && farProgress == 0f && farAnim == null) slideTo(i, persist = false)
             else showFace(want, persist = false)
         }
         reconfigure()
@@ -224,6 +268,7 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
 
     private fun reconfigure() {
         for (s in built.values) s.face.setConfig(configFor(s.spec))
+        bindFar()
     }
 
     private fun create(spec: FaceSpec): Slot {
@@ -261,7 +306,7 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
             val v = s.face.view
             val j = indexOf(id)
             val d = if (s === cur) 0 else if (j < 0) 9 else j - i
-            if (d in -1..1) { v.translationY = d * h; v.visibility = VISIBLE } else v.visibility = INVISIBLE
+            if (d in -1..1) { v.translationY = d * h; v.visibility = if (s === cur && faceHidden) INVISIBLE else VISIBLE } else v.visibility = INVISIBLE
         }
         syncFaceLayers()
         refreshExtras()
@@ -276,12 +321,17 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
      */
     private fun syncFaceLayers() {
         val inEdit = (editing || editAnim != null) && (editExp and EXP_NO_FACE_LAYERS) == 0
+        // The far fade: the face and the far clock each render once into a layer, then only
+        // their alpha and scale change (two textured quads per frame).
+        val farFade = farAnim != null && current?.let { FarLayout.styleOf(it.spec.id) } == FarLayout.Style.BIG_CLOCK
         for (s in built.values) {
             val v = s.face.view
-            val want = inEdit && v.visibility == VISIBLE && (s === current || editAnim == null)
+            val want = (inEdit && v.visibility == VISIBLE && (s === current || editAnim == null)) || (farFade && s === current)
             val type = if (want) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE
             if (v.layerType != type) v.setLayerType(type, null)
         }
+        val farType = if (farFade) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE
+        if (far.layerType != farType) far.setLayerType(farType, null)
     }
 
     /**
@@ -322,10 +372,13 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         switchAnim?.cancel()
         park(neighbour); neighbour = null
         park(current)
+        val old = current
         current = obtain(spec).also { if (shown) it.face.onScreenShown(null) }
+        farFaceChanged(old)
         arrange()
         if (persist) rememberFace(spec.id)
         syncOverlay()
+        syncFar(animate = false)
         if (shown) scheduleWarm()
     }
 
@@ -366,11 +419,14 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
 
     private fun becomeCurrent(n: Slot, persist: Boolean) {
         park(current)
+        val old = current
         current = n; neighbour = null
+        farFaceChanged(old)
         arrange()
         if (shown) n.face.onScreenShown(null)
         if (persist) rememberFace(n.spec.id)
         syncOverlay()
+        syncFar()
         scheduleWarm()
     }
 
@@ -448,6 +504,118 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         personal.setSuppressed(sliding)
     }
 
+    // ------------------------------------------------------------------ near / far
+
+    /** Far is wanted: the camera (or the debug extra) says FAR, the setting is on, and the face has a far layout. */
+    private fun farWanted(): Boolean {
+        val cur = current ?: return false
+        if (editing || editAnim != null || FarLayout.styleOf(cur.spec.id) == FarLayout.Style.NONE) return false
+        if (!services.settings.getBoolean(ClockSettings.KEY_FAR_LAYOUT, true)) return false
+        return (forcedDistance ?: services.system.state.value.viewDistance) == ViewDistance.FAR
+    }
+
+    /**
+     * Moves toward the wanted layout: animated while shown, but never during a touch or another
+     * StandBy animation (retried a moment later), instantly when hidden or [animate] is false.
+     */
+    private fun syncFar(animate: Boolean = true) {
+        handler.removeCallbacks(farRetry)
+        val target = if (farWanted()) 1f else 0f
+        val anim = farAnim
+        if (anim != null && farAnimTarget == target) return
+        if (!shown || !animate) {
+            anim?.cancel(); farAnim = null
+            setFar(target)
+            syncFaceLayers()
+            return
+        }
+        if (anim == null && farProgress == target) { setFar(target); return }
+        if (fingerDown || dragging || switchAnim != null || editAnim != null) { handler.postDelayed(farRetry, FAR_RETRY_MS); return }
+        anim?.cancel(); farAnim = null
+        animateFar(target)
+    }
+
+    private fun animateFar(target: Float) {
+        val from = farProgress
+        farAnimTarget = target
+        val a = ValueAnimator.ofFloat(from, target).apply {
+            duration = (FarLayout.TRANSITION_MS * abs(target - from)).toLong().coerceAtLeast(150L)
+            interpolator = Motion.EASE
+            addUpdateListener { setFar(it.animatedValue as Float) }
+            addListener(object : AnimatorListenerAdapter() {
+                var cancelled = false
+                override fun onAnimationCancel(a: Animator) { cancelled = true }
+                override fun onAnimationEnd(a: Animator) {
+                    if (farAnim !== a) return
+                    farAnim = null
+                    if (!cancelled) setFar(target)
+                    syncFaceLayers()
+                }
+            })
+        }
+        farAnim = a
+        setFar(from) // the far clock / face visible before their layers render
+        syncFaceLayers()
+        a.start()
+    }
+
+    /** Applies far progress [p] to the current face, the far clock and the extras. */
+    private fun setFar(p: Float) {
+        farProgress = p
+        val cur = current ?: return
+        val style = FarLayout.styleOf(cur.spec.id)
+        extras.alpha = 1f - p
+        val v = cur.face.view
+        if (style == FarLayout.Style.BIG_CLOCK) {
+            v.pivotX = v.width / 2f; v.pivotY = v.height / 2f
+            val grow = 1f + FarLayout.FACE_GROW * p
+            v.alpha = 1f - p; v.scaleX = grow; v.scaleY = grow
+            if (p > 0f && far.visibility != VISIBLE) { bindFar(); far.refresh(); far.visibility = VISIBLE }
+            else if (p == 0f && far.visibility != GONE) far.visibility = GONE
+            far.pivotX = far.width / 2f; far.pivotY = far.height / 2f
+            val fs = FarLayout.FAR_FROM + (1f - FarLayout.FAR_FROM) * p
+            far.alpha = p; far.scaleX = fs; far.scaleY = fs
+            cur.face.setFarAmount(0f)
+        } else {
+            resetFaceView(v)
+            if (far.visibility != GONE) far.visibility = GONE
+            cur.face.setFarAmount(if (style == FarLayout.Style.OWN) p else 0f)
+        }
+        setFaceHidden(style == FarLayout.Style.BIG_CLOCK && p >= 1f && farAnim == null)
+    }
+
+    /** Behind the opaque far clock the face is invisible and stopped (Weather's drift, etc.). */
+    private fun setFaceHidden(h: Boolean) {
+        if (h == faceHidden) return
+        faceHidden = h
+        val cur = current ?: return
+        if (h) { cur.face.view.visibility = INVISIBLE; cur.face.onScreenHidden() }
+        else {
+            cur.face.view.visibility = VISIBLE
+            cur.face.onTimeChanged()
+            if (shown) cur.face.onScreenShown(null)
+        }
+    }
+
+    /** The current face changed (from [old]): [old] back to normal, the new one at the current progress. */
+    private fun farFaceChanged(old: Slot?) {
+        if (old != null && old !== current) { resetFaceView(old.face.view); old.face.setFarAmount(0f) }
+        faceHidden = false
+        current?.face?.view?.visibility = VISIBLE
+        farAnim?.cancel(); farAnim = null
+        setFar(farProgress)
+    }
+
+    private fun resetFaceView(v: View) {
+        if (v.alpha != 1f) v.alpha = 1f
+        if (v.scaleX != 1f || v.scaleY != 1f) { v.scaleX = 1f; v.scaleY = 1f }
+    }
+
+    private fun bindFar() {
+        val cur = current ?: return
+        far.bind(if (cur.spec.colorOptions.isEmpty()) Color.WHITE else colorFor(cur.spec), nightOn, cur.spec.id)
+    }
+
     // ------------------------------------------------------------------ night
 
     private fun wake() {
@@ -476,6 +644,7 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
     private fun setEditing(on: Boolean, animate: Boolean = true) {
         if (on == editing && editAnim == null) return
         editing = on
+        if (on) syncFar(animate = false) // edit mode shows the real face
         if (on && overlay == null) {
             overlay = EditOverlay(context, this).also { o ->
                 addView(o, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -521,6 +690,7 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         overlay?.let { removeView(it) }
         overlay = null
         applyDim(animate = true)
+        syncFar()
     }
 
     /**
@@ -627,8 +797,12 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
             MotionEvent.ACTION_DOWN -> {
                 downX = e.x; downY = e.y
                 dragging = false; longPressed = false
-                tracking = e.y > TOP_EDGE && switchAnim == null
-                if (!editing) handler.postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
+                fingerDown = true
+                // In far, a touch only brings the details back (the camera already says NEAR):
+                // no face swipe, no long-press, no tap action, and the change waits for the lift.
+                farGesture = farProgress > 0f || farAnim != null
+                tracking = e.y > TOP_EDGE && switchAnim == null && !farGesture
+                if (!editing && !farGesture) handler.postDelayed(longPress, ViewConfiguration.getLongPressTimeout().toLong())
             }
             MotionEvent.ACTION_POINTER_DOWN -> { handler.removeCallbacks(longPress); if (!dragging) tracking = false }
             MotionEvent.ACTION_MOVE -> {
@@ -644,6 +818,14 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
             }
             MotionEvent.ACTION_UP -> {
                 handler.removeCallbacks(longPress)
+                fingerDown = false
+                if (farGesture) {
+                    farGesture = false
+                    if (abs(e.x - downX) < slop && abs(e.y - downY) < slop) wake()
+                    velocity?.recycle(); velocity = null
+                    syncFar()
+                    return
+                }
                 if (dragging) {
                     velocity!!.computeCurrentVelocity(1000)
                     settle(velocity!!.yVelocity)
@@ -655,6 +837,8 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
             }
             MotionEvent.ACTION_CANCEL -> {
                 handler.removeCallbacks(longPress)
+                fingerDown = false
+                if (farGesture) { farGesture = false; syncFar() }
                 if (dragging) settle(0f)
                 dragging = false
                 velocity?.recycle(); velocity = null
@@ -685,6 +869,8 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         if (current == null) showFace(selectedFaceId(), persist = false)
         current?.face?.onTimeChanged()
         current?.face?.onScreenShown(args)
+        syncFar(animate = false)
+        if (faceHidden) current?.face?.onScreenHidden() // behind the far clock: stays stopped
         night.start()
         applyDim(animate = false)
         scheduleWarm()
@@ -700,7 +886,9 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         arrange()
         night.stop()
         handler.removeCallbacks(longPress)
+        fingerDown = false; farGesture = false
         if (editing) setEditing(false, animate = false)
+        syncFar(animate = false) // no animation off screen
     }
 
     private fun handleArgs(args: Bundle?) {
@@ -728,6 +916,14 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
             else services.alarms.delete("debug-maya")
         }
         if (services.config.debug) str("fakelux")?.toFloatOrNull()?.let { Log.i("VesperClock", "fake lux $it"); night.onLux(it) }
+        str("farlayout")?.let { services.settings.putBoolean(ClockSettings.KEY_FAR_LAYOUT, it.toBoolean()) }
+        if (services.config.debug) str("distance")?.let { d ->
+            handler.removeCallbacks(farCycle)
+            if (d == "cycle") { farCycles = 6; handler.postDelayed(farCycle, 1500); return@let }
+            forcedDistance = when (d.lowercase()) { "far" -> ViewDistance.FAR; "near" -> ViewDistance.NEAR; else -> null }
+            Log.i("VesperClock", "distance forced: ${forcedDistance ?: "auto (camera)"}")
+            syncFar(animate = str("faranim") == "true")
+        }
         when (str("edit")) {
             "true" -> setEditing(true, animate = false)
             "false" -> setEditing(false, animate = false)
@@ -764,6 +960,8 @@ class StandbyScreen(context: Context, private val services: VesperServices, priv
         private const val EDIT_PIVOT_X = 96f / (1f - EDIT_SCALE)
         private const val EDIT_PIVOT_Y = 40f / (1f - EDIT_SCALE)
         private const val TOP_EDGE = 40f
+        /** A far change waiting for a finger or an animation asks again this often. */
+        private const val FAR_RETRY_MS = 150L
         /** Faces with a wallpaper setting (the person's [Profile.wallpaper] applies to them). */
         private val WALLPAPER_FACES = setOf("glass")
         // debug launch extra `editexp` (bits) to measure the edit-mode drawing choices on the Echo

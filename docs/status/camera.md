@@ -295,3 +295,68 @@ Sources, versions, checksums, licences and conversion are in `android/feature/ca
 - **Demo Maya** (`DEMO_MAYA`): Liquid Glass on Dusk, orange, soft chime alarms. `profiles-demo` gives a Maya saved by an older build (no wallpaper) the demo's face, colour and wallpaper.
 - Web settings: People shows each person's clock face, wallpaper, Night mode and alarm sound (`PUT /api/people/<id>/prefs`, options from the settings they override; see `:feature:settings`).
 - **Unverified on the Echo**: the "Your stuff" row's layout and taps (built and unit-tested only). `--es screen profiles` after `profiles-demo` (Maya present), tap Maya.
+
+## Nov 24: near / far (NOTES §6.5 item 2)
+
+Branch `worktree-agent-a3c2570639e1d4d99`. The camera decides how far away whoever's looking is and publishes it as
+`SystemState.viewDistance` (`NEAR` / `FAR`, new in `:core:model`); StandBy shows a big far layout for `FAR`
+(`docs/status/clock.md`, "Near / far"). Setting `clock.farLayout` ("Big clock from across the room", Clock & StandBy
+section, default on; the camera reads it too, so with it off nothing here runs beyond a boolean check).
+
+**Budget rule: no new continuous work.** Everything comes from signals that already exist:
+
+| Signal | Source | Cost |
+|---|---|---|
+| Touch | `CameraOverlayView` already calls `pipeline.onTouch()` on every touch-down | none |
+| Motion size | the 80×60 frame difference of each presence frame (~1 fps): `MotionResult.changed` (area) plus a new `rows` (fraction of the 60 rows with ≥ 3 changed pixels: the change's height), counted in the same loop | one compare + increment per row; the per-sample time is unchanged within noise |
+| Eye distance | the arrival face check's BlazeFace box (only when people are enrolled), normalised to a 320 px wide frame | none (already computed) |
+| Presence | `EMPTY` is far evidence, `UNKNOWN` (camera off, blocked, dark, hidden) forces `NEAR` | none |
+
+The only camera time it adds: **one look before a rest**. When it says FAR and a motion sample didn't look far
+(unsure, or an approach), `maybeRest()` keeps the camera on for `NearFar.LOOK_MS` = 2.2 s (two more 1 fps samples)
+before the 60 s rest, at most once per rest. Without it, someone walking up after a rest is seen in one frame only
+(the first frame after a restart is never motion, and the second one starts the next rest). Worst case, someone moving
+around mid-room all the time: +2.2 s of presence capture per ~62 s cycle ≈ 7 % × 2.2/62 ≈ **0.25 % of a core**;
+an empty room: zero (no motion, no look).
+
+**Decision** (`presence/NearFar.kt`, pure, main thread, 22 JVM tests in `NearFarTest` + 3 in `MotionRowsTest`):
+
+- A presence sample is *near* if the change covers ≥ 20 % of the frame and ≥ 70 % of its rows, or it's an *approach*
+  (≥ 1.6× the previous sample's area, ≥ 12 %, ≥ 50 % of rows, ≤ 3 s after it). *Far* if it moved but < 10 % area or
+  < 50 % of rows (someone walking sideways across the room changes a wide patch but not the full height). Otherwise
+  unsure; no motion is no evidence.
+- A near sample counts only if a second one follows within 3 s. A face with eye distance ≥ 18 px (confidence ≥ 0.5)
+  is near at once, ≤ 11 px is far evidence. A touch is near at once.
+- **FAR → NEAR** is immediate on near evidence. **NEAR → FAR** needs the hold to be over (60 s after a touch, 45 s after
+  camera evidence) *and* far evidence after the last near evidence. So it starts NEAR, stays NEAR while unsure ("default
+  to the normal layout"), and changes at most once per hold (test `neverFlickers`).
+- An empty room is FAR (whoever walks in starts across the room); the empty-room dim (0.35) still applies on top.
+
+**Thresholds are estimates**, not measured on people (nobody could walk up to the Echo for this). Eye distance assumes
+a ~60° horizontal field of view at 320 px (`eye px ≈ 17.5 / metres`): 18 px ≈ 1 m, 11 px ≈ 1.6 m. The area/rows numbers
+assume a person within ~1 m fills most of the 4:3 frame. To calibrate: logcat tag `VesperCamera` prints every change
+(`near/far: FAR (far away)`, `near/far: NEAR (close motion|approach|face|touch)`) and each extra look; the values are
+constructor parameters of `NearFar`.
+
+Files: `presence/NearFar.kt` (new), `presence/MotionDetector.kt` (`rows`), `CameraPipeline.kt` (feeds samples, faces
+and touches, publishes `viewDistance`, the look before a rest).
+
+**Measured** (Echo, debug build, `scripts/echo-perf.sh`, StandBy Digital, presence pipeline running, 30 s each):
+
+| | CPU (app) | Frames | PSS |
+|---|---|---|---|
+| `clock.farLayout` off | 1.2 % | 1 | 76.2 MB |
+| `clock.farLayout` on | 1.1 % | 1 | 76.2 MB |
+
+No measurable difference: the decision runs once per presence sample (~1 per second while capturing), and the
+`rows` count adds nothing visible to the per-sample time. The look before a rest wasn't seen on the device (see below);
+its cost is the estimate above.
+
+**Unverified on the Echo:**
+- The real camera path from start to finish: no `near/far:` log line from a real person was captured (logcat had rotated
+  and nobody walked up during the sessions). The layouts were checked with the forced `distance` extra.
+- Every threshold on real people: the eye-distance numbers assume a ~60° HFOV; the area/rows numbers are guesses.
+- The look before a rest, and touch → NEAR through the pipeline. Touch → near in StandBy was exercised only with the
+  forced state.
+- To check: stand ~3 m away until it goes FAR (≥ 45 s after the last near evidence), then walk up. Watch
+  `logcat -s VesperCamera | grep near/far`.

@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.update
  *  - micMutedHardware, shutterClosed, volume, brightness, dnd: `:feature:system`
  *  - micMutedSoftware: `:feature:system` (Control Center) and `:feature:assistant`
  *  - nightActive: `:feature:clock` (light sensor + setting)
- *  - presence, cameraInUse: `:feature:camera`
+ *  - presence, cameraInUse, viewDistance: `:feature:camera`
  */
 data class SystemState(
     /** The physical mic/camera button (the `gating` device). */
@@ -35,6 +35,8 @@ data class SystemState(
     /** 0..1 music volume. */
     val volume: Float = 0.5f,
     val presence: Presence = Presence.UNKNOWN,
+    /** How far the person looking is: StandBy shows its big far layout for FAR. NEAR when unsure. */
+    val viewDistance: ViewDistance = ViewDistance.NEAR,
 ) {
     val micMuted: Boolean get() = micMutedHardware || micMutedSoftware
     /** Camera must not be used: the button, the toggle or the shutter says so. */
@@ -45,6 +47,21 @@ data class SystemState(
 enum class NightMode { AUTO, ON, OFF }
 
 enum class Presence { UNKNOWN, PRESENT, EMPTY }
+
+/**
+ * Near / far (NOTES §6.5 item 2). `:feature:camera` decides from touches, the size of the motion
+ * it already measures and, during the arrival face check, the eye distance. It says FAR only with
+ * evidence (an empty room, small motion across the room) and NEAR whenever it can't tell: camera
+ * off, blocked or dark, or the setting [KEY_FAR_LAYOUT] off.
+ */
+enum class ViewDistance {
+    NEAR, FAR;
+
+    companion object {
+        /** BOOLEAN, default true: "Big clock from across the room" (`:feature:clock` registers it, the camera reads it). */
+        const val KEY_FAR_LAYOUT = "clock.farLayout"
+    }
+}
 
 interface SystemStateStore {
     val state: StateFlow<SystemState>
