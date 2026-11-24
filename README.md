@@ -2,6 +2,8 @@
 
 A Liquid Glass smart-display interface for a jailbroken **Amazon Echo Show 5 (1st gen)**. EchoHome is an Android HOME launcher that replaces the stock Echo software with clock faces, an AirPlay and Bluetooth speaker, an on-device voice assistant, glanceable weather and calendar, and a Dynamic-Island-style live surface. It runs fully on the device and doesn't need Home Assistant or a cloud account.
 
+**Website and setup guide: [devmello.github.io/EchoHome](https://devmello.github.io/EchoHome/)** (source in [`site/`](site/)).
+
 > **EchoHome is an independent, unofficial project. It is not affiliated with, endorsed by, or sponsored by Amazon or Apple.** "Echo" in the name only says which hardware it runs on. Amazon, Echo and Echo Show are trademarks of Amazon.com, Inc. or its affiliates. Apple, AirPlay, iPhone, Dynamic Island, StandBy and Liquid Glass are trademarks of Apple Inc. These names are used only to describe the hardware EchoHome runs on and the protocols it works with.
 
 ## What it runs on
@@ -44,6 +46,7 @@ Location for weather and travel: manual coordinates if you set them, otherwise k
 | `design/` | Source of every designed screen (`*.dc.html`). It's the visual spec in device pixels at 960×480, not runnable code. All data in the designs is sample data. |
 | `device/overlays/` | Optional ROM resource overlays: turn off the SystemUI volume panel and turn on Bluetooth cover art. |
 | `scripts/` | Build, install and device helper scripts. |
+| `site/` | The website and setup guide, published to GitHub Pages by `.github/workflows/pages.yml`. |
 | `docs/` | Architecture, per-feature status notes, assistant setup and the [software update plan](docs/software-updates.md). |
 | `NOTES.md` | Device facts, the design system, every screen's spec and the project's decisions. |
 
