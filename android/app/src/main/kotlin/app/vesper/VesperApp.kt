@@ -34,6 +34,8 @@ import app.vesper.feature.settings.setup.SetupFeature
 import app.vesper.feature.sleep.SleepFeature
 import app.vesper.feature.spotify.SpotifyFeature
 import app.vesper.feature.system.SystemFeature
+import app.vesper.feature.update.UpdateFeature
+import app.vesper.feature.update.UpdateGuard
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -48,7 +50,7 @@ import kotlinx.coroutines.launch
  */
 val FeatureList: List<VesperFeature> = listOf(
     SetupFeature, SystemFeature, PhoneFeature, AirPlayFeature, SpotifyFeature, MediaFeature, SleepFeature, RadioFeature, AlarmFeature, HomeFeature, ListsFeature,
-    AssistantFeature, CameraFeature, PhotosFeature, ClockFeature, SettingsFeature,
+    AssistantFeature, CameraFeature, PhotosFeature, ClockFeature, UpdateFeature, SettingsFeature,
 )
 
 /** Builds the shared services and installs every feature once per process. */
@@ -68,6 +70,9 @@ class VesperApp : Application(), FeatureHost {
         // First, so a crash anywhere below is recorded and the launcher comes back.
         val crashLog = FileCrashLog(java.io.File(filesDir, "crashes.json"))
         Watchdog(this, crashLog).install()
+        // Next, before any feature code runs: a freshly installed update that keeps crashing is
+        // rolled back to the previous version here (:feature:update). Then no feature is loaded.
+        val safeMode = UpdateGuard.onAppStart(this)
         Fonts.init(this)
         val settings = PrefsSettingsStore(this)
         val builtIn = loadSecrets()
@@ -81,6 +86,11 @@ class VesperApp : Application(), FeatureHost {
         // Secrets set from the settings page apply live (features read config.secrets at use time).
         services.scope.launch {
             secretStore.changes.collect { services.config = services.config.copy(secrets = builtIn.overriddenBy(secretStore)) }
+        }
+        if (safeMode != null) {
+            Log.e(TAG, "safe mode: $safeMode")
+            registerScreen(ScreenSpec(HOME_SCREEN, 0) { ctx -> SafeModeView(ctx, safeMode) })
+            return
         }
         if (secrets.haConfigured) services.homeAssistant = HomeAssistantClient(secrets.haUrl, secrets.haToken, services.scope)
 

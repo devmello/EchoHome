@@ -50,7 +50,9 @@ fi
 lock_acquire
 echo_connect >/dev/null
 export ADB SERIAL; SERIAL=$(serial)
-adb_echo install -r "$APK" >/dev/null && echo "installed $VARIANT ($(du -h "$APK" | cut -f1 | tr -d ' '))"
+# -d: versionCode is the commit count (app/build.gradle.kts), so a branch behind the installed build
+# is "older". Downgrades are allowed on this userdebug ROM; app data stays.
+adb_echo install -r -d "$APK" >/dev/null && echo "installed $VARIANT ($(du -h "$APK" | cut -f1 | tr -d ' '))"
 adb_echo shell cmd package set-home-activity "$HOME_ACTIVITY" >/dev/null
 # shellcheck disable=SC2086
 adb_echo shell am start -W -n "$HOME_ACTIVITY" -a android.intent.action.MAIN -c android.intent.category.HOME \

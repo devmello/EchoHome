@@ -166,7 +166,8 @@ button { cursor: pointer; }
 .row-main { display: flex; align-items: center; gap: 12px; min-height: 31px; }
 .row-title { flex: 1; min-width: 0; font-weight: 500; display: flex; align-items: center; gap: 8px; }
 .row-title .t { overflow-wrap: anywhere; }
-.help { margin: 4px 0 0; font-size: 13px; line-height: 1.4; color: var(--text-2); }
+/* pre-line: a feature's help may carry several lines (the Updates status). */
+.help { margin: 4px 0 0; font-size: 13px; line-height: 1.4; color: var(--text-2); white-space: pre-line; overflow-wrap: anywhere; }
 .err { margin: 6px 0 0; font-size: 13px; color: var(--red); }
 .stack { margin-top: 10px; }
 .subhead { font-size: 13px; font-weight: 600; color: var(--text-2); padding: 14px 18px 2px; border-top: .5px solid var(--sep); }

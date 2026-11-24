@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Silent self-update with PackageInstaller. signature|privileged: it is in
+         device/privapp-permissions-app.vesper.xml, and the /system copy requests it too (an updated
+         system app only gets a privileged permission its /system copy also asks for). -->
+    <uses-permission android:name="android.permission.INSTALL_PACKAGES" tools:ignore="ProtectedPermissions" />
+
+    <application>
+        <!-- MY_PACKAGE_REPLACED (bring HOME back after an update), the nightly tick, PackageInstaller results. -->
+        <receiver
+            android:name="app.vesper.feature.update.UpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
