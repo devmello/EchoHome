@@ -199,10 +199,22 @@ Measured on the Echo (debug build, `echo-perf.sh`; swipes are raw `sendevent` on
 2. **Idle-time warm-up ran between the frames of the pager's slide.** A `MessageQueue.IdleHandler` runs whenever the queue is empty, and the queue is also empty between animation frames. Widgets showed at the moment the finger lifted, at the start of the 380 ms settle. Its stacks then built the 14 missing widgets, one per idle moment (10–30 ms each, plus a 20–65 ms first record), so frames of 30, 41, 30, 32, 21, 58 and 66 ms ran every ~160 ms. StandBy does the same on every return: it rebuilds its released neighbour faces, so each pass had one 58 ms frame (the warm pass's p99 of 125 ms).
 3. **The second swipe built Now Playing mid-drag.** Leaving Widgets also creates page 2. That cost 43 ms of input plus a 48 ms record.
 
-**Fix** (code done, **not yet measured on the Echo**; the device went offline during the lead's SystemUI change):
+**Fix** (measured on the Echo on Nov 23 evening, see below):
 - `:core:design` `UiQuiet` + `QuietWork`. The screen is quiet when no finger is down and no frame has drawn for 50 ms (about three frames). `MainActivity` installs the frame listener and feeds touches. `QuietWork` runs one small step per idle moment, only while the screen is quiet, and waits again after each step. StandBy's face warm-up and the widget stacks' warm-up now use it instead of a bare IdleHandler.
 - `ScreenPager` builds the current page's ±1 neighbours ahead, starting 2.5 s after it attaches and only on quiet moments while the pager rests. This keeps the first StandBy frame unchanged. It then records the neighbours' display lists off screen: it draws the page into a scratch `RenderNode`, so every child records its own node. It records again, on a quiet moment and at most once a second per page, when an off-screen neighbour invalidates (e.g. a widget built ahead).
 - The widget stacks warm up from attach, not only while shown. All 16 widgets are built and recorded before the first visit.
 - The baked Widgets wallpaper is uploaded with `Bitmap.prepareToDraw()` as soon as it's baked.
 
-**Still to measure:** the first 6 swipes after the fix (goal: about the warm pass's ~4 %); PSS 20 s after a start (now includes the Widgets page built ahead, about +2–5 MB expected: the 1.8 MB wallpaper plus its GPU copy and 16 small views); PSS after the swipes (should be unchanged); time to first frame (should be unchanged).
+**After the fix** (release build of b4ff464, same 3-run procedure, Nov 23 22:20):
+
+| | Frames | Janky | p50 / p90 / p95 / p99 |
+|---|---|---|---|
+| First 6 swipes, run 1 | 228 | 7.0 % | 5 / 7 / 17 / 53 ms |
+| run 2 | 229 | 1.8 % | 5 / 6 / 7 / 48 ms |
+| run 3 | 228 | 1.8 % | 5 / 6 / 8 / 48 ms |
+| **median** | 228 | **1.8 %** | **5 / 6 / 8 / 48 ms** (before: 38.2 %, 6 / 20 / 61 / 150) |
+| Next 6 swipes, same process (median) | 228 | 1.3 % | 5 / 6 / 6 / 48 ms (before: 4.3 %, p99 125) |
+
+- PSS 20 s after the start: 59.7 MB (59.5 / 60.2 / 59.7), up from 44.1 MB, because Widgets and Now Playing are now built ahead (+15.6 MB, more than the 2–5 MB I expected). After the swipes: 67.8 MB (68.2 / 67.8 / 67.2), slightly below the 69.0 MB before. Device MemAvailable stayed ~384 MB.
+- Time to first frame: 1811 / 1823 / 1737 ms (median 1811 ms, before 1682 ms; within run-to-run noise of a cold start on this device, not investigated further).
+- The ~48 ms p99 frame in every pass is a single frame per pass; not traced yet.

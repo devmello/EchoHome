@@ -134,4 +134,12 @@ class SpotifyPolicyTest {
         assertTrue(CrashGuard.allowed(2))
         assertFalse(CrashGuard.allowed(3))
     }
+
+    @Test fun onlyCrashExitsKeepTheStartCount() {
+        // crashes, ANRs, signals and "no record" keep counting
+        for (r in listOf(null, 0, 2, 4, 5, 6, 7)) assertTrue("reason $r", CrashGuard.couldBeCrash(r))
+        // exit self (1), low memory (3), user requested / force-stop (10), stopped/uninstall (11),
+        // dependency died (12), other system kills (13): not the receiver's fault
+        for (r in listOf(1, 3, 8, 9, 10, 11, 12, 13)) assertFalse("reason $r", CrashGuard.couldBeCrash(r))
+    }
 }

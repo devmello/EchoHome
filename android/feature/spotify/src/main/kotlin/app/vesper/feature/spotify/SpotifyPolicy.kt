@@ -105,10 +105,34 @@ internal object Arbitration {
  * Stops a native crash from turning into a crash loop of the HOME app: every start counts an
  * attempt (persisted before the native call); a receiver that stays up for [STABLE_MS] clears it.
  * After [MAX_ATTEMPTS] unfinished starts the receiver stays off until the user switches it on again.
+ *
+ * An unfinished start only counts when the process actually crashed: on the first start in a
+ * process, [SpotifyService] asks Android why the previous process ended
+ * (`ActivityManager.getHistoricalProcessExitReasons`), and a force-stop, an install or a
+ * low-memory kill clears the count. (Three quick restarts, e.g. an install plus two
+ * `am force-stop`s, used to switch Spotify off.)
  */
 internal object CrashGuard {
     const val MAX_ATTEMPTS = 3
     const val STABLE_MS = 60_000L
 
     fun allowed(attempts: Int): Boolean = attempts < MAX_ATTEMPTS
+
+    // ApplicationExitInfo.REASON_* (API 30), as plain ints so the JVM tests don't need android.jar.
+    private const val REASON_UNKNOWN = 0
+    private const val REASON_SIGNALED = 2
+    private const val REASON_CRASH = 4
+    private const val REASON_CRASH_NATIVE = 5
+    private const val REASON_ANR = 6
+    private const val REASON_INITIALIZATION_FAILURE = 7
+
+    /**
+     * Whether the previous process's exit [reason] can be the receiver's fault. `null` = Android
+     * has no record (first run after boot or a data wipe): keep the count, the safe side.
+     */
+    fun couldBeCrash(reason: Int?): Boolean = when (reason) {
+        null, REASON_UNKNOWN, REASON_SIGNALED, REASON_CRASH, REASON_CRASH_NATIVE, REASON_ANR,
+        REASON_INITIALIZATION_FAILURE -> true
+        else -> false
+    }
 }

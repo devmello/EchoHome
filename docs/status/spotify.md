@@ -77,7 +77,10 @@ Spotify's 2025+ servers: the login5 / OAuth token path, the "dealer" websocket C
   phase Failed → the service restarts the receiver, at most 3 times. **Crash-loop guard:** the
   start counter is persisted before each start and cleared once the receiver has been up 60 s; after
   3 starts that never got there the receiver stays off with "Turned off after failing to start"
-  until it's switched off and on. Every JNI entry point catches Rust panics.
+  until it's switched off and on. Only real crashes count: on the first start in a process the
+  service reads why the previous process ended (`getHistoricalProcessExitReasons`) and a
+  force-stop, install, low-memory or system kill clears the counter (Nov 23: an install plus two
+  `am force-stop`s inside a minute had switched Spotify off). Every JNI entry point catches Rust panics.
 - **Logs:** tag `VesperSpotify` (native and Kotlin), INFO and up. The native bridge redacts user
   names and anything token-like (runs of 24+ characters with a digit). Credentials, tokens and
   blobs are never logged.

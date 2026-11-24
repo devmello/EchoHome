@@ -1,5 +1,6 @@
 package app.vesper.feature.spotify
 
+import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -154,6 +155,14 @@ class SpotifyService : Service() {
             SpotifyFeature.setStatus("Not available on this device (the receiver library is missing).")
             return
         }
+        if (!exitChecked) {
+            exitChecked = true
+            val reason = lastExitReason()
+            if (!CrashGuard.couldBeCrash(reason) && settings.getInt(SpotifyFeature.KEY_START_ATTEMPTS, 0) > 0) {
+                Log.i(TAG, "previous process ended without a crash (exit reason $reason): start count cleared")
+                settings.putInt(SpotifyFeature.KEY_START_ATTEMPTS, 0)
+            }
+        }
         val attempts = settings.getInt(SpotifyFeature.KEY_START_ATTEMPTS, 0)
         if (!CrashGuard.allowed(attempts)) {
             Log.e(TAG, "receiver didn't survive $attempts starts in a row; staying off until it's switched on again")
@@ -187,6 +196,12 @@ class SpotifyService : Service() {
             "port $port in ${SystemClock.elapsedRealtime() - started} ms")
         updateStatus()
     }
+
+    /** Why this app's previous process ended (ApplicationExitInfo.REASON_*), or null if unknown. */
+    private fun lastExitReason(): Int? = try {
+        getSystemService(ActivityManager::class.java)
+            ?.getHistoricalProcessExitReasons(packageName, 0, 1)?.firstOrNull()?.reason
+    } catch (e: Exception) { Log.w(TAG, "exit reasons: $e"); null }
 
     private fun startNative(name: String, id: String, kbps: Int, lib: Boolean, cred: String, tmp: String, volume: Int): Long {
         for (p in intArrayOf(PORT, 0)) {
@@ -605,6 +620,8 @@ class SpotifyService : Service() {
         private const val PORT = 4070
         private const val RETRY_MS = 15_000L
         private const val MAX_NATIVE_FAILURES = 3
+        /** The previous process's exit reason is checked once per process (see [CrashGuard]). */
+        @Volatile private var exitChecked = false
         /** Artwork is decoded to at most this size (Now Playing draws it well under 600 px). */
         private const val ARTWORK_MAX_PX = 600
         private const val ART_MAX_BYTES = 3 * 1024 * 1024
