@@ -65,6 +65,7 @@ internal class RealSystemControls(private val ui: SystemUi) : SystemControls {
         app.contentResolver.registerContentObserver(Settings.System.getUriFor(Settings.System.SCREEN_BRIGHTNESS), false,
             object : ContentObserver(main) { override fun onChange(selfChange: Boolean) = syncBrightness() })
         ui.connectivity.start()
+        ui.wifiWatchdog.start()
     }
 
     // --- volume ---

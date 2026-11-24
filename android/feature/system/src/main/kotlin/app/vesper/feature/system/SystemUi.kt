@@ -9,6 +9,7 @@ import app.vesper.feature.system.device.Connectivity
 import app.vesper.feature.system.device.HardwareMonitor
 import app.vesper.feature.system.device.KeyRouter
 import app.vesper.feature.system.device.RealSystemControls
+import app.vesper.feature.system.device.WifiWatchdog
 import app.vesper.feature.system.hud.Hud
 import java.lang.ref.WeakReference
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.SharedFlow
  */
 internal class SystemUi(val app: Context, val services: VesperServices) {
     val connectivity = Connectivity(app, services.scope)
+    val wifiWatchdog = WifiWatchdog(app, services.settings, services.scope)
     val controls = RealSystemControls(this)
     val monitor = HardwareMonitor(this)
     val keys = KeyRouter(this)

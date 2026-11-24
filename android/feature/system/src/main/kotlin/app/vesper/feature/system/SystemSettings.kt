@@ -22,6 +22,7 @@ internal object SystemSettings {
     const val SCREENOFF_MINUTES = "system.screenoff.minutes"
     const val SCREENOFF_SAVED = "system.screenoff.saved"      // internal: brightness to restore if we died while dark
     const val CC_AIRPLAY = "system.cc.airplay"            // read by :feature:airplay
+    const val WIFI_WATCHDOG = "system.wifi.watchdog"      // rejoin / restart Wi-Fi when the router stops answering
 
     fun bannerShowMs(s: SettingsStore) = (s.getFloat(BANNER_SECONDS, 5f).coerceIn(2f, 30f) * 1000).toLong()
     fun hudLevelMs(s: SettingsStore) = (s.getFloat(HUD_SECONDS, 1.5f).coerceIn(0.8f, 6f) * 1000).toLong()
@@ -51,6 +52,11 @@ internal object SystemSettings {
                 help = "Seconds the capsule stays after the last change.", min = 0.8f, max = 6f, step = 0.1f, advanced = true),
             SettingSpec(HUD_BADGES, "Mic and camera off badges", SettingType.BOOLEAN, "true",
                 help = "Red badges top-right while the microphone or camera is off."),
+        )),
+        SettingsSection("system.network", "Wi-Fi", 45, listOf(
+            SettingSpec(WIFI_WATCHDOG, "Reconnect when Wi-Fi stops working", SettingType.BOOLEAN, "true",
+                help = "If the Wi-Fi router stops answering for 3 minutes while the Echo still shows as connected, it drops and rejoins Wi-Fi (and restarts Wi-Fi if that doesn't help, waiting longer each time).",
+                advanced = true),
         )),
         // NIGHT_MODE isn't on the page: the clock's "clock.night.mode" (with the schedule) is the one Night setting.
         // CC_AIRPLAY isn't on the page: :feature:airplay's own "airplay.enabled" is the page's switch.

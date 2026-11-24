@@ -26,7 +26,7 @@ import app.vesper.feature.system.screenoff.ScreenOffOverlay
  *
  * Debug (debug builds): `adb shell am broadcast -a app.vesper.system.DEBUG --es island story`
  * (also `--es hud volume|brightness|micoff|micon|camoff`, `--es banner 0..3`, `--es cc open|close`,
- * `--es look glass|black`), or the same extras on the launch intent.
+ * `--es look glass|black`, `--es wifi rejoin|restart` for the Wi-Fi watchdog), or the same extras on the launch intent.
  */
 object SystemFeature : VesperFeature {
     override val id = "system"
@@ -61,6 +61,7 @@ object SystemFeature : VesperFeature {
                 b.putLong("_t", System.nanoTime()) // distinct each time
                 Log.i("VesperSystem", "debug: ${b.keySet().filter { it != "_t" }.associateWith { b.get(it) }} | ${ui.monitor.describe()}")
                 ui.debug.value = b
+                i.getStringExtra("wifi")?.let { ui.wifiWatchdog.debugAct(it) }
             }
         }, IntentFilter(DEBUG_ACTION))
     }
