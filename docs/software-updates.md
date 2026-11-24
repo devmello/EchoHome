@@ -1,6 +1,6 @@
 # EchoHome software updates (plan)
 
-Status: **plan, nothing built yet** (Nov 23, 2026). No app code changes with this document.
+Status: **plan** (Nov 23, 2026). **A first, smaller version is built (Nov 24): see `docs/status/update.md`.** It differs from this plan on purpose: it reads GitHub's `releases/latest` API (no `channels` manifest), keeps the debug signing key (no release key or migration yet, section 3), has no beta channel, rollout buckets, APK upload or asset updater. Sections 3, 6.4 (init guard), 7 (migrations) and 8 are still open.
 
 Today an update means plugging in a Mac: `./scripts/echo-deploy.sh` builds the release APK and `adb install -r`s it. This plan lets the Echo update itself from GitHub Releases without a Mac, and never leaves it without a working HOME.
 

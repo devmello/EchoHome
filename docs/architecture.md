@@ -27,6 +27,7 @@ Read this after `CLAUDE.md` and `NOTES.md`. The Android project is in `android/`
 | `:feature:camera` | H | presence, profiles |
 | `:feature:photos` | I | Immich photo frame |
 | `:feature:settings` | K | web settings page served by the Echo (phone/Mac browser), built from `services.settingsSchema` |
+| `:feature:update` | U | over-the-network updates from GitHub Releases: daily check, download + SHA-256 + signer check, silent `PackageInstaller` install at night or on "Install now", crash-loop rollback (`UpdateGuard`, called by `:app` before any feature). `docs/status/update.md` |
 
 Feature modules depend on `:core:model` and `:core:design` only (add `:core:data` if you need it). **Never on each other** — talk through the contracts in `VesperServices`.
 
@@ -64,7 +65,7 @@ Feature modules depend on `:core:model` and `:core:design` only (add `:core:data
 
 ## How a feature plugs in (no `:app` edits)
 
-Each module has `object XxxFeature : VesperFeature`. `:app` calls `install(host)` once per process, in order setup, system, phone, airplay, spotify, media, sleep, radio, alarm, home, lists, assistant, camera, photos, clock, settings. **`SetupFeature` (the first-run gate, in `:feature:settings`) stays first:** it tells a fresh install from a set-up one by reading the settings store before any feature writes to it. In `install`:
+Each module has `object XxxFeature : VesperFeature`. `:app` calls `install(host)` once per process, in order setup, system, phone, airplay, spotify, media, sleep, radio, alarm, home, lists, assistant, camera, photos, clock, update, settings. **`SetupFeature` (the first-run gate, in `:feature:settings`) stays first:** it tells a fresh install from a set-up one by reading the settings store before any feature writes to it. Before any of them, `VesperApp` calls `UpdateGuard.onAppStart` (`:feature:update`, right after the watchdog): it counts starts of a fresh update and, when one crash-loops, installs the previous version and starts in safe mode (no features). In `install`:
 
 - `host.registerScreen(ScreenSpec(id, order, inPager, title = "My Screen") { ctx -> MyScreenView(ctx, host.services) })`. Pager order: StandBy is 0; pick 10, 20, … for yours. `inPager = false` = only opened by `services.navigator.show(id)` (e.g. alarm ringing, Control Center-style full screens). A pager screen needs a `title`: the web page's **Screens** section (setting `pager.screens`, `PagerScreens` in `:core:model`) lets the user hide and reorder pager screens; a hidden one is never built in the pager but still opens with `navigator.show(id)`, so don't assume your pager screen exists or is a neighbour.
 - `host.registerOverlay(OverlaySpec(id, z) { ... })` for layers above every screen (island 300, banners 400, HUDs 500, Control Center 600). **Overlays are full-screen views: empty areas must not consume touches** (return false), so the screens below still get them.
@@ -94,6 +95,7 @@ Screens and overlays may implement `VesperScreen` to get `onScreenShown(args)` /
 - `./scripts/echo-perf.sh [SEC] [--then 'cmds']` prints PSS / CPU / frame stats as Markdown for your status file.
 - Launch extras: `--es screen <id>` (others become `args`), `--es face <id>`, `--ez demo true|false` (sample data on/off; restarts the process).
 - The device ends up running whichever build was installed last, so always reinstall your build before screenshotting (build-install does).
+- **Versions:** `versionCode` is the commit count of HEAD (`app/build.gradle.kts`, override `-PvesperVersionCode=N`), `versionName` `0.2.<code>-dev` (releases: `0.2.<code>`). A branch behind the installed build is a downgrade; `build-install.sh` installs with `-d` (allowed on this userdebug ROM, data kept). The `/system` copy is built with versionCode 1 so every update outranks it. Releases: `./scripts/echo-release.sh` (dry run by default; `--publish` is the user's call).
 - Escape hatch on the device: hold two fingers still for 2 s → Android Settings.
 - **Never**: flash, `adb remount`, write `/system`, `adb root` for system changes, change partitions — ask the lead, who asks the user.
 

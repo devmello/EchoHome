@@ -10,12 +10,17 @@
 set -e
 . "$(dirname "$0")/lib.sh"
 ls "$ECHO_ROOT"/backups/*/COMPLETE >/dev/null 2>&1 || { echo "No complete partition backup in backups/. Run ./scripts/echo-backup.sh first."; exit 1; }
-[ "${1:-}" = --no-build ] || (cd "$CHECKOUT/android" && ./gradlew -q :app:assembleRelease)
+# The /system copy is the fallback under every update: versionCode 1, so any update outranks it
+# (at boot Android drops an update whose versionCode is below the /system copy's).
+[ "${1:-}" = --no-build ] || (cd "$CHECKOUT/android" && ./gradlew -q :app:assembleRelease -PvesperVersionCode=1 -PvesperVersionName=0.2-system)
 APK="$CHECKOUT/android/app/build/outputs/apk/release/app-release.apk"
-XML="$ECHO_ROOT/device/privapp-permissions-app.vesper.xml"
-KL="$ECHO_ROOT/device/gating.kl"
-RC="$ECHO_ROOT/device/echohome.rc"
+# The device files of the checkout being installed (a worktree's own, when run from one).
+XML="$CHECKOUT/device/privapp-permissions-app.vesper.xml"
+KL="$CHECKOUT/device/gating.kl"
+RC="$CHECKOUT/device/echohome.rc"
 AAPT2=$(ls -d "$ANDROID_HOME"/build-tools/* | tail -1)/aapt2
+VC=$("$AAPT2" dump badging "$APK" | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" | head -1)
+[ "$VC" = 1 ] || { echo "ABORT: the /system APK must have versionCode 1 (it has ${VC:-none}); run without --no-build"; exit 1; }
 
 lock_acquire; trap lock_release EXIT
 echo_connect >/dev/null
@@ -52,6 +57,7 @@ adb_echo shell cmd package set-home-activity "$HOME_ACTIVITY" >/dev/null 2>&1 ||
 adb_echo shell cmd appops set app.vesper SYSTEM_ALERT_WINDOW allow || true
 echo "--- verify"
 adb_echo shell "dumpsys package app.vesper | grep -E 'codePath|pkgFlags|privateFlags' | head -6
+  dumpsys package app.vesper | grep INSTALL_PACKAGES | sort -u
   dumpsys input | grep -A3 ': gating' | grep -i KeyLayoutFile
   ls -l /sys/devices/platform/amazon-gating/enable
   pm list packages -d | grep camera2
