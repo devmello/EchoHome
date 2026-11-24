@@ -63,7 +63,7 @@ if [ "$MODE" = publish ]; then
   git merge-base --is-ancestor "$COMMIT" origin/main || die "$COMMIT isn't on GitHub's main yet: push it first"
   git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && die "tag $TAG exists locally"
   [ -z "$(git ls-remote --tags origin "refs/tags/$TAG")" ] || die "tag $TAG exists on GitHub"
-  gh auth status >/dev/null 2>&1 || die "gh isn't logged in (gh auth login)"
+  gh api user --jq .login >/dev/null 2>&1 || die "gh isn't logged in (gh auth login)"
 else
   [ -z "$DIRTY" ] || warn "uncommitted changes: this dry run builds them, a publish would refuse"
   [ "$BRANCH" = main ] || warn "on '$BRANCH', not main"
