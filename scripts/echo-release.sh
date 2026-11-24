@@ -54,7 +54,7 @@ OUT=${OUT:-$CHECKOUT/android/build/release/$TAG}
 
 # --- checks
 # Tracked changes anywhere, or untracked files where the build reads them (android/, device/, scripts/).
-DIRTY=$( { git status --porcelain --untracked-files=no; git status --porcelain -- android device scripts | grep "^??"; } )
+DIRTY=$( { git status --porcelain --untracked-files=no; git status --porcelain -- android device scripts | { grep "^??" || true; }; } )
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [ "$MODE" = publish ]; then
   [ -z "$DIRTY" ] || die "uncommitted changes (a release is built from a clean commit)"
