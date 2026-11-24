@@ -39,9 +39,9 @@ object ClockFeature : VesperFeature {
         host.registerFace(FaceSpec("glass", "Liquid Glass", GlassFace.COLORS, order = 50) { GlassFace(it, s) })
         host.registerFace(FaceSpec("weather", "Weather", emptyList(), order = 60) { WeatherFace(it, s) })
         host.registerFace(FaceSpec("calendar", "Calendar", CalendarFace.COLORS, order = 70) { CalendarFace(it, s) })
-        host.registerScreen(ScreenSpec(SCREEN_STANDBY, order = 0) { StandbyScreen(it, s, night) })
+        host.registerScreen(ScreenSpec(SCREEN_STANDBY, order = 0, title = "StandBy") { StandbyScreen(it, s, night) })
         // two Smart Stacks side by side, right after StandBy (WidgetsScreen.kt)
-        host.registerScreen(ScreenSpec(SCREEN_WIDGETS, order = 5) { WidgetsScreen(it, s, night) })
+        host.registerScreen(ScreenSpec(SCREEN_WIDGETS, order = 5, title = "Widgets") { WidgetsScreen(it, s, night) })
         host.registerSettings(ClockSettings.section(s.faces.faces.value.filter { it.id in CLOCK_FACES }))
     }
 }

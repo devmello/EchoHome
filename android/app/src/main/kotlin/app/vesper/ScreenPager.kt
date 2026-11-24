@@ -27,15 +27,21 @@ import kotlin.math.roundToInt
  * still off screen ([prerender]). Built on the first drag instead, the Widgets page cost the
  * first StandBy → Widgets swipe ~160 ms of construction plus ~50 ms of recording (34-40 % janky
  * frames over the first swipes after a start, against ~4 % later).
+ *
+ * Pages are keyed (the screen ids). [setPages] changes the list live (the user's Screens setting):
+ * pages that stay keep their views, the ones that leave are removed and freed, and new ones are
+ * built ahead on quiet moments like any neighbour.
  */
 @SuppressLint("ViewConstructor")
-class ScreenPager(context: Context, private val pageCount: Int, private val createPage: (Int) -> View) : ViewGroup(context) {
+class ScreenPager(context: Context, keys: List<String>, private val createPage: (String) -> View) : ViewGroup(context) {
 
     var onPageSelected: ((Int) -> Unit)? = null
     var currentPage = 0
         private set
 
-    private val pages = arrayOfNulls<View>(pageCount)
+    private var keys: List<String> = keys.ifEmpty { listOf("") }
+    val pageCount: Int get() = keys.size
+    private val pages = HashMap<String, View>()
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private val minFling = ViewConfiguration.get(context).scaledMinimumFlingVelocity * 4
     private var downX = 0f
@@ -45,8 +51,10 @@ class ScreenPager(context: Context, private val pageCount: Int, private val crea
     private var velocity: VelocityTracker? = null
     private var anim: ValueAnimator? = null
 
-    private val prerendered = BooleanArray(pageCount)
-    private val lastPrerender = LongArray(pageCount)
+    /** Pages that left the list ([setPages]): invisible, removed one per quiet moment ([warmStep]). */
+    private val retired = LinkedHashMap<String, View>()
+    private val prerendered = HashSet<String>()
+    private val lastPrerender = HashMap<String, Long>()
     private val scratch = RenderNode("pager-prerender")
     private var warmAllowed = false
     private val allowWarm = Runnable { warmAllowed = true; warm.start() }
@@ -76,19 +84,20 @@ class ScreenPager(context: Context, private val pageCount: Int, private val crea
      */
     private fun warmStep(): Boolean {
         if (dragging || anim != null || width == 0) return false // [scrollToPage] restarts it at rest
+        retired.keys.firstOrNull()?.let { removeView(retired.remove(it)); return true }
         val now = SystemClock.uptimeMillis()
         var later = Long.MAX_VALUE
         for (i in intArrayOf(currentPage + 1, currentPage - 1)) {
-            if (i !in 0 until pageCount) continue
-            val p = pages[i]
+            val key = keys.getOrNull(i) ?: continue
+            val p = pages[key]
             if (p == null) { ensurePage(i); return true }
             if (p.isLayoutRequested || !p.isLaidOut) return false // the next traversal lays it out; [onLayout] restarts this
-            if (prerendered[i] && !p.isDirty) continue
-            val wait = lastPrerender[i] + PRERENDER_EVERY_MS - now
+            if (key in prerendered && !p.isDirty) continue
+            val wait = (lastPrerender[key] ?: 0L) + PRERENDER_EVERY_MS - now
             if (wait > 0) { later = minOf(later, wait); continue }
             prerender(p)
-            prerendered[i] = true
-            lastPrerender[i] = now
+            prerendered += key
+            lastPrerender[key] = now
             return true
         }
         if (later != Long.MAX_VALUE) { removeCallbacks(rewarm); postDelayed(rewarm, later) }
@@ -109,19 +118,46 @@ class ScreenPager(context: Context, private val pageCount: Int, private val crea
     /** A neighbour changed while off screen (e.g. a widget built ahead): record it again on a quiet moment. */
     override fun onDescendantInvalidated(child: View, target: View) {
         super.onDescendantInvalidated(child, target)
-        if (child !== pages.getOrNull(currentPage) && !warm.isRunning) scheduleWarm()
+        if (child !== page(currentPage) && !warm.isRunning) scheduleWarm()
     }
 
     private fun ensurePage(i: Int): View? {
-        if (i !in 0 until pageCount) return null
-        pages[i]?.let { return it }
-        val v = createPage(i)
-        pages[i] = v
+        val key = keys.getOrNull(i) ?: return null
+        pages[key]?.let { return it }
+        retired.remove(key)?.let { it.visibility = VISIBLE; pages[key] = it; return it } // back before it was freed
+        val v = createPage(key)
+        pages[key] = v
         addView(v)
         return v
     }
 
-    fun page(i: Int): View? = pages.getOrNull(i)
+    fun page(i: Int): View? = keys.getOrNull(i)?.let { pages[it] }
+
+    /**
+     * Replaces the page list, showing page [current] of [newKeys] without animation. Pages that
+     * stay keep their views (the current one isn't rebuilt or re-recorded, only moved); pages that
+     * left turn invisible at once and are removed (freed) on quiet moments. The caller tells
+     * screens they were hidden / shown.
+     */
+    fun setPages(newKeys: List<String>, current: Int) {
+        val next = newKeys.ifEmpty { listOf("") }
+        if (next == keys) return
+        val keep = next.toSet()
+        for (k in pages.keys - keep) {
+            // Detaching a big page (Widgets) costs a frame: hide it now, remove it on a quiet moment.
+            val v = pages.remove(k) ?: continue
+            v.visibility = INVISIBLE
+            retired[k] = v
+            prerendered -= k; lastPrerender -= k
+        }
+        keys = next
+        anim?.cancel(); anim = null
+        dragging = false
+        currentPage = current.coerceIn(0, pageCount - 1)
+        ensurePage(currentPage)
+        requestLayout() // [onLayout] places the pages at their new indices and scrolls to [currentPage]
+        scheduleWarm()
+    }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val w = MeasureSpec.getSize(widthMeasureSpec)
@@ -133,7 +169,7 @@ class ScreenPager(context: Context, private val pageCount: Int, private val crea
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         val w = r - l
-        pages.forEachIndexed { i, v -> v?.layout(i * w, 0, (i + 1) * w, b - t) }
+        keys.forEachIndexed { i, k -> pages[k]?.layout(i * w, 0, (i + 1) * w, b - t) }
         if (anim == null && !dragging) scrollTo(currentPage * w, 0)
         scheduleWarm()
     }

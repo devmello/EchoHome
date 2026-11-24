@@ -24,7 +24,8 @@ class PrefsSettingsStore(context: Context) : SettingsStore {
     private val prefs: SharedPreferences = context.getSharedPreferences("echo_settings", Context.MODE_PRIVATE)
     private val _changes = MutableSharedFlow<String>(extraBufferCapacity = 32)
     override val changes: SharedFlow<String> = _changes.asSharedFlow()
-    // Held strongly: SharedPreferences keeps listeners in a weak map.
+    // Held strongly: SharedPreferences keeps listeners in a weak map. R8 drops a write-only field,
+    // so `:app`'s proguard-rules.pro keeps this one (without it, release builds lost live settings).
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key -> if (key != null) _changes.tryEmit(key) }
 
     init { prefs.registerOnSharedPreferenceChangeListener(listener) }

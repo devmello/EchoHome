@@ -11,6 +11,40 @@ The Echo serves a settings page on the home Wi-Fi. Open it in Safari on an iPhon
 
 Keys (Anthropic, calendar links, Immich, Home Assistant) go in **Accounts & keys**. You can set or clear them, but they are never shown again.
 
+## Nov 24: Screens (choose the swipe pages)
+
+The Echo had too many swipeable pages. **Settings › Screens › Swipe through** lists every pager screen with a switch and up / down buttons (no drag: buttons work with a thumb and VoiceOver; moved rows slide 0.32 s). StandBy is a fixed first row ("Always first"). Changes apply on the Echo at once.
+
+- **Contract** (`:core:model`): `ScreenSpec.title`, filled in for every pager screen (StandBy, Widgets, Now Playing, Sleep Sounds, Radio, Home, Alarms, Timers, Lists, Commute, Stocks, Photos). New `SettingType.ORDER`: an ordering of `options`, each on/off, stored `"a,-b,c"` (`-` = off); `placeholder` = label of a fixed first row. Pure helpers in `PagerScreens.kt`: `OrderValue.parse/format/resolve` and `PagerScreens.pages(screens, stored)`.
+- **Rules** (`OrderValue.resolve`): unknown ids dropped, first of duplicates wins, options missing from the stored value (a screen new in a later version, or Home once Home Assistant is set up) are added **on**, right after the option that precedes them by default. A screen that isn't registered stays out and keeps its stored place for when it comes back. StandBy is always page 0 and can't be hidden (it isn't an option; `standby` in a stored value is ignored). Default `""` = today's set and order.
+- **Setting** `pager.screens`, section "Screens" (order 5), registered by `:app` (`VesperApp.registerPagerSettings`) after every feature, since its options are the screens that registered.
+- **Server** (`api/Values.kt`, `SchemaJson.kt`): ORDER validates a JSON array of ids (`"-id"` = off; or the stored string): each must be an option, once (unknown → 422, duplicate → 422); the write is normalised to the full list. Read back as `[{"id","on"}, …]` over every option. `options` go out in the schema as for CHOICE.
+- **Page** (`app.js` `RENDER.ORDER`, `app.css` `.order*`): saves the whole list after each tap; saves are chained so the Echo always ends on the last order, and replies don't redraw the list mid-sequence. Rows are keyed nodes, so focus stays on the button you pressed.
+- **Echo** (`MainActivity` + `ScreenPager`, see clock.md): hidden screens are left out of the pager and never built there; they still open with `navigator.show` (Control Center, voice, island, `--es screen`) as a screen on top, like any `inPager = false` screen. No on-Echo editor (would need a new designed screen; left out to keep this small).
+- **Tests:** `PagerScreensTest` (12, `:core:model`): defaults, hide/reorder, StandBy first and not hideable, all hidden, unknown ids, off-pager screens, duplicates, a new screen at its default place, several new ones at the start, an unconfigured screen (Home) keeping its place, no StandBy registered, parse/format. `ValidationTest.order` / `orderReadsEveryOption`. `:feature:settings` 109 tests pass (DevServer skipped). Checked at 390 px against the dev server (dark): toggling and moving saved and read back.
+
+### Found and fixed: release builds never applied settings-page changes live
+`PrefsSettingsStore` keeps its `OnSharedPreferenceChangeListener` in a field ("held strongly: SharedPreferences keeps listeners in a weak map"), but the field is only written, so **R8 removed it** (it's missing from the release `mapping.txt`). The listener was then garbage collected and `SettingsStore.changes` went silent in release builds: no SSE `change` events, no live apply of *any* setting from the web page (debug builds were fine, which is where the Nov 22 checks ran). Seen on the Echo: PUT 200, the value stored, no `change` event on `/api/events`, the pager unchanged. Fix: a keep rule in `app/proguard-rules.pro` (verified with `apkanalyzer`: the field is back). After it, the same PUT gives a `change` event and the pager follows within the same second.
+
+### Checked on the Echo (release build of this branch, Nov 24 00:30–00:50)
+All through the page's API (`PUT /api/settings {"pager.screens": [...]}` with a paired cookie, from the Mac), screenshots with `screencap`, no Home Assistant (so no Home page; its absence was handled).
+- Schema: the Screens section lists the 10 choosable screens with their titles; values read back as `[{"id","on"}]`.
+- **Live, current page kept:** on Alarms (page 5, every page built), hid Widgets / Sleep Sounds / Radio and moved Photos first. Alarms stayed on screen; swiping back went Now Playing → Photos → StandBy (screenshots `live-3/4/5`), forward again reached Alarms after 3 swipes. Logcat: `Pager: standby,photos,nowplaying,alarms,timers,…`.
+- **Live, current page hidden:** hiding Alarms while on it went to StandBy.
+- **Hidden screen still opens:** `--es screen sleep` with Sleep Sounds hidden opened it on top; Back returned to StandBy. The first swipe from StandBy then went to Photos (the new first page).
+- **Persisted:** after a force-stop the pager started with the stored set (4 pages: StandBy, Widgets, Now Playing, Alarms).
+- **SSE:** the same PUT now produces one `change` event (0 before the R8 fix).
+
+### Measured on the Echo
+| | PSS 20 s after start | PSS after visiting every page |
+|---|---|---|
+| All 11 pages (default) | 64.0 / 64.8 / 64.6 MB | 97.4 / 98.5 / 98.8 MB (median **98.5**) |
+| 4 pages (StandBy, Widgets, Now Playing, Alarms) | 64.5 / 64.4 MB | 74.2 / 74.1 MB (median **74.1**) |
+
+- Hiding 7 screens saves **~24 MB** once the user has been through the pages (start-up is the same: only StandBy's neighbours are built ahead either way).
+- Hiding 3 built pages live (Widgets, Sleep Sounds, Radio) took the running app from 99.7 to 93.0 MB within 8 s (no forced GC).
+- Frames during a live change, on a resting Alarms page (3 rounds, `gfxinfo` over 6 s): **hiding** 3–5 frames, 0 janky, p99 5–15 ms. The first version removed the views at once and drew one 36 ms frame; pages that leave are now made invisible at once and removed on quiet moments. **Showing** them again: one 61–65 ms frame per round, a few hundred ms after the change: that's the new neighbour (Radio) being built ahead on a quiet moment, the same thing `ScreenPager` does after start; nothing moves on screen at that point.
+
 ## Nov 23: first-run setup (screen `onboarding`)
 
 A paged, skippable setup for a fresh Echo. Code: `feature/settings/.../setup/` (`SetupFeature`, `SetupModel.kt`, `OnboardingView`, `SetupArt.kt`). It's in `:feature:settings` (not a new module) because the phone step reuses the running settings server's address, QR encoder and pairing.

@@ -17,7 +17,11 @@ import app.vesper.core.model.FeatureHost
 import app.vesper.core.model.KeyHandler
 import app.vesper.core.model.Navigator
 import app.vesper.core.model.OverlaySpec
+import app.vesper.core.model.PagerScreens
 import app.vesper.core.model.ScreenSpec
+import app.vesper.core.model.SettingSpec
+import app.vesper.core.model.SettingType
+import app.vesper.core.model.SettingsSection
 import app.vesper.feature.airplay.AirPlayFeature
 import app.vesper.feature.alarm.AlarmFeature
 import app.vesper.feature.assistant.AssistantFeature
@@ -97,9 +101,24 @@ class VesperApp : Application(), FeatureHost {
         registerDebugScreens()
         screens.sortBy { it.order }
         overlays.sortBy { it.z }
+        registerPagerSettings()
         services.homeAssistant.start()
         Log.i(TAG, "Started: ${FeatureList.size} features, ${screens.size} screens, ${overlays.size} overlays, " +
             "${services.faces.faces.value.size} faces, demo=$demo, ${secrets}")
+    }
+
+    /**
+     * The web page's Screens section: which pager screens to swipe through, in which order
+     * ([PagerScreens]). Registered here, after every feature, because its choices are the
+     * screens that registered (Home only with Home Assistant). MainActivity follows it live.
+     */
+    private fun registerPagerSettings() {
+        val first = screens.firstOrNull { it.id == PagerScreens.FIRST }?.title ?: "StandBy"
+        registerSettings(SettingsSection("screens", "Screens", 5, listOf(
+            SettingSpec(PagerScreens.KEY, "Swipe through", SettingType.ORDER, "", placeholder = first,
+                options = PagerScreens.options(screens),
+                help = "$first is always first. Hidden screens aren’t loaded, and still open from Control Center and by voice."),
+        )))
     }
 
     override fun registerScreen(spec: ScreenSpec) { screens.removeAll { it.id == spec.id }; screens += spec }

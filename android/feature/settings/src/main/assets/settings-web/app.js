@@ -374,6 +374,67 @@ const RENDER = {
     return { below: h('div', {}, list, add), set };
   },
 
+  /** An ordering of options, each on or off: the Screens list. Up / down buttons (work with a thumb and VoiceOver), a switch each. */
+  ORDER(spec, ctx) {
+    const titles = new Map(spec.options || []);
+    let items = [];
+    const els = new Map(); // id -> {el, up, down, sw}
+    const list = h('div', { class: 'order', role: 'list', 'aria-labelledby': ctx.titleId });
+    const pinned = spec.placeholder && h('div', { class: 'order-item pinned', role: 'listitem' },
+      h('span', { class: 'name', text: spec.placeholder }), h('span', { class: 'note', text: 'Always first' }));
+    // Saves go out one after another, so the Echo ends with the last order; replies don't redraw mid-sequence.
+    let chain = Promise.resolve(), pending = 0;
+    const send = () => {
+      const v = items.map((x) => (x.on ? x.id : `-${x.id}`));
+      pending++;
+      chain = chain.then(() => ctx.save(v)).finally(() => { if (--pending === 0) paint(spec.value); });
+    };
+    const ARROW = (d) => svg(`<svg viewBox="0 0 14 14" aria-hidden="true"><path d="${d}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`);
+    const move = (id, d) => {
+      const i = items.findIndex((x) => x.id === id), j = i + d;
+      if (i < 0 || j < 0 || j >= items.length) return;
+      [items[i], items[j]] = [items[j], items[i]];
+      draw(true);
+      send();
+    };
+    const entry = (id) => {
+      const name = titles.get(id) || id;
+      const sw = h('input', { type: 'checkbox', class: 'switch', role: 'switch', 'aria-label': `Show ${name}`,
+        onchange: () => { const x = items.find((y) => y.id === id); if (x) { x.on = sw.checked; draw(false); send(); } } });
+      const up = h('button', { type: 'button', class: 'move', 'aria-label': `Move ${name} up`, onclick: () => move(id, -1) }, ARROW('M3 9l4-4 4 4'));
+      const down = h('button', { type: 'button', class: 'move', 'aria-label': `Move ${name} down`, onclick: () => move(id, 1) }, ARROW('M3 5l4 4 4-4'));
+      const el = h('div', { class: 'order-item', role: 'listitem' }, h('span', { class: 'name', text: name }), up, down, sw);
+      return { el, up, down, sw };
+    };
+    /** Puts the rows in [items] order (moving the same nodes keeps focus), sliding moved rows from where they were. */
+    const draw = (animate) => {
+      const before = new Map();
+      if (animate) for (const [id, e] of els) before.set(id, e.el.getBoundingClientRect().top);
+      items.forEach((x, i) => {
+        let e = els.get(x.id);
+        if (!e) { e = entry(x.id); els.set(x.id, e); }
+        e.sw.checked = x.on;
+        e.el.classList.toggle('off', !x.on);
+        e.up.disabled = i === 0;
+        e.down.disabled = i === items.length - 1;
+        list.append(e.el);
+      });
+      for (const [id, e] of els) if (!items.some((x) => x.id === id)) { e.el.remove(); els.delete(id); }
+      if (!animate || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      for (const [id, e] of els) {
+        const dy = (before.get(id) ?? 0) - e.el.getBoundingClientRect().top;
+        if (dy && e.el.animate) e.el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 320, easing: 'cubic-bezier(0.3, 1.2, 0.5, 1)' });
+      }
+    };
+    const paint = (v) => {
+      items = (Array.isArray(v) ? v : []).filter((x) => x && titles.has(x.id)).map((x) => ({ id: x.id, on: x.on !== false }));
+      draw(false);
+    };
+    const set = (v) => { if (pending === 0) paint(v); };
+    paint(spec.value);
+    return { below: h('div', { class: 'order-box' }, pinned, list), set, busy: () => false };
+  },
+
   LOCATION(spec, ctx) {
     const now = h('span', { class: 'loc-now' });
     const q = h('input', { class: 'field', type: 'search', placeholder: 'Search for a town or city', autocomplete: 'off',

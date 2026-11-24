@@ -218,3 +218,9 @@ Measured on the Echo (debug build, `echo-perf.sh`; swipes are raw `sendevent` on
 - PSS 20 s after the start: 59.7 MB (59.5 / 60.2 / 59.7), up from 44.1 MB, because Widgets and Now Playing are now built ahead (+15.6 MB, more than the 2–5 MB I expected). After the swipes: 67.8 MB (68.2 / 67.8 / 67.2), slightly below the 69.0 MB before. Device MemAvailable stayed ~384 MB.
 - Time to first frame: 1811 / 1823 / 1737 ms (median 1811 ms, before 1682 ms; within run-to-run noise of a cold start on this device, not investigated further).
 - The ~48 ms p99 frame in every pass is a single frame per pass; not traced yet.
+
+## Nov 24: the pager follows the Screens setting (`:app`)
+
+- `ScreenPager` pages are keyed by screen id (`ScreenPager(context, ids) { id -> view }`). `setPages(ids, current)` replaces the list live: pages that stay keep their views (the current one is only moved, not rebuilt or re-recorded), pages that left turn invisible at once and are removed one per quiet moment (first step of the existing `QuietWork` warm-up), and a page that comes back before it was freed is reused. New neighbours are built ahead on quiet moments as before; ahead-of-time work (`WARM_DELAY_MS`, prerender) is unchanged.
+- `MainActivity` builds the list with `PagerScreens.pages(app.screens, settings["pager.screens"])` and re-applies it on `settings.changes`: current page kept if still listed, else StandBy (with `onScreenHidden` / `onScreenShown`). A hidden screen opens on top through `navigator.show` like any off-pager screen.
+- Measured (details in settings.md): hiding 3 built pages on a resting page drew 3–5 frames, none janky; showing them again costs one ~61 ms frame on a resting page when the new neighbour is built ahead. All 11 pages visited: 98.5 MB PSS; 4 pages: 74.1 MB.

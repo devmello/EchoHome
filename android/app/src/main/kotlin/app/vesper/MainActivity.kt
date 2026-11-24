@@ -16,12 +16,14 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.FrameLayout
 import app.vesper.core.design.UiQuiet
+import app.vesper.core.model.PagerScreens
 import app.vesper.core.model.VesperScreen
 import app.vesper.core.model.ScreenSpec
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 /**
@@ -54,12 +56,12 @@ class MainActivity : Activity() {
         setTurnScreenOn(true)
         window.setDecorFitsSystemWindows(false)
 
-        pagerScreens = app.screens.filter { it.inPager }
+        pagerScreens = pagerPages()
         root = FrameLayout(this)
-        pager = ScreenPager(this, pagerScreens.size.coerceAtLeast(1)) { i ->
-            pagerScreens.getOrNull(i)?.factory?.invoke(this) ?: View(this)
+        pager = ScreenPager(this, pagerScreens.map { it.id }) { id ->
+            app.screens.firstOrNull { it.id == id }?.factory?.invoke(this) ?: View(this)
         }
-        pager.onPageSelected = { i -> onShown(pagerScreens[i].id, null) }
+        pager.onPageSelected = { i -> pagerScreens.getOrNull(i)?.let { onShown(it.id, null) } }
         root.addView(pager, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         topLayer = FrameLayout(this)
         root.addView(topLayer, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
@@ -75,10 +77,40 @@ class MainActivity : Activity() {
         watchBars()
 
         scope.launch { app.navigator.requests.collect { (id, args) -> show(id, args) } }
+        scope.launch { app.services.settings.changes.filter { it == PagerScreens.KEY }.collect { applyPagerSetting() } }
         handleIntent(intent, initial = true)
     }
 
     // --- navigation ---
+
+    /** The pager's pages: the user's Screens setting over the registered screens. */
+    private fun pagerPages(): List<ScreenSpec> {
+        val stored = try { app.services.settings.getString(PagerScreens.KEY, "") } catch (e: ClassCastException) { "" }
+        return PagerScreens.pages(app.screens, stored)
+    }
+
+    /**
+     * The Screens setting changed (web page): rebuild the page list live. The current page stays
+     * (same view, no rebuild) if it's still in the list, else the pager goes to StandBy. Screens
+     * that left are freed; new ones are built ahead on quiet moments like any neighbour.
+     */
+    private fun applyPagerSetting() {
+        val next = pagerPages()
+        if (next.map { it.id } == pagerScreens.map { it.id }) return
+        val curId = pagerScreens.getOrNull(pager.currentPage)?.id
+        val stays = next.indexOfFirst { it.id == curId }
+        val pagerShown = topScreen == null
+        if (stays < 0 && pagerShown) (pager.page(pager.currentPage) as? VesperScreen)?.onScreenHidden()
+        pagerScreens = next
+        // a spare copy of a screen opened on top while it wasn't a page: the pager builds its own now
+        for (s in next) if (topScreen?.first != s.id) offPagerViews.remove(s.id)
+        pager.setPages(next.map { it.id }, if (stays >= 0) stays else 0)
+        Log.i(VesperApp.TAG, "Pager: ${next.joinToString(",") { it.id }}")
+        if (stays < 0 && pagerShown) {
+            shownId = null
+            pagerScreens.getOrNull(0)?.let { onShown(it.id, null) }
+        }
+    }
 
     private fun show(id: String, args: Bundle?) {
         val pagerIndex = pagerScreens.indexOfFirst { it.id == id }
@@ -102,10 +134,11 @@ class MainActivity : Activity() {
     }
 
     private fun closeTopScreen() {
-        val (_, v) = topScreen ?: return
+        val (id, v) = topScreen ?: return
         (v as? VesperScreen)?.onScreenHidden()
         topLayer.removeView(v)
         topScreen = null
+        if (pagerScreens.any { it.id == id }) offPagerViews.remove(id) // became a page while open on top
         (pager.page(pager.currentPage) as? VesperScreen)?.onScreenShown(null)
         pagerScreens.getOrNull(pager.currentPage)?.let { shownId = it.id; app.navigator.setCurrent(it.id) }
     }

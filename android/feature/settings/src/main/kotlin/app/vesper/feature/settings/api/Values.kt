@@ -1,5 +1,6 @@
 package app.vesper.feature.settings.api
 
+import app.vesper.core.model.OrderValue
 import app.vesper.core.model.SecretStore
 import app.vesper.core.model.Secrets
 import app.vesper.core.model.SettingSpec
@@ -114,6 +115,23 @@ object Validator {
                 listOf(Write.Secret(k, value.ifEmpty { null }))
             }
             SettingType.ACTION -> fail("${spec.title} is a button, not a value")
+            SettingType.ORDER -> {
+                // The page sends every option in its order, "-id" for one switched off.
+                val items = when (v) {
+                    is JSONArray -> (0 until v.length()).map { i ->
+                        ((v.opt(i) as? String) ?: fail("${spec.title}: text items only")).also { if (',' in it) fail("${spec.title}: not one of the choices") }
+                    }.joinToString(",")
+                    is String -> v
+                    else -> fail("${spec.title}: expected a list")
+                }.let(OrderValue::parse)
+                val known = spec.options.map { it.first }
+                val seen = HashSet<String>()
+                for (it in items) {
+                    if (it.id !in known) fail("${spec.title}: not one of the choices")
+                    if (!seen.add(it.id)) fail("${spec.title}: each one only once")
+                }
+                listOf(Write.Str(k, OrderValue.format(OrderValue.resolve(known, OrderValue.format(items)))))
+            }
         }
     }
 
@@ -180,6 +198,11 @@ object Reader {
                 val p = raw.split(',').mapNotNull { it.trim().toDoubleOrNull() }
                 if (p.size != 2) JSONObject.NULL
                 else JSONObject().put("lat", p[0]).put("lon", p[1]).put("place", safeString(s, "$k.place", ""))
+            }
+            // [{"id": "widgets", "on": true}, …]: every option, in the stored order (new ones at their default place).
+            SettingType.ORDER -> JSONArray().apply {
+                for (it in OrderValue.resolve(spec.options.map { o -> o.first }, safeString(s, k, d)))
+                    put(JSONObject().put("id", it.id).put("on", it.on))
             }
             SettingType.SECRET, SettingType.ACTION -> null
             else -> safeString(s, k, d)

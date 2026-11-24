@@ -49,7 +49,7 @@ object SchemaJson {
             else -> {
                 o.put("default", spec.default)
                 spec.placeholder?.let { o.put("placeholder", it) }
-                if (spec.type == SettingType.CHOICE) {
+                if (spec.type == SettingType.CHOICE || spec.type == SettingType.ORDER) {
                     o.put("options", JSONArray().apply { for ((v, l) in spec.options) put(JSONArray().put(v).put(l)) })
                 }
                 o.put("value", Reader.value(spec, settings) ?: JSONObject.NULL)

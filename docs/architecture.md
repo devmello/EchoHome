@@ -58,11 +58,15 @@ Feature modules depend on `:core:model` and `:core:design` only (add `:core:data
 
 - `services.radio: RadioControl` (`:feature:radio` binds; `NoRadio` by default): `play(query)` (favourites first, then the directory), `stop()`, `nowPlaying`. The assistant's `play_radio` / `stop_radio` use it. The station itself reaches Now Playing, the island and Control Center as the media source `"radio"` (`MediaSourceKind.OTHER_APP`, `sourceLabel` = the station), so no `MediaSourceKind` was added.
 
+## Contracts added Nov 24 (Screens: choose the pager's pages)
+
+- `ScreenSpec.title` (human name of a pager screen). `SettingType.ORDER` (an ordering of `options`, each on/off, stored `"a,-b,c"`; `placeholder` = a fixed first entry's label) with `OrderValue` / `PagerScreens` (pure, tested) in `:core:model`. `:app` registers the "Screens" section (order 5) after every feature and `MainActivity` follows `pager.screens` live (`ScreenPager.setPages`).
+
 ## How a feature plugs in (no `:app` edits)
 
 Each module has `object XxxFeature : VesperFeature`. `:app` calls `install(host)` once per process, in order setup, system, phone, airplay, spotify, media, sleep, radio, alarm, home, lists, assistant, camera, photos, clock, settings. **`SetupFeature` (the first-run gate, in `:feature:settings`) stays first:** it tells a fresh install from a set-up one by reading the settings store before any feature writes to it. In `install`:
 
-- `host.registerScreen(ScreenSpec(id, order, inPager) { ctx -> MyScreenView(ctx, host.services) })`. Pager order: StandBy is 0; pick 10, 20, … for yours. `inPager = false` = only opened by `services.navigator.show(id)` (e.g. alarm ringing, Control Center-style full screens).
+- `host.registerScreen(ScreenSpec(id, order, inPager, title = "My Screen") { ctx -> MyScreenView(ctx, host.services) })`. Pager order: StandBy is 0; pick 10, 20, … for yours. `inPager = false` = only opened by `services.navigator.show(id)` (e.g. alarm ringing, Control Center-style full screens). A pager screen needs a `title`: the web page's **Screens** section (setting `pager.screens`, `PagerScreens` in `:core:model`) lets the user hide and reorder pager screens; a hidden one is never built in the pager but still opens with `navigator.show(id)`, so don't assume your pager screen exists or is a neighbour.
 - `host.registerOverlay(OverlaySpec(id, z) { ... })` for layers above every screen (island 300, banners 400, HUDs 500, Control Center 600). **Overlays are full-screen views: empty areas must not consume touches** (return false), so the screens below still get them.
 - `host.registerKeyHandler { event -> ... }` for hardware keys.
 - `host.registerFace(FaceSpec(...))` for StandBy faces.

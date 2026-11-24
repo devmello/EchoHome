@@ -31,6 +31,14 @@ enum class SettingType {
     SECRET,
     /** A button; runs [SettingSpec.onAction] on the main thread. */
     ACTION,
+    /**
+     * An ordering of [SettingSpec.options], each switched on or off (the page shows a list with
+     * switches and up / down buttons). Stored as "a,-b,c" ("-" = off); read it with
+     * [OrderValue.resolve]. [SettingSpec.placeholder] = the label of a fixed first entry shown
+     * above the list (e.g. "StandBy"), not part of the value. Default "" = every option on, in
+     * the options' order.
+     */
+    ORDER,
 }
 
 /**
@@ -53,7 +61,7 @@ data class SettingSpec(
     val step: Float? = null,
     /** Shown only with the page's "Advanced" switch on. */
     val advanced: Boolean = false,
-    /** TEXT / SECRET: grey example text in the empty field (e.g. "sk-ant-…"). */
+    /** TEXT / SECRET: grey example text in the empty field (e.g. "sk-ant-…"). ORDER: the fixed first entry's label. */
     val placeholder: String? = null,
     /** TEXT / SECRET: a several-line box; each non-empty line is one value, stored comma-joined. */
     val multiline: Boolean = false,

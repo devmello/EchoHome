@@ -53,7 +53,7 @@ object SleepFeature : VesperFeature {
         controller = c
         s.sleep = c
         host.registerSettings(SleepSettings.section)
-        host.registerScreen(ScreenSpec(SleepSounds.SCREEN_ID, order = 15) { SleepScreen(it, s, c) })
+        host.registerScreen(ScreenSpec(SleepSounds.SCREEN_ID, order = 15, title = "Sleep Sounds") { SleepScreen(it, s, c) })
         s.scope.launch { s.settings.changes.collect { if (it == SleepSettings.LEVEL) c.levelChanged() } }
         // After every feature is installed (system controls, media hub producers).
         main.post {

@@ -45,6 +45,9 @@ interface FeatureHost {
 /**
  * @param order position in the horizontal pager (lower = further left). StandBy faces are 0.
  * @param inPager false = not swipeable, only opened with [Navigator.show] (e.g. "alarm-ringing").
+ *   A pager screen the user switched off (setting [PagerScreens.KEY], the web page's Screens
+ *   section) is left out of the pager and never built there, but still opens with [Navigator.show].
+ * @param title the name people see for a pager screen (the web page's Screens list): "Now Playing".
  * @param factory builds the view once; it's kept while the activity lives. If the view implements
  *   [VesperScreen] it's told when it is shown/hidden so it can stop animations off screen.
  */
@@ -52,6 +55,7 @@ class ScreenSpec(
     val id: String,
     val order: Int,
     val inPager: Boolean = true,
+    val title: String? = null,
     val factory: (Context) -> View,
 )
 

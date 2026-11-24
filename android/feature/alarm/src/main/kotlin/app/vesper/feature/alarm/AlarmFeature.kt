@@ -36,8 +36,8 @@ object AlarmFeature : VesperFeature {
         AlarmService.createChannels(host.context)
 
         host.registerScreen(ScreenSpec(RealAlarmStore.SCREEN_ID, order = 1000, inPager = false) { AlarmScreen(it, host.services) })
-        host.registerScreen(ScreenSpec(ALARMS_SCREEN_ID, order = 25) { AlarmsScreen(it, host.services) })
-        host.registerScreen(ScreenSpec(RealTimerStore.SCREEN_ID, order = 30) { TimersScreen(it, host.services) })
+        host.registerScreen(ScreenSpec(ALARMS_SCREEN_ID, order = 25, title = "Alarms") { AlarmsScreen(it, host.services) })
+        host.registerScreen(ScreenSpec(RealTimerStore.SCREEN_ID, order = 30, title = "Timers") { TimersScreen(it, host.services) })
         host.registerOverlay(OverlaySpec("alarm.sunrise", 250) { SunriseOverlay(it, host.services) })
 
         // Evaluate once every feature is installed (the phase side effects use other services).

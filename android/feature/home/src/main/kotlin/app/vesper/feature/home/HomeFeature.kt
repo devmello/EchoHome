@@ -81,8 +81,8 @@ object HomeFeature : VesperFeature {
         host.services.island.hideOnScreen(BriefWatcher.SCREEN_ID)
         if (s.config.debug) debugIntents(s, rain, leave)
 
-        host.registerScreen(ScreenSpec("commute", order = 40) { ctx -> CommuteView(ctx, host.services) })
-        host.registerScreen(ScreenSpec("stocks", order = 50) { ctx -> StocksView(ctx, host.services) })
+        host.registerScreen(ScreenSpec("commute", order = 40, title = "Commute") { ctx -> CommuteView(ctx, host.services) })
+        host.registerScreen(ScreenSpec("stocks", order = 50, title = "Stocks") { ctx -> StocksView(ctx, host.services) })
         // Weather radar (RainViewer over a drawn Natural Earth map), opened from the Weather face / widget.
         host.registerScreen(ScreenSpec(RadarScreen.SCREEN_ID, order = 55, inPager = false) { ctx -> RadarScreen(ctx, host.services) })
 
@@ -90,12 +90,12 @@ object HomeFeature : VesperFeature {
         if (haConfigured) {
             // services.homeAssistant is bound by :app before install when HA is configured.
             doorbell = DoorbellWatcher(s.homeAssistant, s.settings, s.notifications, s.island, s.scope).also { it.start() }
-            host.registerScreen(ScreenSpec("home", order = 20) { ctx -> HomeScreenView(ctx, host.services, host.services.homeAssistant, demo = false) })
+            host.registerScreen(ScreenSpec("home", order = 20, title = "Home") { ctx -> HomeScreenView(ctx, host.services, host.services.homeAssistant, demo = false) })
             // Light detail, opened from the Home lamp tile (long press) or `--es screen lamp --es entity <id>`.
             host.registerScreen(ScreenSpec(LampScreenView.SCREEN_ID, order = 25, inPager = false) { ctx -> LampScreenView(ctx, host.services, host.services.homeAssistant, demo = false) })
         } else if (s.config.demoData) {
             host.registerScreen(ScreenSpec(LampScreenView.SCREEN_ID, order = 25, inPager = false) { ctx -> LampScreenView(ctx, host.services, demoHome(host), demo = true) })
-            host.registerScreen(ScreenSpec("home", order = 20) { ctx ->
+            host.registerScreen(ScreenSpec("home", order = 20, title = "Home") { ctx ->
                 val ha = demoHome(host)
                 object : HomeScreenView(ctx, host.services, ha, demo = true, defaults = DemoHomeAssistant::demoDefaults) {
                     override fun onScreenShown(args: Bundle?) {

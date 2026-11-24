@@ -26,7 +26,7 @@ object RadioFeature : VesperFeature {
         val radio = RadioService(host.context, s)
         s.radio = radio
         host.registerSettings(RadioSettings.section)
-        host.registerScreen(ScreenSpec(SCREEN_ID, order = 16) { RadioScreen(it, s, radio) })
+        host.registerScreen(ScreenSpec(SCREEN_ID, order = 16, title = "Radio") { RadioScreen(it, s, radio) })
         // Once every feature is installed (arbitration reads the other media sources).
         Handler(Looper.getMainLooper()).post { radio.start() }
     }

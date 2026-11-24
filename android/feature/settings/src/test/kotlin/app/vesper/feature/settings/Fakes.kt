@@ -53,6 +53,11 @@ fun demoSections(actionLog: MutableList<String> = mutableListOf()): List<Setting
         SettingSpec("settings.restartApp", "Restart app", SettingType.ACTION, help = "Restarts EchoHome on the Echo (about 5 seconds).",
             onAction = { actionLog += "restart"; "Restarting the Echo app…" }),
     )),
+    SettingsSection("screens", "Screens", 5, listOf(
+        SettingSpec("pager.screens", "Swipe through", SettingType.ORDER, "", placeholder = "StandBy",
+            options = listOf("widgets" to "Widgets", "nowplaying" to "Now Playing", "sleep" to "Sleep Sounds", "radio" to "Radio",
+                "alarms" to "Alarms", "timers" to "Timers", "lists" to "Lists", "commute" to "Commute", "stocks" to "Stocks", "photos" to "Photos")),
+    ), help = "Hidden screens still open from Control Center and by voice."),
     SettingsSection("clock", "Clock", 10, listOf(
         SettingSpec("clock.face", "Face", SettingType.CHOICE, "digital", options = listOf("digital" to "Digital", "analog" to "Analog", "float" to "Float", "world" to "World", "solar" to "Solar", "glass" to "Glass")),
         SettingSpec("clock.seconds", "Show seconds", SettingType.BOOLEAN, "false"),

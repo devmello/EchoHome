@@ -23,7 +23,7 @@ object MediaFeature : VesperFeature {
 
     override fun install(host: FeatureHost) {
         val services = host.services
-        host.registerScreen(ScreenSpec(NowPlayingScreen.ID, order = 10) { ctx -> NowPlayingScreen(ctx, services) })
+        host.registerScreen(ScreenSpec(NowPlayingScreen.ID, order = 10, title = "Now Playing") { ctx -> NowPlayingScreen(ctx, services) })
         host.registerSettings(MediaSettings.section)
         MusicIsland(services.media, services.island, services.scope, services.settings).start()
         val sessions = AppSessions(host.context, services)

@@ -67,6 +67,27 @@ class ValidationTest {
         bad(s, 5)
     }
 
+    @Test fun order() {
+        val s = spec(SettingType.ORDER, "widgets" to "Widgets", "nowplaying" to "Now Playing", "photos" to "Photos")
+        assertEquals(listOf(Write.Str("k", "photos,-widgets,nowplaying")), ok(s, JSONArray(listOf("photos", "-widgets", " nowplaying "))))
+        // options left out (e.g. a page from an older version) come back on, at their default place
+        assertEquals(listOf(Write.Str("k", "widgets,nowplaying,-photos")), ok(s, JSONArray(listOf("-photos"))))
+        assertEquals(listOf(Write.Str("k", "widgets,-nowplaying,photos")), ok(s, "widgets,-nowplaying,photos"))
+        bad(s, JSONArray(listOf("photos", "photos")))
+        bad(s, JSONArray(listOf("photos", "-photos")))
+        bad(s, JSONArray(listOf("standby")))
+        bad(s, JSONArray(listOf("photos,widgets")))
+        bad(s, JSONArray(listOf(1)))
+        bad(s, 5)
+    }
+
+    @Test fun orderReadsEveryOption() {
+        val s = spec(SettingType.ORDER, "widgets" to "Widgets", "photos" to "Photos")
+        val store = FakeSettingsStore().apply { putString("k", "photos,-widgets,gone") }
+        val v = app.vesper.feature.settings.api.Reader.value(s, store) as JSONArray
+        assertEquals("""[{"id":"photos","on":true},{"id":"widgets","on":false}]""", v.toString())
+    }
+
     @Test fun time() {
         val s = spec(SettingType.TIME)
         assertEquals(listOf(Write.Str("k", "07:05")), ok(s, "07:05"))

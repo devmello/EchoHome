@@ -32,7 +32,7 @@ object ListsFeature : VesperFeature {
         s.reminders = reminders
         s.lists = RealListStore(host.context)
         host.registerSettings(ListsSettings.section)
-        host.registerScreen(ScreenSpec(SCREEN_ID, order = 35) { ListsScreen(it, s) })
+        host.registerScreen(ScreenSpec(SCREEN_ID, order = 35, title = "Lists") { ListsScreen(it, s) })
         // Once every feature is installed (alerts use the island, banners, profiles, system state).
         Handler(Looper.getMainLooper()).post {
             reminders.evaluate("start")

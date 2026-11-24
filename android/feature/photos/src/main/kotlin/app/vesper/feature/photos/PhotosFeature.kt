@@ -26,7 +26,7 @@ object PhotosFeature : VesperFeature {
         val library = PhotoLibrary(host.context, host.services)
         host.registerSettings(PhotoSettings.section(null))
         library.start()
-        host.registerScreen(ScreenSpec("photos", order = 70) { ctx -> PhotosScreen(ctx, host.services, library) })
+        host.registerScreen(ScreenSpec("photos", order = 70, title = "Photos") { ctx -> PhotosScreen(ctx, host.services, library) })
         host.registerOverlay(OverlaySpec("photos-idle", z = 1000) { ctx -> IdleWatcher(ctx, host.services) })
         host.registerKeyHandler { _ -> IdleWatcher.current?.get()?.onInput(); false }
     }

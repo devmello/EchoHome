@@ -62,7 +62,7 @@ class ApiTest {
         val o = JSONObject(text)
         assertEquals("Bedroom", o.getJSONObject("device").getString("name"))
         val sections = o.getJSONArray("sections")
-        assertEquals(listOf("general", "clock", "alarm", "home", "accounts"), (0 until sections.length()).map { sections.getJSONObject(it).getString("id") })
+        assertEquals(listOf("general", "screens", "clock", "alarm", "home", "accounts"), (0 until sections.length()).map { sections.getJSONObject(it).getString("id") })
         fun spec(key: String): JSONObject {
             for (i in 0 until sections.length()) {
                 val a = sections.getJSONObject(i).getJSONArray("settings")
