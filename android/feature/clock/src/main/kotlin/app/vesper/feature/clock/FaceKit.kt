@@ -108,6 +108,10 @@ fun drawIcon(canvas: Canvas, d: Drawable, x: Float, y: Float, size: Float, tint:
     canvas.restore()
 }
 
+/** [color] with its alpha multiplied by [a] (0..1): fading a detail without a layer. */
+fun fade(color: Int, a: Float): Int =
+    if (a >= 1f) color else (color and 0x00FFFFFF) or ((((color ushr 24) * a.coerceIn(0f, 1f)) + 0.5f).toInt() shl 24)
+
 fun Context.icon(id: Int): Drawable = getDrawable(id)!!.mutate()
 
 /** "#RRGGBB" (SettingType.COLOR) or "RRGGBB" → opaque colour; null if malformed. */

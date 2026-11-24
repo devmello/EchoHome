@@ -34,6 +34,12 @@ interface FaceView : VesperScreen {
     fun setConfig(config: FaceConfig)
     /** Minute tick / time set / time zone change. Faces with seconds hands animate themselves. */
     fun onTimeChanged() {}
+    /**
+     * Far layout (seen from across the room), 0 = normal … 1 = far: a face that is already one big
+     * clock fades its small details out. StandBy animates it; faces that ignore it get StandBy's
+     * own big far clock instead, or no far layout.
+     */
+    fun setFarAmount(amount: Float) {}
 }
 
 interface FaceRegistry {
